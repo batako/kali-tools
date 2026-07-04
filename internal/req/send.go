@@ -8,12 +8,32 @@ import (
 	"net/http"
 )
 
+const usageText = "usage: req [-S|--https] <REQ_FILE>\n\noptions:\n  -S, --https  force https when the request file does not imply a scheme\n  -h, --help   show this help"
+
 func Run(args []string, stdout io.Writer) error {
-	if len(args) != 2 {
-		return errors.New("usage: req <REQ_FILE>")
+	forceHTTPS := false
+	var reqFile string
+
+	for _, arg := range args[1:] {
+		switch arg {
+		case "-S", "--https":
+			forceHTTPS = true
+		case "-h", "--help":
+			_, err := fmt.Fprintln(stdout, usageText)
+			return err
+		default:
+			if reqFile != "" {
+				return errors.New("usage: req [-S|--https] <REQ_FILE>")
+			}
+			reqFile = arg
+		}
 	}
 
-	parsed, err := ParseFile(args[1])
+	if reqFile == "" {
+		return errors.New("usage: req [-S|--https] <REQ_FILE>")
+	}
+
+	parsed, err := ParseFileWithOptions(reqFile, ParseOptions{ForceHTTPS: forceHTTPS})
 	if err != nil {
 		return err
 	}

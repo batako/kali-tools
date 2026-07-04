@@ -6,6 +6,19 @@ This repository contains self-made CLI tools for Kali Linux.
 
 - `req`: A CLI tool for sending raw HTTP requests stored in `.req` files.
 
+## req Usage
+
+```sh
+req <REQ_FILE>
+req -S <REQ_FILE>
+req --help
+```
+
+Options:
+
+- `-S`, `--https`: Force `https` when the request file does not imply a scheme
+- `-h`, `--help`: Show help
+
 ## Directory Structure
 
 - `cmd/req/`: Entry point for the `req` command
@@ -93,10 +106,40 @@ Run this after building the Debian package.
 Output:
 
 ```text
+repo/dists/stable/main/binary-all/Packages
+repo/dists/stable/main/binary-all/Packages.gz
 repo/dists/stable/main/binary-amd64/Packages
 repo/dists/stable/main/binary-amd64/Packages.gz
 repo/dists/stable/main/binary-arm64/Packages
 repo/dists/stable/main/binary-arm64/Packages.gz
 repo/pool/main/r/req/req_<version>_amd64.deb
 repo/pool/main/r/req/req_<version>_arm64.deb
+```
+
+## Using the APT Repository
+
+Add the repository:
+
+```sh
+echo "deb [trusted=yes] https://apt.batako.net stable main" \
+| sudo tee /etc/apt/sources.list.d/batako.list
+```
+
+Update the package index:
+
+```sh
+sudo apt update
+```
+
+Install the package:
+
+```sh
+sudo apt install req
+```
+
+To remove the repository:
+
+```sh
+sudo rm -f /etc/apt/sources.list.d/batako.list
+sudo apt update
 ```

@@ -1,60 +1,42 @@
+
 package req
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func writeTempReqFile(t *testing.T, content string) string {
+	t.Helper()
+
+	file, err := os.CreateTemp(t.TempDir(), "*.req")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+
+	if _, err := file.WriteString(content); err != nil {
+		t.Fatalf("WriteString() error = %v", err)
+	}
+
+	if err := file.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	return file.Name()
+}
 
 func TestParseFileParsesBasicRequest(t *testing.T) {
 	t.Parallel()
 
 	reqText := strings.Join([]string{
-		"POST /login HTTP/1.1",
+		"POST /submit?x=1 HTTP/1.1",
 		"Host: example.com",
-		"User-Agent: TestAgent/1.0",
-		"Content-Type: application/x-www-form-urlencoded",
-		"",
-		"username=admin&password=test",
-	}, "\n")
-
-	filename := writeTempReqFile(t, reqText)
-
-	parsed, err := ParseFile(filename)
-	if err != nil {
-		t.Fatalf("ParseFile() error = %v", err)
-	}
-
-	if parsed.Method != "POST" {
-		t.Fatalf("parsed.Method = %q, want %q", parsed.Method, "POST")
-	}
-	if parsed.URL.String() != "http://example.com/login" {
-		t.Fatalf("parsed.URL.String() = %q, want %q", parsed.URL.String(), "http://example.com/login")
-	}
-	if parsed.Host != "example.com" {
-		t.Fatalf("parsed.Host = %q, want %q", parsed.Host, "example.com")
-	}
-	if got := parsed.Header.Get("User-Agent"); got != "TestAgent/1.0" {
-		t.Fatalf("User-Agent = %q, want %q", got, "TestAgent/1.0")
-	}
-	if got := parsed.Header.Get("Content-Type"); got != "application/x-www-form-urlencoded" {
-		t.Fatalf("Content-Type = %q, want %q", got, "application/x-www-form-urlencoded")
-	}
-	if string(parsed.Body) != "username=admin&password=test" {
-		t.Fatalf("parsed.Body = %q, want %q", string(parsed.Body), "username=admin&password=test")
-	}
-}
-
-func TestParseFileExcludesAcceptEncodingAndContentLength(t *testing.T) {
-	t.Parallel()
-
-	reqText := strings.Join([]string{
-		"POST /submit HTTP/1.1",
-		"Host: example.com",
+		"User-Agent: ReqTest/1.0",
+		"Content-Type: text/plain",
 		"Accept-Encoding: gzip, deflate",
 		"Content-Length: 999",
-		"Content-Type: text/plain",
+		"Connection: keep-alive",
 		"",
 		"hello",
 	}, "\n")
@@ -66,35 +48,55 @@ func TestParseFileExcludesAcceptEncodingAndContentLength(t *testing.T) {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
 
-	if got := parsed.Header.Get("Accept-Encoding"); got != "" {
-		t.Fatalf("Accept-Encoding = %q, want empty", got)
+	if parsed.Method != "POST" {
+		t.Fatalf("Method = %q, want %q", parsed.Method, "POST")
 	}
-	if got := parsed.Header.Get("Content-Length"); got != "" {
-		t.Fatalf("Content-Length = %q, want empty", got)
+	if parsed.URL.String() != "http://example.com/submit?x=1" {
+		t.Fatalf("URL = %q, want %q", parsed.URL.String(), "http://example.com/submit?x=1")
 	}
-	if got := parsed.Header.Get("Content-Type"); got != "text/plain" {
-		t.Fatalf("Content-Type = %q, want %q", got, "text/plain")
+	if parsed.Host != "example.com" {
+		t.Fatalf("Host = %q, want %q", parsed.Host, "example.com")
+	}
+	if parsed.Header.Get("User-Agent") != "ReqTest/1.0" {
+		t.Fatalf("User-Agent = %q, want %q", parsed.Header.Get("User-Agent"), "ReqTest/1.0")
+	}
+	if parsed.Header.Get("Content-Type") != "text/plain" {
+		t.Fatalf("Content-Type = %q, want %q", parsed.Header.Get("Content-Type"), "text/plain")
+	}
+	if parsed.Header.Get("Accept-Encoding") != "" {
+		t.Fatalf("Accept-Encoding = %q, want empty", parsed.Header.Get("Accept-Encoding"))
+	}
+	if parsed.Header.Get("Content-Length") != "" {
+		t.Fatalf("Content-Length = %q, want empty", parsed.Header.Get("Content-Length"))
+	}
+	if parsed.Header.Get("Connection") != "" {
+		t.Fatalf("Connection = %q, want empty", parsed.Header.Get("Connection"))
+	}
+	if string(parsed.Body) != "hello" {
+		t.Fatalf("Body = %q, want %q", string(parsed.Body), "hello")
+	}
+	if parsed.ProtoMajor != 1 || parsed.ProtoMinor != 1 {
+		t.Fatalf("protocol = HTTP/%d.%d, want HTTP/1.1", parsed.ProtoMajor, parsed.ProtoMinor)
 	}
 }
 
-func TestParseFilePreservesMultipartBody(t *testing.T) {
+func TestParseFileKeepsMultipartBody(t *testing.T) {
 	t.Parallel()
 
 	body := strings.Join([]string{
-		"------geckoformboundary571eda73ef295382c50dfbcc925140fe",
+		"------boundary",
 		`Content-Disposition: form-data; name="file"; filename="test.php"`,
 		"Content-Type: text/php",
 		"",
 		"GIF89a;<?php echo 'test'; ?>",
-		"",
-		"------geckoformboundary571eda73ef295382c50dfbcc925140fe--",
+		"------boundary--",
 		"",
 	}, "\n")
 
 	reqText := strings.Join([]string{
-		"POST /cv.php HTTP/1.1",
-		"Host: 10.144.131.185",
-		"Content-Type: multipart/form-data; boundary=----geckoformboundary571eda73ef295382c50dfbcc925140fe",
+		"POST /upload HTTP/1.1",
+		"Host: example.com",
+		"Content-Type: multipart/form-data; boundary=----boundary",
 		"",
 		body,
 	}, "\n")
@@ -107,18 +109,113 @@ func TestParseFilePreservesMultipartBody(t *testing.T) {
 	}
 
 	if string(parsed.Body) != body {
-		t.Fatalf("parsed.Body mismatch\n got: %q\nwant: %q", string(parsed.Body), body)
+		t.Fatalf("multipart body changed\n got: %q\nwant: %q", string(parsed.Body), body)
 	}
 }
 
-func writeTempReqFile(t *testing.T, content string) string {
-	t.Helper()
+func TestParseFileAcceptsHTTP2RequestLine(t *testing.T) {
+	t.Parallel()
 
-	dir := t.TempDir()
-	filename := filepath.Join(dir, "test.req")
-	if err := os.WriteFile(filename, []byte(content), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
+	reqText := strings.Join([]string{
+		"GET / HTTP/2",
+		"Host: example.com",
+		"",
+	}, "\n")
+
+	filename := writeTempReqFile(t, reqText)
+
+	parsed, err := ParseFile(filename)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
 	}
 
-	return filename
+	if parsed.ProtoMajor != 2 || parsed.ProtoMinor != 0 {
+		t.Fatalf("protocol = HTTP/%d.%d, want HTTP/2.0", parsed.ProtoMajor, parsed.ProtoMinor)
+	}
+}
+
+func TestParseFileAcceptsHTTP20RequestLine(t *testing.T) {
+	t.Parallel()
+
+	reqText := strings.Join([]string{
+		"GET / HTTP/2.0",
+		"Host: example.com",
+		"",
+	}, "\n")
+
+	filename := writeTempReqFile(t, reqText)
+
+	parsed, err := ParseFile(filename)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	if parsed.ProtoMajor != 2 || parsed.ProtoMinor != 0 {
+		t.Fatalf("protocol = HTTP/%d.%d, want HTTP/2.0", parsed.ProtoMajor, parsed.ProtoMinor)
+	}
+}
+
+func TestParseFileUsesOriginScheme(t *testing.T) {
+	t.Parallel()
+
+	reqText := strings.Join([]string{
+		"GET / HTTP/2",
+		"Host: example.com",
+		"Origin: https://example.com",
+		"",
+	}, "\n")
+
+	filename := writeTempReqFile(t, reqText)
+
+	parsed, err := ParseFile(filename)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	if parsed.URL.String() != "https://example.com/" {
+		t.Fatalf("URL = %q, want %q", parsed.URL.String(), "https://example.com/")
+	}
+}
+
+func TestParseFileUsesRefererScheme(t *testing.T) {
+	t.Parallel()
+
+	reqText := strings.Join([]string{
+		"GET /path HTTP/2",
+		"Host: example.com",
+		"Referer: https://example.com/from",
+		"",
+	}, "\n")
+
+	filename := writeTempReqFile(t, reqText)
+
+	parsed, err := ParseFile(filename)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	if parsed.URL.String() != "https://example.com/path" {
+		t.Fatalf("URL = %q, want %q", parsed.URL.String(), "https://example.com/path")
+	}
+}
+
+func TestParseFileWithOptionsForceHTTPS(t *testing.T) {
+	t.Parallel()
+
+	reqText := strings.Join([]string{
+		"GET / HTTP/2",
+		"Host: example.com",
+		"",
+	}, "\n")
+
+	filename := writeTempReqFile(t, reqText)
+
+	parsed, err := ParseFileWithOptions(filename, ParseOptions{ForceHTTPS: true})
+	if err != nil {
+		t.Fatalf("ParseFileWithOptions() error = %v", err)
+	}
+
+	if parsed.URL.String() != "https://example.com/" {
+		t.Fatalf("URL = %q, want %q", parsed.URL.String(), "https://example.com/")
+	}
 }

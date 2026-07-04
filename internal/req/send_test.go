@@ -134,11 +134,31 @@ func TestRunReturnsUsageErrorWhenArgumentMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("Run() error = nil, want usage error")
 	}
-	if err.Error() != "usage: req <REQ_FILE>" {
-		t.Fatalf("Run() error = %q, want %q", err.Error(), "usage: req <REQ_FILE>")
+	if err.Error() != "usage: req [-S|--https] <REQ_FILE>" {
+		t.Fatalf("Run() error = %q, want %q", err.Error(), "usage: req [-S|--https] <REQ_FILE>")
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestRunWritesHelp(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	if err := Run([]string{"req", "-h"}, &stdout); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "usage: req [-S|--https] <REQ_FILE>") {
+		t.Fatalf("help output = %q", output)
+	}
+	if !strings.Contains(output, "-S, --https") {
+		t.Fatalf("help output missing -S description: %q", output)
+	}
+	if !strings.Contains(output, "-h, --help") {
+		t.Fatalf("help output missing help description: %q", output)
 	}
 }
 

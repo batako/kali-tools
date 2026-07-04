@@ -6,6 +6,19 @@ Kali Linux 向けの自作 CLI ツールを管理するリポジトリです。
 
 - `req`: `.req` ファイルとして保存した生 HTTP リクエストを送信する CLI
 
+## req の使い方
+
+```sh
+req <REQ_FILE>
+req -S <REQ_FILE>
+req --help
+```
+
+オプション:
+
+- `-S`, `--https`: リクエストファイルからスキームを決められないときに `https` を強制する
+- `-h`, `--help`: ヘルプを表示する
+
 ## ディレクトリ構成
 
 - `cmd/req/`: `req` のエントリポイント
@@ -85,7 +98,40 @@ dist/req_<version>_<architecture>.deb
 生成物:
 
 ```text
-repo/dists/stable/main/binary-<architecture>/Packages
-repo/dists/stable/main/binary-<architecture>/Packages.gz
-repo/pool/main/r/req/req_<version>_<architecture>.deb
+repo/dists/stable/main/binary-all/Packages
+repo/dists/stable/main/binary-all/Packages.gz
+repo/dists/stable/main/binary-amd64/Packages
+repo/dists/stable/main/binary-amd64/Packages.gz
+repo/dists/stable/main/binary-arm64/Packages
+repo/dists/stable/main/binary-arm64/Packages.gz
+repo/pool/main/r/req/req_<version>_amd64.deb
+repo/pool/main/r/req/req_<version>_arm64.deb
+```
+
+## APT リポジトリの利用
+
+リポジトリを追加します。
+
+```sh
+echo "deb [trusted=yes] https://apt.batako.net stable main" \
+| sudo tee /etc/apt/sources.list.d/batako.list
+```
+
+パッケージ一覧を更新します。
+
+```sh
+sudo apt update
+```
+
+`req` をインストールします。
+
+```sh
+sudo apt install req
+```
+
+リポジトリを削除する場合:
+
+```sh
+sudo rm -f /etc/apt/sources.list.d/batako.list
+sudo apt update
 ```

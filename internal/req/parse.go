@@ -31,7 +31,15 @@ type ParsedRequest struct {
 	ProtoMinor int
 }
 
+type ParseOptions struct {
+	ForceHTTPS bool
+}
+
 func ParseFile(filename string) (*ParsedRequest, error) {
+	return ParseFileWithOptions(filename, ParseOptions{})
+}
+
+func ParseFileWithOptions(filename string, opts ParseOptions) (*ParsedRequest, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", filename, err)
@@ -58,6 +66,8 @@ func ParseFile(filename string) (*ParsedRequest, error) {
 
 	header := make(http.Header)
 	var hostHeader string
+	var originHeader string
+	var refererHeader string
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -76,9 +86,13 @@ func ParseFile(filename string) (*ParsedRequest, error) {
 		switch strings.ToLower(name) {
 		case "host":
 			hostHeader = value
-		case "accept-encoding":
-			continue
-		case "content-length":
+		case "origin":
+			originHeader = value
+			header.Add(name, value)
+		case "referer":
+			refererHeader = value
+			header.Add(name, value)
+		case "accept-encoding", "content-length":
 			continue
 		case "proxy-connection", "connection", "if-modified-since", "if-none-match":
 			continue
@@ -91,7 +105,7 @@ func ParseFile(filename string) (*ParsedRequest, error) {
 		return nil, fmt.Errorf("failed to parse request file: %w", err)
 	}
 
-	reqURL, resolvedHost, err := buildURL(target, hostHeader)
+	reqURL, resolvedHost, err := buildURL(target, hostHeader, originHeader, refererHeader, opts.ForceHTTPS)
 	if err != nil {
 		return nil, err
 	}
@@ -127,15 +141,19 @@ func parseRequestLine(line string) (string, string, int, int, error) {
 		return "", "", 0, 0, fmt.Errorf("unsupported protocol version: %s", version)
 	}
 
-	var protoMajor, protoMinor int
-	if _, err := fmt.Sscanf(version, "HTTP/%d.%d", &protoMajor, &protoMinor); err != nil {
+	switch version {
+	case "HTTP/1.0":
+		return method, fields[1], 1, 0, nil
+	case "HTTP/1.1":
+		return method, fields[1], 1, 1, nil
+	case "HTTP/2", "HTTP/2.0":
+		return method, fields[1], 2, 0, nil
+	default:
 		return "", "", 0, 0, fmt.Errorf("unsupported protocol version: %s", version)
 	}
-
-	return method, fields[1], protoMajor, protoMinor, nil
 }
 
-func buildURL(target, hostHeader string) (*url.URL, string, error) {
+func buildURL(target, hostHeader, originHeader, refererHeader string, forceHTTPS bool) (*url.URL, string, error) {
 	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
 		parsed, err := url.Parse(target)
 		if err != nil {
@@ -157,10 +175,7 @@ func buildURL(target, hostHeader string) (*url.URL, string, error) {
 		return nil, "", errors.New("invalid request file: missing Host header")
 	}
 
-	scheme := "http"
-	if _, portProvided := splitHostPortLikeSQLMap(hostHeader); portProvided == "443" {
-		scheme = "https"
-	}
+	scheme := resolveScheme(hostHeader, originHeader, refererHeader, forceHTTPS)
 
 	if target == "*" {
 		return &url.URL{Scheme: scheme, Host: hostHeader, Path: "*"}, hostHeader, nil
@@ -179,6 +194,43 @@ func buildURL(target, hostHeader string) (*url.URL, string, error) {
 	}
 
 	return u, hostHeader, nil
+}
+
+func resolveScheme(hostHeader, originHeader, refererHeader string, forceHTTPS bool) string {
+	if forceHTTPS {
+		return "https"
+	}
+
+	if scheme := schemeFromURL(originHeader); scheme != "" {
+		return scheme
+	}
+
+	if scheme := schemeFromURL(refererHeader); scheme != "" {
+		return scheme
+	}
+
+	if _, portProvided := splitHostPortLikeSQLMap(hostHeader); portProvided == "443" {
+		return "https"
+	}
+
+	return "http"
+}
+
+func schemeFromURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+
+	if parsed.Scheme == "http" || parsed.Scheme == "https" {
+		return parsed.Scheme
+	}
+
+	return ""
 }
 
 func splitHostPortLikeSQLMap(host string) (string, string) {
