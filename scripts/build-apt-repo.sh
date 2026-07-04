@@ -6,6 +6,7 @@ PACKAGE_NAME="req"
 VERSION="$(cat debian/req/VERSION)"
 REPO_ROOT="repo"
 POOL_DIR="${REPO_ROOT}/pool/main/r/${PACKAGE_NAME}"
+DISTS_MAIN_DIR="${REPO_ROOT}/dists/stable/main"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -24,8 +25,9 @@ if [ ! -e "$1" ]; then
 fi
 
 mkdir -p "${POOL_DIR}"
+mkdir -p "${DISTS_MAIN_DIR}"
 find "${POOL_DIR}" -maxdepth 1 -type f -name "${PACKAGE_NAME}_*.deb" -delete
-find "${REPO_ROOT}/dists/stable/main" -mindepth 1 -maxdepth 1 -type d -name 'binary-*' -exec rm -rf {} +
+find "${DISTS_MAIN_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'binary-*' -exec rm -rf {} +
 
 for deb_path in dist/${PACKAGE_NAME}_${VERSION}_*.deb; do
   deb_file="$(basename "${deb_path}")"
