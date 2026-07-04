@@ -1,0 +1,16 @@
+version: 1
+
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - test -d repo
+    build:
+      commands:
+        - find repo -mindepth 1 -maxdepth 5 | sort
+  artifacts:
+    baseDirectory: repo
+    files:
+      - '**/*'
+  cache:
+    paths: []
