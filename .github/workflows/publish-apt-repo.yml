@@ -36,8 +36,10 @@ jobs:
       - name: Run tests
         run: go test ./...
 
-      - name: Build Debian package
-        run: ./scripts/build-deb.sh
+      - name: Build Debian packages
+        run: |
+          ./scripts/build-deb.sh amd64
+          ./scripts/build-deb.sh arm64
 
       - name: Build APT repository
         run: ./scripts/build-apt-repo.sh

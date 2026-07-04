@@ -4,7 +4,7 @@ set -eu
 
 PACKAGE_NAME="req"
 VERSION="$(cat debian/req/VERSION)"
-ARCH="$(dpkg --print-architecture)"
+ARCH="${1:-$(dpkg --print-architecture)}"
 GOARCH=""
 OUTPUT_DIR="dist"
 OUTPUT_DEB="${OUTPUT_DIR}/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"

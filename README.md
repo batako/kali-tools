@@ -49,7 +49,8 @@ Runs only when `main` is updated and executes the following steps:
 go mod tidy
 git diff --exit-code
 go test ./...
-./scripts/build-deb.sh
+./scripts/build-deb.sh amd64
+./scripts/build-deb.sh arm64
 ./scripts/build-apt-repo.sh
 Force-push to the apt-repo branch
 ```
@@ -62,6 +63,13 @@ If any test or the `go mod tidy` check fails, the repository is not published.
 ./scripts/build-deb.sh
 ```
 
+You can also specify the target architecture explicitly:
+
+```sh
+./scripts/build-deb.sh amd64
+./scripts/build-deb.sh arm64
+```
+
 Output:
 
 ```text
@@ -70,7 +78,7 @@ dist/req_<version>_<architecture>.deb
 
 Notes:
 
-- The target architecture is detected using `dpkg --print-architecture`.
+- If no argument is given, the target architecture is detected using `dpkg --print-architecture`.
 - The corresponding Go `GOARCH` value is derived from the Debian architecture.
 - The package version is read from `debian/req/VERSION`.
 
@@ -85,7 +93,10 @@ Run this after building the Debian package.
 Output:
 
 ```text
-repo/dists/stable/main/binary-<architecture>/Packages
-repo/dists/stable/main/binary-<architecture>/Packages.gz
-repo/pool/main/r/req/req_<version>_<architecture>.deb
+repo/dists/stable/main/binary-amd64/Packages
+repo/dists/stable/main/binary-amd64/Packages.gz
+repo/dists/stable/main/binary-arm64/Packages
+repo/dists/stable/main/binary-arm64/Packages.gz
+repo/pool/main/r/req/req_<version>_amd64.deb
+repo/pool/main/r/req/req_<version>_arm64.deb
 ```
