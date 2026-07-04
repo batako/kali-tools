@@ -1,54 +1,91 @@
 # Kali Tools
 
-This repository manages self-made CLI tools for Kali Linux.
+This repository contains self-made CLI tools for Kali Linux.
 
-Current tool:
+## Current Tool
 
-- `req`: send raw HTTP requests saved in `.req` files
+- `req`: A CLI tool for sending raw HTTP requests stored in `.req` files.
 
-Repository layout:
+## Directory Structure
 
-- `cmd/req/`: `req` command entrypoint
-- `internal/req/`: `req` implementation
+- `cmd/req/`: Entry point for the `req` command
+- `internal/req/`: Implementation and tests for `req`
 - `debian/req/`: Debian packaging files for `req`
-- `scripts/`: project helper scripts
-- `.github/workflows/`: test and APT publish workflows
+- `scripts/`: Build and publishing scripts
+- `.github/workflows/`: GitHub Actions workflows
 
-Generated paths ignored on `main`:
+## Branch Roles
+
+- `main`: Source code branch. A push to this branch triggers testing and publishes the APT repository if all checks pass.
+- `apt-repo`: Published APT repository
+
+The `apt-repo` branch contains only the generated APT repository. AWS Amplify publishes this branch only.
+
+## Generated Files Not Tracked on `main`
 
 - `dist/`
 - `repo/dists/`
 - `repo/pool/`
 
-APT publishing layout:
+These paths are listed in `.gitignore` and must not be committed to the `main` branch.
 
-- `apt-repo:dists/`: APT metadata
-- `apt-repo:pool/`: package files
+## GitHub Actions
 
-Branch roles:
+### `test.yml`
 
-- `main`: source code, tests, packaging definitions
-- `apt-repo`: published APT repository contents only
+Runs on every `push` and executes:
 
-Publish flow:
+```sh
+go mod tidy
+git diff --exit-code
+go test ./...
+```
 
-- Push to `main`
-- GitHub Actions runs `go test ./...`
-- GitHub Actions builds `dist/req_<version>_<architecture>.deb`
-- GitHub Actions updates `repo/`
-- GitHub Actions force-pushes only the generated repository files to `apt-repo`
+### `publish-apt-repo.yml`
 
-AWS Amplify should target the `apt-repo` branch root, so the Go source tree on `main` is never published.
+Runs only when `main` is updated and executes the following steps:
 
-Debian package build:
+```text
+go mod tidy
+git diff --exit-code
+go test ./...
+./scripts/build-deb.sh
+./scripts/build-apt-repo.sh
+Force-push to the apt-repo branch
+```
 
-- Run `./scripts/build-deb.sh`
-- Output: `dist/req_0.1.0_<architecture>.deb`
-- Current Debian architecture is detected with `dpkg --print-architecture`
-- Package version is read from `debian/req/VERSION`
+If any test or the `go mod tidy` check fails, the repository is not published.
 
-APT repository build:
+## Building the Debian Package
 
-- Run `./scripts/build-apt-repo.sh` after `./scripts/build-deb.sh`
-- Metadata output: `repo/dists/stable/main/binary-<architecture>/Packages`
-- Compressed metadata: `repo/dists/stable/main/binary-<architecture>/Packages.gz`
+```sh
+./scripts/build-deb.sh
+```
+
+Output:
+
+```text
+dist/req_<version>_<architecture>.deb
+```
+
+Notes:
+
+- The target architecture is detected using `dpkg --print-architecture`.
+- The corresponding Go `GOARCH` value is derived from the Debian architecture.
+- The package version is read from `debian/req/VERSION`.
+
+## Building the APT Repository
+
+Run this after building the Debian package.
+
+```sh
+./scripts/build-apt-repo.sh
+```
+
+Output:
+
+```text
+repo/dists/stable/main/binary-<architecture>/Packages
+repo/dists/stable/main/binary-<architecture>/Packages.gz
+repo/pool/main/r/req/req_<version>_<architecture>.deb
+```
