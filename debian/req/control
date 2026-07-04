@@ -1,0 +1,7 @@
+Package: req
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Description: Send raw HTTP requests stored in .req files

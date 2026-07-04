@@ -12,10 +12,38 @@ Repository layout:
 - `internal/req/`: `req` implementation
 - `debian/req/`: Debian packaging files for `req`
 - `repo/`: published APT repository root for AWS Amplify
+- `scripts/`: project helper scripts
+- `.github/workflows/`: test and APT publish workflows
 
 APT publishing layout:
 
 - `repo/dists/stable/main/binary-amd64/`: APT metadata for the stable component
 - `repo/pool/main/r/req/`: `req` package files
 
-AWS Amplify publishes only `repo/` by using `amplify.yml`, so the Go source tree stays in the GitHub repository but is not exposed as static hosting output.
+Branch roles:
+
+- `main`: source code, tests, packaging definitions
+- `apt-repo`: published APT repository contents only
+
+Publish flow:
+
+- Push to `main`
+- GitHub Actions runs `go test ./...`
+- GitHub Actions builds `dist/req_<version>_<architecture>.deb`
+- GitHub Actions updates `repo/`
+- GitHub Actions force-pushes only the generated repository files to `apt-repo`
+
+AWS Amplify should target the `apt-repo` branch root, so the Go source tree on `main` is never published.
+
+Debian package build:
+
+- Run `./scripts/build-deb.sh`
+- Output: `dist/req_0.1.0_<architecture>.deb`
+- Current Debian architecture is detected with `dpkg --print-architecture`
+- Package version is read from `debian/req/VERSION`
+
+APT repository build:
+
+- Run `./scripts/build-apt-repo.sh` after `./scripts/build-deb.sh`
+- Metadata output: `repo/dists/stable/main/binary-<architecture>/Packages`
+- Compressed metadata: `repo/dists/stable/main/binary-<architecture>/Packages.gz`
