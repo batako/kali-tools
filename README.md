@@ -11,14 +11,19 @@ Repository layout:
 - `cmd/req/`: `req` command entrypoint
 - `internal/req/`: `req` implementation
 - `debian/req/`: Debian packaging files for `req`
-- `repo/`: published APT repository root for AWS Amplify
 - `scripts/`: project helper scripts
 - `.github/workflows/`: test and APT publish workflows
 
+Generated paths ignored on `main`:
+
+- `dist/`
+- `repo/dists/`
+- `repo/pool/`
+
 APT publishing layout:
 
-- `repo/dists/stable/main/binary-amd64/`: APT metadata for the stable component
-- `repo/pool/main/r/req/`: `req` package files
+- `apt-repo:dists/`: APT metadata
+- `apt-repo:pool/`: package files
 
 Branch roles:
 
