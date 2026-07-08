@@ -18,25 +18,74 @@ var (
 	execCommandFunc              = exec.Command
 )
 
-const usageText = `usage: ctx <command>
+const usageText = `usage: ctx <command> [options]
 
 commands:
-  init                       create a ctx workspace in the current directory
-  status                     show the current ctx workspace
-  target set <ip>            create or update the primary target
-  target add <ip>            add a target
-  target update <ip>         update the current primary target IP
-  target use <name>          make a target primary
-  target rm <name>           remove a target
-  target ls                  list targets
-  ip [ip]                    show or update the primary target IP
-  host add <hostname>        add a host to the primary target
-  host rm <hostname>         remove a host
-  host ls                    list hosts
-  hosts show                 show the managed hosts block
-  hosts sync                 sync the managed block to /etc/hosts
-  hosts clean                remove the managed block from /etc/hosts
-  help                       show this help`
+  init     create a ctx workspace
+  status   show the current workspace
+  target   manage targets
+  ip       show or update the primary target IP
+  host     manage hostnames
+  hosts    show, sync, or clean /etc/hosts entries
+
+options:
+  -h, --help  show this help
+
+Run ctx <command> -h for command-specific help.`
+
+const initUsageText = `usage: ctx init [options]
+
+Create a ctx workspace in the current directory.
+
+options:
+  -h, --help  show this help`
+
+const statusUsageText = `usage: ctx status [options]
+
+Show the current ctx workspace.
+
+options:
+  -h, --help  show this help`
+
+const targetUsageText = `usage: ctx target <command> [options]
+
+commands:
+  set <ip>                 create or update the primary target
+  add <ip> [--name <name>] add a target
+  update <ip>              update the current primary target IP
+  use <name>               make a target primary
+  rm <name>                remove a target
+  ls                       list targets
+
+options:
+  -h, --help               show this help`
+
+const ipUsageText = `usage: ctx ip [ip] [options]
+
+Show or update the primary target IP.
+
+options:
+  -h, --help  show this help`
+
+const hostUsageText = `usage: ctx host <command> [options]
+
+commands:
+  add <hostname> [--target <name>] add a host
+  rm <hostname>                    remove a host
+  ls                               list hosts
+
+options:
+  -h, --help                       show this help`
+
+const hostsUsageText = `usage: ctx hosts <command> [options]
+
+commands:
+  show   show the managed hosts block
+  sync   sync the managed block to /etc/hosts
+  clean  remove the managed block from /etc/hosts
+
+options:
+  -h, --help  show this help`
 
 func Run(args []string, stdout io.Writer) error {
 	if len(args) < 2 {
@@ -45,6 +94,10 @@ func Run(args []string, stdout io.Writer) error {
 
 	switch args[1] {
 	case "init":
+		if len(args) == 3 && isHelpArg(args[2]) {
+			_, err := fmt.Fprintln(stdout, initUsageText)
+			return err
+		}
 		if len(args) != 2 {
 			return errors.New("usage: ctx init")
 		}
@@ -59,6 +112,10 @@ func Run(args []string, stdout io.Writer) error {
 		_, err = fmt.Fprintf(stdout, "initialized ctx workspace %s\n", workspace.ID)
 		return err
 	case "status":
+		if len(args) == 3 && isHelpArg(args[2]) {
+			_, err := fmt.Fprintln(stdout, statusUsageText)
+			return err
+		}
 		if len(args) != 2 {
 			return errors.New("usage: ctx status")
 		}
@@ -80,7 +137,7 @@ func Run(args []string, stdout io.Writer) error {
 		return runHost(args[2:], stdout)
 	case "hosts":
 		return runHosts(args[2:], stdout)
-	case "help", "-h", "--help":
+	case "-h", "--help":
 		_, err := fmt.Fprintln(stdout, usageText)
 		return err
 	default:
@@ -89,8 +146,13 @@ func Run(args []string, stdout io.Writer) error {
 }
 
 func runTarget(args []string, stdout io.Writer) error {
-	if len(args) == 0 {
-		return errors.New("usage: ctx target <set|add|update|use|rm|ls>")
+	if len(args) == 0 || isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, targetUsageText)
+		return err
+	}
+	if len(args) > 1 && isHelpArg(args[1]) {
+		_, err := fmt.Fprintln(stdout, targetUsageText)
+		return err
 	}
 
 	workspace, err := currentWorkspace()
@@ -171,6 +233,11 @@ func runTarget(args []string, stdout io.Writer) error {
 }
 
 func runIP(args []string, stdout io.Writer) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, ipUsageText)
+		return err
+	}
+
 	workspace, err := currentWorkspace()
 	if err != nil {
 		return err
@@ -197,8 +264,13 @@ func runIP(args []string, stdout io.Writer) error {
 }
 
 func runHost(args []string, stdout io.Writer) error {
-	if len(args) == 0 {
-		return errors.New("usage: ctx host <add|rm|ls>")
+	if len(args) == 0 || isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, hostUsageText)
+		return err
+	}
+	if len(args) > 1 && isHelpArg(args[1]) {
+		_, err := fmt.Fprintln(stdout, hostUsageText)
+		return err
 	}
 
 	workspace, err := currentWorkspace()
@@ -251,8 +323,13 @@ func runHost(args []string, stdout io.Writer) error {
 }
 
 func runHosts(args []string, stdout io.Writer) error {
-	if len(args) == 0 {
-		return errors.New("usage: ctx hosts <show|sync|clean>")
+	if len(args) == 0 || isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, hostsUsageText)
+		return err
+	}
+	if len(args) > 1 && isHelpArg(args[1]) {
+		_, err := fmt.Fprintln(stdout, hostsUsageText)
+		return err
 	}
 
 	workspace, err := currentWorkspace()
@@ -436,4 +513,8 @@ func reexecHostsCleanWithSudo(stdout io.Writer) error {
 		return fmt.Errorf("sudo hosts clean failed: %w", err)
 	}
 	return nil
+}
+
+func isHelpArg(arg string) bool {
+	return arg == "-h" || arg == "--help"
 }
