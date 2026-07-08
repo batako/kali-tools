@@ -68,6 +68,7 @@ go test ./...
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
 ./scripts/build-deb.sh ctx arm64
+既存の apt-repo ブランチを repo/ に復元
 ./scripts/build-apt-repo.sh
 apt-repo ブランチへ force push
 ```
@@ -105,7 +106,7 @@ dist/<package>_<version>_<architecture>.deb
 
 ## APT リポジトリ生成
 
-`.deb` 生成後に実行します。
+`.deb` 生成後に実行します。新しいパッケージを `dist/` から `repo/pool/` へコピーし、既存パッケージは削除しません。その後、`repo/pool/` に保存されているすべての `.deb` から `dpkg-scanpackages --multiversion` でメタデータを再生成します。
 
 ```sh
 ./scripts/build-apt-repo.sh
@@ -141,11 +142,18 @@ echo "deb [trusted=yes] https://apt.batako.net stable main" \
 sudo apt update
 ```
 
-`req` または `ctx` をインストールします。
+最新版の `req` または `ctx` をインストールします。
 
 ```sh
 sudo apt install req
 sudo apt install ctx
+```
+
+バージョンを指定してインストールする場合:
+
+```sh
+sudo apt install ctx=0.1.0
+sudo apt install req=0.2.3
 ```
 
 リポジトリを削除する場合:

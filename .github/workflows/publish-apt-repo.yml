@@ -43,6 +43,16 @@ jobs:
           ./scripts/build-deb.sh ctx amd64
           ./scripts/build-deb.sh ctx arm64
 
+      - name: Restore existing APT repository
+        run: |
+          mkdir -p repo
+          if git ls-remote --exit-code --heads origin apt-repo >/dev/null 2>&1; then
+            restore_dir="$(mktemp -d)"
+            git fetch origin apt-repo:refs/remotes/origin/apt-repo
+            git archive origin/apt-repo | tar -x -C "${restore_dir}"
+            cp -R "${restore_dir}/." repo/
+          fi
+
       - name: Build APT repository
         run: ./scripts/build-apt-repo.sh
 

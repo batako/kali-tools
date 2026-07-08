@@ -68,6 +68,7 @@ go test ./...
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
 ./scripts/build-deb.sh ctx arm64
+Restore the existing apt-repo branch into repo/
 ./scripts/build-apt-repo.sh
 Force-push to the apt-repo branch
 ```
@@ -105,7 +106,7 @@ Notes:
 
 ## Building the APT Repository
 
-Run this after building the Debian package.
+Run this after building the Debian package. The script copies new packages from `dist/` into `repo/pool/` without deleting existing packages, then regenerates metadata from every `.deb` stored in `repo/pool/` using `dpkg-scanpackages --multiversion`.
 
 ```sh
 ./scripts/build-apt-repo.sh
@@ -141,11 +142,18 @@ Update the package index:
 sudo apt update
 ```
 
-Install the package:
+Install the latest package:
 
 ```sh
 sudo apt install req
 sudo apt install ctx
+```
+
+Install a specific version:
+
+```sh
+sudo apt install ctx=0.1.0
+sudo apt install req=0.2.3
 ```
 
 To remove the repository:
