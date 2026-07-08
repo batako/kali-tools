@@ -81,6 +81,7 @@ ctx doctor
 go mod tidy
 git diff --exit-code
 go test ./...
+./scripts/check-version.sh ctx
 ```
 
 ### `publish-apt-repo.yml`
@@ -91,6 +92,7 @@ go test ./...
 go mod tidy
 git diff --exit-code
 go test ./...
+./scripts/check-version.sh ctx
 ./scripts/build-deb.sh req amd64
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
@@ -130,6 +132,7 @@ dist/<package>_<version>_<architecture>.deb
 - Go の `GOARCH` は Debian アーキテクチャに合わせて変換します
 - パッケージを省略した場合は `req` を生成します
 - バージョンは `debian/<package>/VERSION` から読み込みます
+- `./scripts/check-version.sh ctx` で `debian/ctx/VERSION` と `internal/ctx.Version` の一致を確認します
 
 ## APT リポジトリ生成
 

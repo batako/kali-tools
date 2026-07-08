@@ -36,6 +36,9 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Check ctx version
+        run: ./scripts/check-version.sh ctx
+
       - name: Build Debian packages
         run: |
           ./scripts/build-deb.sh req amd64

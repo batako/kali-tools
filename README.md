@@ -81,6 +81,7 @@ Runs on every `push` and executes:
 go mod tidy
 git diff --exit-code
 go test ./...
+./scripts/check-version.sh ctx
 ```
 
 ### `publish-apt-repo.yml`
@@ -91,6 +92,7 @@ Runs only when `main` is updated and executes the following steps:
 go mod tidy
 git diff --exit-code
 go test ./...
+./scripts/check-version.sh ctx
 ./scripts/build-deb.sh req amd64
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
@@ -130,6 +132,7 @@ Notes:
 - The corresponding Go `GOARCH` value is derived from the Debian architecture.
 - The package defaults to `req` when omitted.
 - The package version is read from `debian/<package>/VERSION`.
+- `./scripts/check-version.sh ctx` checks that `debian/ctx/VERSION` matches `internal/ctx.Version`.
 
 ## Building the APT Repository
 
