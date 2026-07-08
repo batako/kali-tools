@@ -30,6 +30,21 @@ func TestInitWorkspaceCreatesMarkerAndWorkspaceDirs(t *testing.T) {
 			t.Fatalf("workspace dir %s missing or not a directory, stat error = %v", dir, err)
 		}
 	}
+
+	if _, err := os.Stat(workspace.DatabasePath); err != nil {
+		t.Fatalf("database file missing, stat error = %v", err)
+	}
+
+	record, err := GetWorkspaceRecord(workspace)
+	if err != nil {
+		t.Fatalf("GetWorkspaceRecord() error = %v", err)
+	}
+	if record.ID != workspace.ID {
+		t.Fatalf("database workspace id = %q, want %q", record.ID, workspace.ID)
+	}
+	if record.RootPath != root {
+		t.Fatalf("database root path = %q, want %q", record.RootPath, root)
+	}
 }
 
 func TestFindWorkspaceWalksUpParents(t *testing.T) {

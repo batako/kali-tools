@@ -13,9 +13,10 @@ import (
 const MarkerFile = ".ctx"
 
 type Workspace struct {
-	ID       string
-	RootPath string
-	DataPath string
+	ID           string
+	RootPath     string
+	DataPath     string
+	DatabasePath string
 }
 
 func InitWorkspace(rootPath string) (*Workspace, error) {
@@ -28,6 +29,9 @@ func InitWorkspace(rootPath string) (*Workspace, error) {
 	if existingID, err := readWorkspaceID(markerPath); err == nil {
 		workspace := workspaceFromID(existingID, rootPath)
 		if err := ensureWorkspaceDirs(workspace.DataPath); err != nil {
+			return nil, err
+		}
+		if err := EnsureDatabase(workspace); err != nil {
 			return nil, err
 		}
 		return workspace, nil
@@ -46,6 +50,10 @@ func InitWorkspace(rootPath string) (*Workspace, error) {
 
 	workspace := workspaceFromID(id, rootPath)
 	if err := ensureWorkspaceDirs(workspace.DataPath); err != nil {
+		return nil, err
+	}
+
+	if err := EnsureDatabase(workspace); err != nil {
 		return nil, err
 	}
 
@@ -103,9 +111,10 @@ func readWorkspaceID(markerPath string) (string, error) {
 
 func workspaceFromID(id, rootPath string) *Workspace {
 	return &Workspace{
-		ID:       id,
-		RootPath: rootPath,
-		DataPath: filepath.Join(dataRoot(), "workspaces", id),
+		ID:           id,
+		RootPath:     rootPath,
+		DataPath:     filepath.Join(dataRoot(), "workspaces", id),
+		DatabasePath: filepath.Join(dataRoot(), "db.sqlite"),
 	}
 }
 
