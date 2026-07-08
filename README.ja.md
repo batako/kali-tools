@@ -134,6 +134,26 @@ dist/<package>_<version>_<architecture>.deb
 - バージョンは `debian/<package>/VERSION` から読み込みます
 - `./scripts/check-version.sh ctx` で `debian/ctx/VERSION` と `internal/ctx.Version` の一致を確認します
 
+## リリースチェック
+
+リリース前は、バージョン、Go module、テスト、Debian パッケージとパッケージ内の実行ファイルをまとめて確認します。さらに実行中の Kali Linux へ `.deb` をAPTインストールし、基本動作、`postinst`、アンインストールを確認してから再インストールします。この確認では `sudo` による管理者権限が必要です。APTインストール後、インストール済みのctxで現在の `.zshrc` または `.bashrc` に対する削除、登録、重複防止、更新、読込を検証します。全項目成功時はctx設定を残し、失敗または中断した場合だけ元の内容と更新日時を復元します。対話端末で成功すると設定読込済みのシェルを起動するため、そのままTab補完などを確認できます。
+
+```sh
+./scripts/check-release.sh ctx
+```
+
+リリース公開後は、`apt.batako.net` の amd64/arm64 用 APT メタデータと `.deb` を確認します。反映待ちを考慮して HTTP 取得は自動で再試行します。公開APTリポジトリからの更新とバージョン指定インストールは、実行後に `TODO` として表示されます。
+
+```sh
+./scripts/check-published.sh ctx
+```
+
+別のリポジトリを確認する場合:
+
+```sh
+APT_REPOSITORY_URL=https://example.net ./scripts/check-published.sh ctx
+```
+
 ## APT リポジトリ生成
 
 `.deb` 生成後に実行します。新しいパッケージを `dist/` から `repo/pool/` へコピーし、既存パッケージは削除しません。その後、`repo/pool/` に保存されているすべての `.deb` から `dpkg-scanpackages --multiversion` でメタデータを再生成します。

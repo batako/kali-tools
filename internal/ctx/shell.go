@@ -208,25 +208,68 @@ _ctx_commands=(
   'doctor:check ctx environment'
 )
 
-_ctx() {
-  local -a commands target_commands host_commands hosts_commands completion_shells
-  commands=(init status target ip host hosts completion init-shell doctor)
-  target_commands=(set add update use rm ls)
-  host_commands=(add rm ls)
-  hosts_commands=(show sync clean)
-  completion_shells=(zsh bash)
+_ctx_target_commands=(
+  'set:create or update the primary target'
+  'add:add a target'
+  'update:update the primary target IP'
+  'use:make a target primary'
+  'rm:remove a target'
+  'ls:list targets'
+)
 
-  if (( CURRENT == 2 )); then
+_ctx_host_commands=(
+  'add:add a hostname'
+  'rm:remove a hostname'
+  'ls:list hostnames'
+)
+
+_ctx_hosts_commands=(
+  'show:show the managed hosts block'
+  'sync:sync the managed block to /etc/hosts'
+  'clean:remove the managed block from /etc/hosts'
+)
+
+_ctx_completion_shells=(
+  'zsh:print zsh completion script'
+  'bash:print bash completion script'
+)
+
+_ctx_options=(
+  '-h:show help'
+  '--help:show help'
+)
+
+_ctx() {
+  local invocation command command_position
+  invocation=${words[1]:t}
+
+  if [[ ${invocation} == ctx ]]; then
+    command=${words[2]}
+    command_position=2
+  else
+    command=${invocation#x}
+    command_position=1
+  fi
+
+  if [[ ${invocation} == ctx && ( -z ${command} || CURRENT == 2 ) ]]; then
     _describe 'ctx command' _ctx_commands
     return
   fi
 
-  case ${words[2]} in
-    target) _describe 'target command' target_commands ;;
-    host) _describe 'host command' host_commands ;;
-    hosts) _describe 'hosts command' hosts_commands ;;
-    completion) _describe 'shell' completion_shells ;;
-    *) _files ;;
+  if (( CURRENT == command_position + 1 )); then
+    case ${command} in
+      target) _describe 'target command' _ctx_target_commands ;;
+      host) _describe 'host command' _ctx_host_commands ;;
+      hosts) _describe 'hosts command' _ctx_hosts_commands ;;
+      completion) _describe 'shell' _ctx_completion_shells ;;
+      *) _describe 'option' _ctx_options ;;
+    esac
+    return
+  fi
+
+  case ${command} in
+    target|host|hosts) _message 'argument' ;;
+    *) _describe 'option' _ctx_options ;;
   esac
 }
 

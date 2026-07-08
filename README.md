@@ -134,6 +134,26 @@ Notes:
 - The package version is read from `debian/<package>/VERSION`.
 - `./scripts/check-version.sh ctx` checks that `debian/ctx/VERSION` matches `internal/ctx.Version`.
 
+## Release Checks
+
+Before a release, run the combined version, Go module, test, Debian package, and packaged executable checks. The script APT-installs the `.deb` on the current Kali Linux system, checks basic operation, `postinst`, and removal, then reinstalls it. After installation, the installed ctx tests the current `.zshrc` or `.bashrc` for removal, registration, idempotency, updates, and loading. This requires administrator privileges through `sudo`. A fully successful check leaves the ctx configuration in place; failures and interruptions restore the original contents and modification time. When run from a terminal, success starts a shell with the updated configuration loaded so interactive checks can begin immediately:
+
+```sh
+./scripts/check-release.sh ctx
+```
+
+After publishing, verify the amd64/arm64 APT metadata and `.deb` files on `apt.batako.net`. HTTP requests are retried to allow for propagation delays. Updating from the public APT repository and installing a specific version are printed as `TODO` items.
+
+```sh
+./scripts/check-published.sh ctx
+```
+
+To check another repository:
+
+```sh
+APT_REPOSITORY_URL=https://example.net ./scripts/check-published.sh ctx
+```
+
 ## Building the APT Repository
 
 Run this after building the Debian package. The script copies new packages from `dist/` into `repo/pool/` without deleting existing packages, then regenerates metadata from every `.deb` stored in `repo/pool/` using `dpkg-scanpackages --multiversion`.

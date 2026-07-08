@@ -22,6 +22,29 @@ func TestCompletionScriptIncludesXCommandFunctions(t *testing.T) {
 	}
 }
 
+func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.T) {
+	script, err := CompletionScript("zsh")
+	if err != nil {
+		t.Fatalf("CompletionScript(zsh) error = %v", err)
+	}
+
+	for _, want := range []string{
+		"'set:create or update the primary target'",
+		"'add:add a hostname'",
+		"'sync:sync the managed block to /etc/hosts'",
+		"'zsh:print zsh completion script'",
+		"invocation=${words[1]:t}",
+		"command=${invocation#x}",
+		"-z ${command} || CURRENT == 2",
+		"CURRENT == command_position + 1",
+		"_describe 'target command' _ctx_target_commands",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("CompletionScript(zsh) missing %q", want)
+		}
+	}
+}
+
 func TestInitShellWritesAndRemovesMarkedBlock(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
