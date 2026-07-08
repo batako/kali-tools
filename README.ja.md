@@ -13,12 +13,25 @@ Kali Linux 向けの自作 CLI ツールを管理するリポジトリです。
 req <REQ_FILE>
 req -S <REQ_FILE>
 req --help
+req --version
+req -V
 ```
 
 オプション:
 
 - `-S`, `--https`: リクエストファイルからスキームを決められないときに `https` を強制する
 - `-h`, `--help`: ヘルプを表示する
+- `-V`, `--version`: バージョンを表示する
+
+## ctx の使い方
+
+```sh
+ctx init
+ctx status
+ctx --help
+ctx --version
+ctx -V
+```
 
 ## ディレクトリ構成
 

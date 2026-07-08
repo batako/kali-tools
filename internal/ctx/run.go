@@ -9,6 +9,8 @@ import (
 )
 
 var (
+	Version = "0.1.0"
+
 	hostsFilePath                = "/etc/hosts"
 	syncHostsFileFunc            = SyncHostsFile
 	reexecHostsSyncWithSudoFunc  = reexecHostsSyncWithSudo
@@ -29,7 +31,8 @@ commands:
   hosts    show, sync, or clean /etc/hosts entries
 
 options:
-  -h, --help  show this help
+  -h, --help     show this help
+  -V, --version  show version
 
 Run ctx <command> -h for command-specific help.`
 
@@ -139,6 +142,9 @@ func Run(args []string, stdout io.Writer) error {
 		return runHosts(args[2:], stdout)
 	case "-h", "--help":
 		_, err := fmt.Fprintln(stdout, usageText)
+		return err
+	case "-V", "--version":
+		_, err := fmt.Fprintf(stdout, "ctx %s\n", Version)
 		return err
 	default:
 		return fmt.Errorf("unknown ctx command: %s", args[1])

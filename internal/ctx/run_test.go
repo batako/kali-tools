@@ -21,6 +21,9 @@ func TestRunTopLevelHelp(t *testing.T) {
 		if !strings.Contains(got, "-h, --help") {
 			t.Fatalf("help output = %q, want -h/--help option", got)
 		}
+		if !strings.Contains(got, "-V, --version") {
+			t.Fatalf("help output = %q, want -V/--version option", got)
+		}
 		if !strings.Contains(got, "Run ctx <command> -h for command-specific help.") {
 			t.Fatalf("help output = %q, want command-specific help hint", got)
 		}
@@ -31,6 +34,22 @@ func TestRunTopLevelHelp(t *testing.T) {
 		}
 		if strings.Contains(got, "  help") {
 			t.Fatalf("help output = %q, should not list ctx help command", got)
+		}
+	}
+}
+
+func TestRunVersion(t *testing.T) {
+	oldVersion := Version
+	Version = "1.2.3"
+	t.Cleanup(func() { Version = oldVersion })
+
+	for _, arg := range []string{"-V", "--version"} {
+		var out bytes.Buffer
+		if err := Run([]string{"ctx", arg}, &out); err != nil {
+			t.Fatalf("Run(ctx %s) error = %v", arg, err)
+		}
+		if got, want := out.String(), "ctx 1.2.3\n"; got != want {
+			t.Fatalf("version output = %q, want %q", got, want)
 		}
 	}
 }

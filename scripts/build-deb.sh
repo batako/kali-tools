@@ -65,7 +65,10 @@ sed \
   -e "s/@ARCH@/${ARCH}/" \
   "debian/${PACKAGE_NAME}/control" > "${PKG_ROOT}/DEBIAN/control"
 
-CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build -o "${PKG_ROOT}/usr/local/bin/${PACKAGE_NAME}" "./cmd/${PACKAGE_NAME}"
+CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build \
+  -ldflags "-X req/internal/${PACKAGE_NAME}.Version=${VERSION}" \
+  -o "${PKG_ROOT}/usr/local/bin/${PACKAGE_NAME}" \
+  "./cmd/${PACKAGE_NAME}"
 chmod 0755 "${PKG_ROOT}/usr/local/bin/${PACKAGE_NAME}"
 
 dpkg-deb --root-owner-group --build "${PKG_ROOT}" "${OUTPUT_DEB}"

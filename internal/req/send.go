@@ -8,7 +8,9 @@ import (
 	"net/http"
 )
 
-const usageText = "usage: req [-S|--https] <REQ_FILE>\n\noptions:\n  -S, --https  force https when the request file does not imply a scheme\n  -h, --help   show this help"
+var Version = "dev"
+
+const usageText = "usage: req [-S|--https] <REQ_FILE>\n\noptions:\n  -S, --https  force https when the request file does not imply a scheme\n  -h, --help   show this help\n  -V, --version  show version"
 
 func Run(args []string, stdout io.Writer) error {
 	forceHTTPS := false
@@ -20,6 +22,9 @@ func Run(args []string, stdout io.Writer) error {
 			forceHTTPS = true
 		case "-h", "--help":
 			_, err := fmt.Fprintln(stdout, usageText)
+			return err
+		case "-V", "--version":
+			_, err := fmt.Fprintf(stdout, "req %s\n", Version)
 			return err
 		default:
 			if reqFile != "" {

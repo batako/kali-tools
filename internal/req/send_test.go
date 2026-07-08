@@ -142,6 +142,23 @@ func TestRunReturnsUsageErrorWhenArgumentMissing(t *testing.T) {
 	}
 }
 
+func TestRunWritesVersion(t *testing.T) {
+	oldVersion := Version
+	Version = "2.3.4"
+	t.Cleanup(func() { Version = oldVersion })
+
+	var stdout bytes.Buffer
+	for _, arg := range []string{"-V", "--version"} {
+		stdout.Reset()
+		if err := Run([]string{"req", arg}, &stdout); err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		if got, want := stdout.String(), "req 2.3.4\n"; got != want {
+			t.Fatalf("version output = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestRunWritesHelp(t *testing.T) {
 	t.Parallel()
 
@@ -159,6 +176,9 @@ func TestRunWritesHelp(t *testing.T) {
 	}
 	if !strings.Contains(output, "-h, --help") {
 		t.Fatalf("help output missing help description: %q", output)
+	}
+	if !strings.Contains(output, "-V, --version") {
+		t.Fatalf("help output missing version description: %q", output)
 	}
 }
 

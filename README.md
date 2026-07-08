@@ -13,12 +13,25 @@ This repository contains self-made CLI tools for Kali Linux.
 req <REQ_FILE>
 req -S <REQ_FILE>
 req --help
+req --version
+req -V
 ```
 
 Options:
 
 - `-S`, `--https`: Force `https` when the request file does not imply a scheme
 - `-h`, `--help`: Show help
+- `-V`, `--version`: Show version
+
+## ctx Usage
+
+```sh
+ctx init
+ctx status
+ctx --help
+ctx --version
+ctx -V
+```
 
 ## Directory Structure
 
