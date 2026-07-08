@@ -5,21 +5,38 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+)
+
+var (
+	hostsFilePath                = "/etc/hosts"
+	syncHostsFileFunc            = SyncHostsFile
+	reexecHostsSyncWithSudoFunc  = reexecHostsSyncWithSudo
+	cleanHostsFileFunc           = CleanHostsFile
+	reexecHostsCleanWithSudoFunc = reexecHostsCleanWithSudo
+	executableFunc               = os.Executable
+	execCommandFunc              = exec.Command
 )
 
 const usageText = `usage: ctx <command>
 
 commands:
-  init                 create a ctx workspace in the current directory
-  status               show the current ctx workspace
-  target set <ip>      create or update the primary target
-  target add <ip>      add a target
-  target update <ip>   update the current primary target IP
-  target use <name>    make a target primary
-  target rm <name>     remove a target
-  target ls            list targets
-  ip [ip]              show or update the primary target IP
-  help                 show this help`
+  init                       create a ctx workspace in the current directory
+  status                     show the current ctx workspace
+  target set <ip>            create or update the primary target
+  target add <ip>            add a target
+  target update <ip>         update the current primary target IP
+  target use <name>          make a target primary
+  target rm <name>           remove a target
+  target ls                  list targets
+  ip [ip]                    show or update the primary target IP
+  host add <hostname>        add a host to the primary target
+  host rm <hostname>         remove a host
+  host ls                    list hosts
+  hosts show                 show the managed hosts block
+  hosts sync                 sync the managed block to /etc/hosts
+  hosts clean                remove the managed block from /etc/hosts
+  help                       show this help`
 
 func Run(args []string, stdout io.Writer) error {
 	if len(args) < 2 {
@@ -59,6 +76,10 @@ func Run(args []string, stdout io.Writer) error {
 		return runTarget(args[2:], stdout)
 	case "ip":
 		return runIP(args[2:], stdout)
+	case "host":
+		return runHost(args[2:], stdout)
+	case "hosts":
+		return runHosts(args[2:], stdout)
 	case "help", "-h", "--help":
 		_, err := fmt.Fprintln(stdout, usageText)
 		return err
@@ -175,6 +196,124 @@ func runIP(args []string, stdout io.Writer) error {
 	}
 }
 
+func runHost(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("usage: ctx host <add|rm|ls>")
+	}
+
+	workspace, err := currentWorkspace()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "add":
+		hostname, targetName, err := parseHostAddArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		host, err := AddHost(workspace, hostname, targetName)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "%s %s %s\n", host.Hostname, host.TargetName, host.TargetIP)
+		return err
+	case "rm":
+		if len(args) != 2 {
+			return errors.New("usage: ctx host rm <hostname>")
+		}
+		if err := RemoveHost(workspace, args[1]); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "removed host: %s\n", args[1])
+		return err
+	case "ls":
+		if len(args) != 1 {
+			return errors.New("usage: ctx host ls")
+		}
+		hosts, err := ListHosts(workspace)
+		if err != nil {
+			return err
+		}
+		if len(hosts) == 0 {
+			_, err = fmt.Fprintln(stdout, "no hosts")
+			return err
+		}
+		for _, host := range hosts {
+			if _, err := fmt.Fprintf(stdout, "%s %s %s\n", host.Hostname, host.TargetName, host.TargetIP); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown ctx host command: %s", args[0])
+	}
+}
+
+func runHosts(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("usage: ctx hosts <show|sync|clean>")
+	}
+
+	workspace, err := currentWorkspace()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "show":
+		if len(args) != 1 {
+			return errors.New("usage: ctx hosts show")
+		}
+		block, err := RenderHostsBlock(workspace)
+		if err != nil {
+			return err
+		}
+		_, err = io.WriteString(stdout, block)
+		return err
+	case "sync":
+		internal, err := parseHostsSyncArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		if err := syncHostsFileFunc(workspace, hostsFilePath); err != nil {
+			if !internal && errors.Is(err, os.ErrPermission) {
+				if _, writeErr := fmt.Fprintln(stdout, "Need administrator privileges to update /etc/hosts."); writeErr != nil {
+					return writeErr
+				}
+				if _, writeErr := fmt.Fprintln(stdout, "Re-running hosts sync with sudo..."); writeErr != nil {
+					return writeErr
+				}
+				return reexecHostsSyncWithSudoFunc(stdout)
+			}
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, "synced hosts")
+		return err
+	case "clean":
+		internal, err := parseHostsCleanArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		if err := cleanHostsFileFunc(workspace, hostsFilePath); err != nil {
+			if !internal && errors.Is(err, os.ErrPermission) {
+				if _, writeErr := fmt.Fprintln(stdout, "Need administrator privileges to update /etc/hosts."); writeErr != nil {
+					return writeErr
+				}
+				if _, writeErr := fmt.Fprintln(stdout, "Re-running hosts clean with sudo..."); writeErr != nil {
+					return writeErr
+				}
+				return reexecHostsCleanWithSudoFunc(stdout)
+			}
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, "cleaned hosts")
+		return err
+	default:
+		return fmt.Errorf("unknown ctx hosts command: %s", args[0])
+	}
+}
+
 func currentWorkspace() (*Workspace, error) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -204,4 +343,97 @@ func parseTargetAddArgs(args []string) (string, string, error) {
 	}
 
 	return ip, name, nil
+}
+
+func parseHostAddArgs(args []string) (string, string, error) {
+	if len(args) < 1 {
+		return "", "", errors.New("usage: ctx host add <hostname> [--target <name>]")
+	}
+
+	hostname := args[0]
+	var targetName string
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--target":
+			if i+1 >= len(args) {
+				return "", "", errors.New("usage: ctx host add <hostname> [--target <name>]")
+			}
+			targetName = args[i+1]
+			i++
+		default:
+			return "", "", fmt.Errorf("unknown ctx host add option: %s", args[i])
+		}
+	}
+
+	return hostname, targetName, nil
+}
+
+func parseHostsSyncArgs(args []string) (bool, error) {
+	switch len(args) {
+	case 0:
+		return false, nil
+	case 1:
+		if args[0] == "--internal" {
+			return true, nil
+		}
+	}
+	return false, errors.New("usage: ctx hosts sync [--internal]")
+}
+
+func reexecHostsSyncWithSudo(stdout io.Writer) error {
+	executable, err := executableFunc()
+	if err != nil {
+		return fmt.Errorf("failed to locate ctx executable: %w", err)
+	}
+
+	args := []string{"env", "CTX_HOME=" + dataRoot()}
+	args = append(args, executable, "hosts", "sync", "--internal")
+
+	cmd := execCommandFunc("sudo", args...)
+	if wd, err := os.Getwd(); err == nil {
+		cmd.Dir = wd
+	}
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("sudo hosts sync failed: %w", err)
+	}
+	return nil
+}
+
+func parseHostsCleanArgs(args []string) (bool, error) {
+	switch len(args) {
+	case 0:
+		return false, nil
+	case 1:
+		if args[0] == "--internal" {
+			return true, nil
+		}
+	}
+	return false, errors.New("usage: ctx hosts clean [--internal]")
+}
+
+func reexecHostsCleanWithSudo(stdout io.Writer) error {
+	executable, err := executableFunc()
+	if err != nil {
+		return fmt.Errorf("failed to locate ctx executable: %w", err)
+	}
+
+	args := []string{"env", "CTX_HOME=" + dataRoot()}
+	args = append(args, executable, "hosts", "clean", "--internal")
+
+	cmd := execCommandFunc("sudo", args...)
+	if wd, err := os.Getwd(); err == nil {
+		cmd.Dir = wd
+	}
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("sudo hosts clean failed: %w", err)
+	}
+	return nil
 }
