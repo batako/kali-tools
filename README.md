@@ -5,6 +5,7 @@ This repository contains self-made CLI tools for Kali Linux.
 ## Current Tool
 
 - `req`: A CLI tool for sending raw HTTP requests stored in `.req` files.
+- `ctx`: A CLI tool for managing workspace context for targets and hosts.
 
 ## req Usage
 
@@ -24,6 +25,7 @@ Options:
 - `cmd/req/`: Entry point for the `req` command
 - `internal/req/`: Implementation and tests for `req`
 - `debian/req/`: Debian packaging files for `req`
+- `debian/ctx/`: Debian packaging files for `ctx`
 - `scripts/`: Build and publishing scripts
 - `.github/workflows/`: GitHub Actions workflows
 
@@ -62,8 +64,10 @@ Runs only when `main` is updated and executes the following steps:
 go mod tidy
 git diff --exit-code
 go test ./...
-./scripts/build-deb.sh amd64
-./scripts/build-deb.sh arm64
+./scripts/build-deb.sh req amd64
+./scripts/build-deb.sh req arm64
+./scripts/build-deb.sh ctx amd64
+./scripts/build-deb.sh ctx arm64
 ./scripts/build-apt-repo.sh
 Force-push to the apt-repo branch
 ```
@@ -74,26 +78,30 @@ If any test or the `go mod tidy` check fails, the repository is not published.
 
 ```sh
 ./scripts/build-deb.sh
+./scripts/build-deb.sh ctx
 ```
 
-You can also specify the target architecture explicitly:
+You can also specify the package and target architecture explicitly:
 
 ```sh
-./scripts/build-deb.sh amd64
-./scripts/build-deb.sh arm64
+./scripts/build-deb.sh req amd64
+./scripts/build-deb.sh req arm64
+./scripts/build-deb.sh ctx amd64
+./scripts/build-deb.sh ctx arm64
 ```
 
 Output:
 
 ```text
-dist/req_<version>_<architecture>.deb
+dist/<package>_<version>_<architecture>.deb
 ```
 
 Notes:
 
 - If no argument is given, the target architecture is detected using `dpkg --print-architecture`.
 - The corresponding Go `GOARCH` value is derived from the Debian architecture.
-- The package version is read from `debian/req/VERSION`.
+- The package defaults to `req` when omitted.
+- The package version is read from `debian/<package>/VERSION`.
 
 ## Building the APT Repository
 
@@ -114,6 +122,8 @@ repo/dists/stable/main/binary-arm64/Packages
 repo/dists/stable/main/binary-arm64/Packages.gz
 repo/pool/main/r/req/req_<version>_amd64.deb
 repo/pool/main/r/req/req_<version>_arm64.deb
+repo/pool/main/c/ctx/ctx_<version>_amd64.deb
+repo/pool/main/c/ctx/ctx_<version>_arm64.deb
 ```
 
 ## Using the APT Repository
@@ -135,6 +145,7 @@ Install the package:
 
 ```sh
 sudo apt install req
+sudo apt install ctx
 ```
 
 To remove the repository:

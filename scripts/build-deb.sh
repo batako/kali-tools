@@ -3,8 +3,18 @@
 set -eu
 
 PACKAGE_NAME="req"
-VERSION="$(cat debian/req/VERSION)"
+
+if [ "$#" -gt 0 ]; then
+  case "$1" in
+    req|ctx)
+      PACKAGE_NAME="$1"
+      shift
+      ;;
+  esac
+fi
+
 ARCH="${1:-$(dpkg --print-architecture)}"
+VERSION="$(cat "debian/${PACKAGE_NAME}/VERSION")"
 GOARCH=""
 OUTPUT_DIR="dist"
 OUTPUT_DEB="${OUTPUT_DIR}/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
@@ -41,6 +51,11 @@ case "${ARCH}" in
     ;;
 esac
 
+if [ ! -d "cmd/${PACKAGE_NAME}" ]; then
+  echo "missing command entrypoint: cmd/${PACKAGE_NAME}" >&2
+  exit 1
+fi
+
 mkdir -p "${PKG_ROOT}/DEBIAN"
 mkdir -p "${PKG_ROOT}/usr/local/bin"
 mkdir -p "${OUTPUT_DIR}"
@@ -48,9 +63,9 @@ mkdir -p "${OUTPUT_DIR}"
 sed \
   -e "s/@VERSION@/${VERSION}/" \
   -e "s/@ARCH@/${ARCH}/" \
-  "debian/req/control" > "${PKG_ROOT}/DEBIAN/control"
+  "debian/${PACKAGE_NAME}/control" > "${PKG_ROOT}/DEBIAN/control"
 
-CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build -o "${PKG_ROOT}/usr/local/bin/${PACKAGE_NAME}" ./cmd/req
+CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build -o "${PKG_ROOT}/usr/local/bin/${PACKAGE_NAME}" "./cmd/${PACKAGE_NAME}"
 chmod 0755 "${PKG_ROOT}/usr/local/bin/${PACKAGE_NAME}"
 
 dpkg-deb --root-owner-group --build "${PKG_ROOT}" "${OUTPUT_DEB}"

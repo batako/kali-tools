@@ -1,0 +1,7 @@
+Package: ctx
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Description: Manage workspace context for targets and hosts

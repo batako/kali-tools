@@ -38,8 +38,10 @@ jobs:
 
       - name: Build Debian packages
         run: |
-          ./scripts/build-deb.sh amd64
-          ./scripts/build-deb.sh arm64
+          ./scripts/build-deb.sh req amd64
+          ./scripts/build-deb.sh req arm64
+          ./scripts/build-deb.sh ctx amd64
+          ./scripts/build-deb.sh ctx arm64
 
       - name: Build APT repository
         run: ./scripts/build-apt-repo.sh

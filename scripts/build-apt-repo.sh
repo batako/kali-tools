@@ -2,10 +2,8 @@
 
 set -eu
 
-PACKAGE_NAME="req"
-VERSION="$(cat debian/req/VERSION)"
 REPO_ROOT="repo"
-POOL_DIR="${REPO_ROOT}/pool/main/r/${PACKAGE_NAME}"
+POOL_ROOT="${REPO_ROOT}/pool/main"
 DISTS_MAIN_DIR="${REPO_ROOT}/dists/stable/main"
 BINARY_ALL_DIR="${DISTS_MAIN_DIR}/binary-all"
 
@@ -16,31 +14,43 @@ require_command() {
   fi
 }
 
+require_command cut
 require_command dpkg-scanpackages
 require_command gzip
 
-set -- dist/${PACKAGE_NAME}_${VERSION}_*.deb
+set -- dist/*.deb
 if [ ! -e "$1" ]; then
-  echo "missing package files: dist/${PACKAGE_NAME}_${VERSION}_*.deb" >&2
+  echo "missing package files: dist/*.deb" >&2
   exit 1
 fi
 
-mkdir -p "${POOL_DIR}"
+mkdir -p "${POOL_ROOT}"
 mkdir -p "${DISTS_MAIN_DIR}"
-find "${POOL_DIR}" -maxdepth 1 -type f -name "${PACKAGE_NAME}_*.deb" -delete
+find "${POOL_ROOT}" -type f -name '*.deb' -delete
 find "${DISTS_MAIN_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'binary-*' -exec rm -rf {} +
 mkdir -p "${BINARY_ALL_DIR}"
 : > "${BINARY_ALL_DIR}/Packages"
 gzip -kf "${BINARY_ALL_DIR}/Packages"
 
-for deb_path in dist/${PACKAGE_NAME}_${VERSION}_*.deb; do
+for deb_path in dist/*.deb; do
   deb_file="$(basename "${deb_path}")"
+  package_name="${deb_file%%_*}"
+  package_prefix="$(printf '%s' "${package_name}" | cut -c 1)"
   arch="${deb_file##*_}"
   arch="${arch%.deb}"
+  pool_dir="${POOL_ROOT}/${package_prefix}/${package_name}"
   binary_dir="${REPO_ROOT}/dists/stable/main/binary-${arch}"
 
+  mkdir -p "${pool_dir}"
   mkdir -p "${binary_dir}"
-  cp "${deb_path}" "${POOL_DIR}/"
+  cp "${deb_path}" "${pool_dir}/"
+done
+
+for binary_dir in "${DISTS_MAIN_DIR}"/binary-*; do
+  arch="${binary_dir##*-}"
+  if [ "${arch}" = "all" ]; then
+    continue
+  fi
 
   (
     cd "${REPO_ROOT}"

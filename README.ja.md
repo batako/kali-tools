@@ -5,6 +5,7 @@ Kali Linux 向けの自作 CLI ツールを管理するリポジトリです。
 ## 現在のツール
 
 - `req`: `.req` ファイルとして保存した生 HTTP リクエストを送信する CLI
+- `ctx`: ターゲットと hosts のワークスペースコンテキストを管理する CLI
 
 ## req の使い方
 
@@ -24,6 +25,7 @@ req --help
 - `cmd/req/`: `req` のエントリポイント
 - `internal/req/`: `req` の実装とテスト
 - `debian/req/`: `req` の Debian パッケージ定義
+- `debian/ctx/`: `ctx` の Debian パッケージ定義
 - `scripts/`: ビルドと公開用スクリプト
 - `.github/workflows/`: GitHub Actions
 
@@ -62,7 +64,10 @@ go test ./...
 go mod tidy
 git diff --exit-code
 go test ./...
-./scripts/build-deb.sh
+./scripts/build-deb.sh req amd64
+./scripts/build-deb.sh req arm64
+./scripts/build-deb.sh ctx amd64
+./scripts/build-deb.sh ctx arm64
 ./scripts/build-apt-repo.sh
 apt-repo ブランチへ force push
 ```
@@ -73,19 +78,30 @@ apt-repo ブランチへ force push
 
 ```sh
 ./scripts/build-deb.sh
+./scripts/build-deb.sh ctx
+```
+
+パッケージ名とアーキテクチャを明示することもできます。
+
+```sh
+./scripts/build-deb.sh req amd64
+./scripts/build-deb.sh req arm64
+./scripts/build-deb.sh ctx amd64
+./scripts/build-deb.sh ctx arm64
 ```
 
 生成物:
 
 ```text
-dist/req_<version>_<architecture>.deb
+dist/<package>_<version>_<architecture>.deb
 ```
 
 補足:
 
 - アーキテクチャは `dpkg --print-architecture` で取得します
 - Go の `GOARCH` は Debian アーキテクチャに合わせて変換します
-- バージョンは `debian/req/VERSION` から読み込みます
+- パッケージを省略した場合は `req` を生成します
+- バージョンは `debian/<package>/VERSION` から読み込みます
 
 ## APT リポジトリ生成
 
@@ -106,6 +122,8 @@ repo/dists/stable/main/binary-arm64/Packages
 repo/dists/stable/main/binary-arm64/Packages.gz
 repo/pool/main/r/req/req_<version>_amd64.deb
 repo/pool/main/r/req/req_<version>_arm64.deb
+repo/pool/main/c/ctx/ctx_<version>_amd64.deb
+repo/pool/main/c/ctx/ctx_<version>_arm64.deb
 ```
 
 ## APT リポジトリの利用
@@ -123,10 +141,11 @@ echo "deb [trusted=yes] https://apt.batako.net stable main" \
 sudo apt update
 ```
 
-`req` をインストールします。
+`req` または `ctx` をインストールします。
 
 ```sh
 sudo apt install req
+sudo apt install ctx
 ```
 
 リポジトリを削除する場合:
