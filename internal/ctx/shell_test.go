@@ -8,18 +8,49 @@ import (
 	"testing"
 )
 
-func TestCompletionScriptIncludesXCommandFunctions(t *testing.T) {
+func TestCompletionScriptsIncludeXFunctionForEveryCommand(t *testing.T) {
+	commands := topLevelCommandsFromUsage(t)
+
 	for _, shell := range []string{"zsh", "bash"} {
 		script, err := CompletionScript(shell)
 		if err != nil {
 			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
 		}
-		for _, want := range []string{"xinit", "xstatus", "xtarget", "xhosts", "xdoctor", "xinit-shell"} {
+
+		for _, command := range commands {
+			want := "x" + command + `() { ctx ` + command + ` "$@"`
 			if !strings.Contains(script, want) {
-				t.Fatalf("CompletionScript(%s) missing %q in %q", shell, want, script)
+				t.Errorf("CompletionScript(%s) missing function for %q", shell, command)
 			}
 		}
 	}
+}
+
+func topLevelCommandsFromUsage(t *testing.T) []string {
+	t.Helper()
+
+	var commands []string
+	inCommands := false
+	for _, line := range strings.Split(usageText, "\n") {
+		switch strings.TrimSpace(line) {
+		case "commands:":
+			inCommands = true
+			continue
+		case "options:":
+			inCommands = false
+		}
+		if !inCommands {
+			continue
+		}
+		if fields := strings.Fields(line); len(fields) > 0 {
+			commands = append(commands, fields[0])
+		}
+	}
+
+	if len(commands) == 0 {
+		t.Fatal("usageText contains no top-level commands")
+	}
+	return commands
 }
 
 func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.T) {
