@@ -1,0 +1,145 @@
+package ctx
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+const MarkerFile = ".ctx"
+
+type Workspace struct {
+	ID       string
+	RootPath string
+	DataPath string
+}
+
+func InitWorkspace(rootPath string) (*Workspace, error) {
+	rootPath, err := filepath.Abs(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve workspace root: %w", err)
+	}
+
+	markerPath := filepath.Join(rootPath, MarkerFile)
+	if existingID, err := readWorkspaceID(markerPath); err == nil {
+		workspace := workspaceFromID(existingID, rootPath)
+		if err := ensureWorkspaceDirs(workspace.DataPath); err != nil {
+			return nil, err
+		}
+		return workspace, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+
+	id, err := newWorkspaceID()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := os.WriteFile(markerPath, []byte(id+"\n"), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write %s: %w", markerPath, err)
+	}
+
+	workspace := workspaceFromID(id, rootPath)
+	if err := ensureWorkspaceDirs(workspace.DataPath); err != nil {
+		return nil, err
+	}
+
+	return workspace, nil
+}
+
+func FindWorkspace(startPath string) (*Workspace, error) {
+	current, err := filepath.Abs(startPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve start path: %w", err)
+	}
+
+	info, err := os.Stat(current)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat %s: %w", current, err)
+	}
+	if !info.IsDir() {
+		current = filepath.Dir(current)
+	}
+
+	for {
+		markerPath := filepath.Join(current, MarkerFile)
+		id, err := readWorkspaceID(markerPath)
+		if err == nil {
+			return workspaceFromID(id, current), nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return nil, errors.New("ctx workspace not found (run ctx init)")
+		}
+		current = parent
+	}
+}
+
+func readWorkspaceID(markerPath string) (string, error) {
+	content, err := os.ReadFile(markerPath)
+	if err != nil {
+		return "", err
+	}
+
+	id := strings.TrimSpace(string(content))
+	if id == "" {
+		return "", fmt.Errorf("invalid ctx marker %s: empty workspace id", markerPath)
+	}
+	if strings.ContainsAny(id, `/\`) {
+		return "", fmt.Errorf("invalid ctx marker %s: workspace id must not contain path separators", markerPath)
+	}
+
+	return id, nil
+}
+
+func workspaceFromID(id, rootPath string) *Workspace {
+	return &Workspace{
+		ID:       id,
+		RootPath: rootPath,
+		DataPath: filepath.Join(dataRoot(), "workspaces", id),
+	}
+}
+
+func ensureWorkspaceDirs(dataPath string) error {
+	for _, dir := range []string{
+		dataRoot(),
+		dataPath,
+		filepath.Join(dataPath, "logs"),
+		filepath.Join(dataPath, "files"),
+		filepath.Join(dataPath, "scans"),
+	} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create %s: %w", dir, err)
+		}
+	}
+	return nil
+}
+
+func dataRoot() string {
+	if value := os.Getenv("CTX_HOME"); value != "" {
+		return value
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".ctx"
+	}
+	return filepath.Join(home, ".ctx")
+}
+
+func newWorkspaceID() (string, error) {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("failed to generate workspace id: %w", err)
+	}
+	return "ctx-" + hex.EncodeToString(raw[:]), nil
+}
