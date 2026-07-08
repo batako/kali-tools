@@ -65,6 +65,13 @@ sed \
   -e "s/@ARCH@/${ARCH}/" \
   "debian/${PACKAGE_NAME}/control" > "${PKG_ROOT}/DEBIAN/control"
 
+for script in postinst prerm postrm preinst; do
+  if [ -f "debian/${PACKAGE_NAME}/${script}" ]; then
+    cp "debian/${PACKAGE_NAME}/${script}" "${PKG_ROOT}/DEBIAN/${script}"
+    chmod 0755 "${PKG_ROOT}/DEBIAN/${script}"
+  fi
+done
+
 CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build \
   -ldflags "-X req/internal/${PACKAGE_NAME}.Version=${VERSION}" \
   -o "${PKG_ROOT}/usr/local/bin/${PACKAGE_NAME}" \

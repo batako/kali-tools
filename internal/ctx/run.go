@@ -29,6 +29,9 @@ commands:
   ip       show or update the primary target IP
   host     manage hostnames
   hosts    show, sync, or clean /etc/hosts entries
+  completion  print shell completion script
+  init-shell  configure shell integration
+  doctor   check ctx environment
 
 options:
   -h, --help     show this help
@@ -80,6 +83,28 @@ commands:
 options:
   -h, --help                       show this help`
 
+const completionUsageText = `usage: ctx completion <zsh|bash> [options]
+
+Print shell completion script to stdout.
+
+options:
+  -h, --help  show this help`
+
+const initShellUsageText = `usage: ctx init-shell [--remove] [options]
+
+Configure ctx shell integration for the current shell.
+
+options:
+  --remove    remove ctx shell integration
+  -h, --help  show this help`
+
+const doctorUsageText = `usage: ctx doctor [options]
+
+Check ctx environment.
+
+options:
+  -h, --help  show this help`
+
 const hostsUsageText = `usage: ctx hosts <command> [options]
 
 commands:
@@ -130,8 +155,10 @@ func Run(args []string, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintf(stdout, "workspace: %s\nname: %s\nroot: %s\ndata: %s\ndatabase: %s\n", record.ID, record.Name, record.RootPath, workspace.DataPath, workspace.DatabasePath)
-		return err
+		if _, err = fmt.Fprintf(stdout, "workspace: %s\nname: %s\nroot: %s\ndata: %s\ndatabase: %s\n", record.ID, record.Name, record.RootPath, workspace.DataPath, workspace.DatabasePath); err != nil {
+			return err
+		}
+		return writeExecutableInfo(stdout)
 	case "target":
 		return runTarget(args[2:], stdout)
 	case "ip":
@@ -140,6 +167,12 @@ func Run(args []string, stdout io.Writer) error {
 		return runHost(args[2:], stdout)
 	case "hosts":
 		return runHosts(args[2:], stdout)
+	case "completion":
+		return runCompletion(args[2:], stdout)
+	case "init-shell":
+		return runInitShell(args[2:], stdout)
+	case "doctor":
+		return runDoctor(args[2:], stdout)
 	case "-h", "--help":
 		_, err := fmt.Fprintln(stdout, usageText)
 		return err
@@ -395,6 +428,142 @@ func runHosts(args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown ctx hosts command: %s", args[0])
 	}
+}
+
+func runCompletion(args []string, stdout io.Writer) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, completionUsageText)
+		return err
+	}
+	if len(args) != 1 {
+		return errors.New("usage: ctx completion <zsh|bash>")
+	}
+	script, err := CompletionScript(args[0])
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(stdout, script)
+	return err
+}
+
+func runInitShell(args []string, stdout io.Writer) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, initShellUsageText)
+		return err
+	}
+	remove := false
+	switch len(args) {
+	case 0:
+	case 1:
+		if args[0] != "--remove" {
+			return errors.New("usage: ctx init-shell [--remove]")
+		}
+		remove = true
+	default:
+		return errors.New("usage: ctx init-shell [--remove]")
+	}
+
+	if remove {
+		config, changed, err := RemoveShellConfig()
+		if err != nil {
+			return err
+		}
+		if changed {
+			_, err = fmt.Fprintf(stdout, "removed ctx shell integration from %s\n", config.Path)
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "ctx shell integration not found in %s\n", config.Path)
+		return err
+	}
+
+	config, changed, err := InstallShellConfig()
+	if err != nil {
+		return err
+	}
+	if changed {
+		_, err = fmt.Fprintf(stdout, "configured ctx shell integration for %s in %s\n", config.Shell, config.Path)
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "ctx shell integration already configured in %s\n", config.Path)
+	return err
+}
+
+func runDoctor(args []string, stdout io.Writer) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, doctorUsageText)
+		return err
+	}
+	if len(args) != 0 {
+		return errors.New("usage: ctx doctor")
+	}
+
+	if _, err := fmt.Fprintf(stdout, "ctx: %s\n", Version); err != nil {
+		return err
+	}
+	if err := writeExecutableInfo(stdout); err != nil {
+		return err
+	}
+
+	config, shellErr := DetectShell()
+	if shellErr != nil {
+		if _, err := fmt.Fprintf(stdout, "shell: error (%v)\n", shellErr); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(stdout, "fix: set SHELL to zsh or bash, then run ctx init-shell"); err != nil {
+			return err
+		}
+	} else {
+		configured, err := CompletionConfigured(config)
+		if err != nil {
+			return fmt.Errorf("failed to inspect %s: %w", config.Path, err)
+		}
+		if _, err := fmt.Fprintf(stdout, "shell: %s\nconfig: %s\ncompletion: %t\n", config.Shell, config.Path, configured); err != nil {
+			return err
+		}
+		if !configured {
+			if _, err := fmt.Fprintln(stdout, "fix: run ctx init-shell"); err != nil {
+				return err
+			}
+		}
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+	workspace, err := FindWorkspace(wd)
+	if err != nil {
+		if _, writeErr := fmt.Fprintln(stdout, "workspace: not found"); writeErr != nil {
+			return writeErr
+		}
+		_, writeErr := fmt.Fprintln(stdout, "fix: run ctx init in a workspace directory")
+		return writeErr
+	}
+	_, err = fmt.Fprintf(stdout, "workspace: %s\nworkspace_root: %s\n", workspace.ID, workspace.RootPath)
+	return err
+}
+
+func writeExecutableInfo(stdout io.Writer) error {
+	executable, err := executableFunc()
+	if err != nil {
+		if _, writeErr := fmt.Fprintf(stdout, "executable: error (%v)\n", err); writeErr != nil {
+			return writeErr
+		}
+	} else {
+		if _, writeErr := fmt.Fprintf(stdout, "executable: %s\n", executable); writeErr != nil {
+			return writeErr
+		}
+	}
+	path, err := exec.LookPath("ctx")
+	if err != nil {
+		if _, writeErr := fmt.Fprintln(stdout, "path: ctx not found"); writeErr != nil {
+			return writeErr
+		}
+		_, writeErr := fmt.Fprintln(stdout, "fix: add ctx to PATH")
+		return writeErr
+	}
+	_, err = fmt.Fprintf(stdout, "path: %s\n", path)
+	return err
 }
 
 func currentWorkspace() (*Workspace, error) {

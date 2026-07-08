@@ -1,0 +1,289 @@
+package ctx
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+const (
+	shellBlockStart = "# >>> ctx >>>"
+	shellBlockEnd   = "# <<< ctx <<<"
+)
+
+type ShellConfig struct {
+	Shell string
+	Path  string
+}
+
+var parentProcessNameFunc = parentProcessName
+
+func CompletionScript(shell string) (string, error) {
+	switch shell {
+	case "zsh":
+		return zshCompletionScript, nil
+	case "bash":
+		return bashCompletionScript, nil
+	default:
+		return "", fmt.Errorf("unsupported shell: %s", shell)
+	}
+}
+
+func DetectShell() (ShellConfig, error) {
+	rawShell := os.Getenv("SHELL")
+	shell := normalizeShellName(rawShell)
+	if shell == "" || !isSupportedShell(shell) {
+		if parentName, err := parentProcessNameFunc(); err == nil {
+			if parentShell := normalizeShellName(parentName); isSupportedShell(parentShell) {
+				shell = parentShell
+			}
+		}
+	}
+
+	if shell == "" {
+		return ShellConfig{}, errors.New("failed to detect shell: SHELL is not set")
+	}
+	if !isSupportedShell(shell) {
+		return ShellConfig{}, fmt.Errorf("unsupported shell: %s", normalizeShellName(rawShell))
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ShellConfig{}, fmt.Errorf("failed to locate home directory: %w", err)
+	}
+	name := "." + shell + "rc"
+	return ShellConfig{Shell: shell, Path: filepath.Join(home, name)}, nil
+}
+
+func normalizeShellName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if fields := strings.Fields(value); len(fields) > 0 {
+		value = fields[0]
+	}
+	return strings.TrimPrefix(filepath.Base(value), "-")
+}
+
+func isSupportedShell(shell string) bool {
+	return shell == "zsh" || shell == "bash"
+}
+
+func parentProcessName() (string, error) {
+	output, err := exec.Command("ps", "-p", strconv.Itoa(os.Getppid()), "-o", "comm=").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func InstallShellConfig() (ShellConfig, bool, error) {
+	config, err := DetectShell()
+	if err != nil {
+		return ShellConfig{}, false, err
+	}
+
+	content, err := os.ReadFile(config.Path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ShellConfig{}, false, fmt.Errorf("failed to read %s: %w", config.Path, err)
+	}
+
+	text := string(content)
+	block := shellBlock(config.Shell)
+	updated, changed := upsertMarkedBlock(text, block)
+	if !changed {
+		return config, false, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(config.Path), 0755); err != nil {
+		return ShellConfig{}, false, fmt.Errorf("failed to create %s: %w", filepath.Dir(config.Path), err)
+	}
+	if err := os.WriteFile(config.Path, []byte(updated), 0644); err != nil {
+		return ShellConfig{}, false, fmt.Errorf("failed to write %s: %w", config.Path, err)
+	}
+
+	return config, true, nil
+}
+
+func RemoveShellConfig() (ShellConfig, bool, error) {
+	config, err := DetectShell()
+	if err != nil {
+		return ShellConfig{}, false, err
+	}
+
+	content, err := os.ReadFile(config.Path)
+	if errors.Is(err, os.ErrNotExist) {
+		return config, false, nil
+	}
+	if err != nil {
+		return ShellConfig{}, false, fmt.Errorf("failed to read %s: %w", config.Path, err)
+	}
+
+	updated, changed := removeMarkedBlock(string(content))
+	if !changed {
+		return config, false, nil
+	}
+	if err := os.WriteFile(config.Path, []byte(updated), 0644); err != nil {
+		return ShellConfig{}, false, fmt.Errorf("failed to write %s: %w", config.Path, err)
+	}
+	return config, true, nil
+}
+
+func CompletionConfigured(config ShellConfig) (bool, error) {
+	content, err := os.ReadFile(config.Path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(string(content), shellBlockStart) && strings.Contains(string(content), shellBlockEnd), nil
+}
+
+func shellBlock(shell string) string {
+	return shellBlockStart + "\nsource <(ctx completion " + shell + ")\n" + shellBlockEnd + "\n"
+}
+
+func upsertMarkedBlock(text, block string) (string, bool) {
+	start := strings.Index(text, shellBlockStart)
+	if start != -1 {
+		end := strings.Index(text[start:], shellBlockEnd)
+		if end == -1 {
+			return text, false
+		}
+		end = start + end + len(shellBlockEnd)
+		if end < len(text) && text[end] == '\n' {
+			end++
+		}
+		if text[start:end] == block {
+			return text, false
+		}
+		return text[:start] + block + text[end:], true
+	}
+
+	if text != "" && !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	if text != "" && !strings.HasSuffix(text, "\n\n") {
+		text += "\n"
+	}
+	return text + block, true
+}
+
+func removeMarkedBlock(text string) (string, bool) {
+	start := strings.Index(text, shellBlockStart)
+	if start == -1 {
+		return text, false
+	}
+	end := strings.Index(text[start:], shellBlockEnd)
+	if end == -1 {
+		return text, false
+	}
+	end = start + end + len(shellBlockEnd)
+	if end < len(text) && text[end] == '\n' {
+		end++
+	}
+	if start > 0 && text[start-1] == '\n' && end < len(text) && text[end] == '\n' {
+		start--
+	}
+	return text[:start] + text[end:], true
+}
+
+const zshCompletionScript = `#compdef ctx xinit xstatus xtarget xip xhost xhosts xcompletion xdoctor xinit-shell
+
+_ctx_commands=(
+  'init:create a ctx workspace'
+  'status:show the current workspace'
+  'target:manage targets'
+  'ip:show or update the primary target IP'
+  'host:manage hostnames'
+  'hosts:show, sync, or clean /etc/hosts entries'
+  'completion:print shell completion script'
+  'init-shell:configure shell integration'
+  'doctor:check ctx environment'
+)
+
+_ctx() {
+  local -a commands target_commands host_commands hosts_commands completion_shells
+  commands=(init status target ip host hosts completion init-shell doctor)
+  target_commands=(set add update use rm ls)
+  host_commands=(add rm ls)
+  hosts_commands=(show sync clean)
+  completion_shells=(zsh bash)
+
+  if (( CURRENT == 2 )); then
+    _describe 'ctx command' _ctx_commands
+    return
+  fi
+
+  case ${words[2]} in
+    target) _describe 'target command' target_commands ;;
+    host) _describe 'host command' host_commands ;;
+    hosts) _describe 'hosts command' hosts_commands ;;
+    completion) _describe 'shell' completion_shells ;;
+    *) _files ;;
+  esac
+}
+
+_xctx_call() { ctx "${0#x}" "$@" }
+xinit() { ctx init "$@" }
+xstatus() { ctx status "$@" }
+xtarget() { ctx target "$@" }
+xip() { ctx ip "$@" }
+xhost() { ctx host "$@" }
+xhosts() { ctx hosts "$@" }
+xcompletion() { ctx completion "$@" }
+xdoctor() { ctx doctor "$@" }
+xinit-shell() { ctx init-shell "$@" }
+
+compdef _ctx ctx
+compdef _ctx xinit xstatus xtarget xip xhost xhosts xcompletion xdoctor xinit-shell
+`
+
+const bashCompletionScript = `_ctx_completion() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  case "${prev}" in
+    ctx)
+      COMPREPLY=($(compgen -W "init status target ip host hosts completion init-shell doctor -h --help -V --version" -- "${cur}"))
+      return
+      ;;
+    target|xtarget)
+      COMPREPLY=($(compgen -W "set add update use rm ls" -- "${cur}"))
+      return
+      ;;
+    host|xhost)
+      COMPREPLY=($(compgen -W "add rm ls" -- "${cur}"))
+      return
+      ;;
+    hosts|xhosts)
+      COMPREPLY=($(compgen -W "show sync clean" -- "${cur}"))
+      return
+      ;;
+    completion|xcompletion)
+      COMPREPLY=($(compgen -W "zsh bash" -- "${cur}"))
+      return
+      ;;
+  esac
+}
+
+xinit() { ctx init "$@"; }
+xstatus() { ctx status "$@"; }
+xtarget() { ctx target "$@"; }
+xip() { ctx ip "$@"; }
+xhost() { ctx host "$@"; }
+xhosts() { ctx hosts "$@"; }
+xcompletion() { ctx completion "$@"; }
+xdoctor() { ctx doctor "$@"; }
+xinit-shell() { ctx init-shell "$@"; }
+
+complete -F _ctx_completion ctx
+complete -F _ctx_completion xinit xstatus xtarget xip xhost xhosts xcompletion xdoctor xinit-shell
+`

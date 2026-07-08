@@ -33,6 +33,20 @@ ctx --version
 ctx -V
 ```
 
+## ctx のシェル初期設定
+
+```sh
+ctx completion zsh
+ctx completion bash
+ctx init-shell
+ctx init-shell --remove
+ctx doctor
+```
+
+`ctx completion zsh` と `ctx completion bash` はシェルスクリプトを標準出力に出すだけで、rc ファイルは変更しません。
+
+`ctx init-shell` は現在のシェルを判定し、`.zshrc` または `.bashrc` に ctx 用のマーカー付きブロックを追記します。あわせて x プレフィックスの helper function も有効になるため、`ctx init` は `xinit`、`ctx status` は `xstatus`、`ctx hosts` は `xhosts` として実行できます。ctx は alias を作成しません。
+
 ## ディレクトリ構成
 
 - `cmd/req/`: `req` のエントリポイント

@@ -24,6 +24,11 @@ func TestRunTopLevelHelp(t *testing.T) {
 		if !strings.Contains(got, "-V, --version") {
 			t.Fatalf("help output = %q, want -V/--version option", got)
 		}
+		for _, command := range []string{"completion", "init-shell", "doctor"} {
+			if !strings.Contains(got, command) {
+				t.Fatalf("help output = %q, want command %q", got, command)
+			}
+		}
 		if !strings.Contains(got, "Run ctx <command> -h for command-specific help.") {
 			t.Fatalf("help output = %q, want command-specific help hint", got)
 		}
@@ -83,6 +88,9 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "host", "add", "-h"}, "usage: ctx host <command> [options]"},
 		{[]string{"ctx", "hosts", "-h"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "hosts", "sync", "--help"}, "usage: ctx hosts <command> [options]"},
+		{[]string{"ctx", "completion", "-h"}, "usage: ctx completion <zsh|bash> [options]"},
+		{[]string{"ctx", "init-shell", "--help"}, "usage: ctx init-shell [--remove] [options]"},
+		{[]string{"ctx", "doctor", "-h"}, "usage: ctx doctor [options]"},
 	}
 
 	for _, tt := range tests {

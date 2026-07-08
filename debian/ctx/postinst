@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -e
+
+if [ "${1:-}" = "configure" ]; then
+  cat <<'MSG'
+ctx installed successfully.
+
+Recommended:
+
+    ctx init-shell
+
+This enables shell completion for your current shell.
+MSG
+fi
+
+exit 0

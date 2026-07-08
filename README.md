@@ -33,6 +33,20 @@ ctx --version
 ctx -V
 ```
 
+## ctx Shell Setup
+
+```sh
+ctx completion zsh
+ctx completion bash
+ctx init-shell
+ctx init-shell --remove
+ctx doctor
+```
+
+`ctx completion zsh` and `ctx completion bash` only print shell scripts to stdout. They do not edit shell rc files.
+
+`ctx init-shell` detects the current shell and writes a marked ctx block to `.zshrc` or `.bashrc`. It also enables x-prefixed helper functions, so `ctx init` can be run as `xinit`, `ctx status` as `xstatus`, and `ctx hosts` as `xhosts`. ctx does not create aliases.
+
 ## Directory Structure
 
 - `cmd/req/`: Entry point for the `req` command
