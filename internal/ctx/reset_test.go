@@ -199,3 +199,27 @@ func TestRunResetPermissionDeniedElevatesOnlyHostsCleanup(t *testing.T) {
 		}
 	}
 }
+
+func TestRunResetShortYesSkipsConfirmation(t *testing.T) {
+	oldHostsPath := hostsFilePath
+	oldResetHosts := resetHostsBlocksFunc
+	oldResetData := resetCtxDataFunc
+	hostsFilePath = filepath.Join(t.TempDir(), "hosts")
+	resetHostsBlocksFunc = func(string, []string) error { return nil }
+	resetCtxDataFunc = func([]WorkspaceRecord) error { return nil }
+	t.Cleanup(func() {
+		hostsFilePath = oldHostsPath
+		resetHostsBlocksFunc = oldResetHosts
+		resetCtxDataFunc = oldResetData
+	})
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	setWorkspaceInputForTest(t, "n\n")
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "reset", "-y"}, &out); err != nil {
+		t.Fatalf("Run(ctx reset -y) error = %v", err)
+	}
+	if strings.Contains(out.String(), "[y/N]") {
+		t.Fatalf("output = %q, -y should skip confirmation", out.String())
+	}
+}

@@ -21,6 +21,8 @@ func TestCompletionScriptsIncludeXFunctionForEveryCommand(t *testing.T) {
 			var want string
 			if command == "scan" {
 				want = `xscan() { CTX_INVOKED_AS=xscan ctx scan "$@"`
+			} else if command == "project" {
+				want = `xproject() {`
 			} else if command == "x" {
 				want = `x() { ctx x "$@"`
 			} else {
@@ -43,6 +45,27 @@ func TestCompletionScriptsMapXInitToWorkspaceInit(t *testing.T) {
 		}
 		if !strings.Contains(script, `xinit() { ctx workspace init "$@"`) {
 			t.Errorf("CompletionScript(%s) does not map xinit to ctx workspace init", shell)
+		}
+	}
+}
+
+func TestCompletionScriptsIncludeProjectHelpers(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell)
+		if err != nil {
+			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
+		}
+		for _, want := range []string{
+			`xproject() {`,
+			`if [[ $1 == new ]]; then`,
+			`project_path=$(ctx project "$@") || return`,
+			`xnew() {`,
+			`project_path=$(ctx project new "$@") || return`,
+			`cd "${project_path}"`,
+		} {
+			if !strings.Contains(script, want) {
+				t.Errorf("CompletionScript(%s) missing %q", shell, want)
+			}
 		}
 	}
 }
@@ -83,6 +106,7 @@ func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.
 	for _, want := range []string{
 		"'set:create or update the primary target'",
 		"'rm:remove a workspace and all of its ctx data'",
+		"'new:create a project and initialize a workspace'",
 		"'add:add a hostname'",
 		"'sync:sync the managed block to /etc/hosts'",
 		"'zsh:print zsh completion script'",
@@ -95,6 +119,7 @@ func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.
 		"CURRENT == command_position + 1",
 		"_describe 'target command' _ctx_target_commands",
 		"_describe 'workspace command' _ctx_workspace_commands",
+		"_describe 'project command' _ctx_project_commands",
 		"_describe 'log option' _ctx_log_options",
 		"_describe 'prompt option' _ctx_prompt_options",
 		"_ctx_dynamic_descriptions target",
@@ -115,6 +140,7 @@ func TestBashCompletionIncludesDynamicWorkspaceValues(t *testing.T) {
 		"_ctx_complete_values target",
 		"_ctx_complete_values host",
 		"_ctx_complete_values workspace",
+		"_ctx_complete_values project",
 		"_ctx_complete_values log",
 		`ctx completion values "${kind}"`,
 		"${subcommand} == use",

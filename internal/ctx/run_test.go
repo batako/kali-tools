@@ -24,7 +24,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 		if !strings.Contains(got, "-V, --version") {
 			t.Fatalf("help output = %q, want -V/--version option", got)
 		}
-		for _, command := range []string{"scan", "completion", "init-shell", "doctor"} {
+		for _, command := range []string{"project", "scan", "completion", "init-shell", "doctor"} {
 			if !strings.Contains(got, command) {
 				t.Fatalf("help output = %q, want command %q", got, command)
 			}
@@ -39,6 +39,8 @@ func TestRunTopLevelHelp(t *testing.T) {
 			"xinit":       "ctx workspace init",
 			"xstatus":     "ctx status",
 			"xworkspace":  "ctx workspace",
+			"xproject":    "ctx project",
+			"xnew":        "ctx project new",
 			"xtarget":     "ctx target",
 			"xip":         "ctx ip",
 			"xhost":       "ctx host",
@@ -118,6 +120,8 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "workspace", "-h"}, "usage: ctx workspace <command> [options]"},
 		{[]string{"ctx", "workspace", "init", "--help"}, "usage: ctx workspace <command> [options]"},
 		{[]string{"ctx", "workspace", "rm", "--help"}, "usage: ctx workspace <command> [options]"},
+		{[]string{"ctx", "project", "-h"}, "usage: ctx project <command> [options]"},
+		{[]string{"ctx", "project", "new", "--help"}, "usage: ctx project <command> [options]"},
 		{[]string{"ctx", "target", "-h"}, "usage: ctx target <command> [options]"},
 		{[]string{"ctx", "target", "add", "--help"}, "usage: ctx target <command> [options]"},
 		{[]string{"ctx", "ip", "-h"}, "usage: ctx ip [ip] [options]"},
@@ -133,7 +137,7 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "completion", "-h"}, "usage: ctx completion <zsh|bash> [options]"},
 		{[]string{"ctx", "init-shell", "--help"}, "usage: ctx init-shell [--remove] [options]"},
 		{[]string{"ctx", "doctor", "-h"}, "usage: ctx doctor [options]"},
-		{[]string{"ctx", "reset", "-h"}, "usage: ctx reset [--yes] [options]"},
+		{[]string{"ctx", "reset", "-h"}, "usage: ctx reset [-y|--yes] [options]"},
 	}
 
 	for _, tt := range tests {

@@ -35,6 +35,7 @@ const usageText = `usage: ctx <command> [options]
 commands:
   status   show the current workspace
   workspace  initialize, list, or remove workspaces
+  project  create and manage projects under the configured root
   target   manage targets
   ip       show or update the primary target IP
   host     manage hostnames
@@ -58,6 +59,8 @@ shortcuts (requires ctx init-shell):
   xinit        ctx workspace init
   xstatus      ctx status
   xworkspace   ctx workspace
+  xproject     ctx project
+  xnew         ctx project new
   xtarget      ctx target
   xip          ctx ip
   xhost        ctx host
@@ -87,11 +90,27 @@ const workspaceUsageText = `usage: ctx workspace <command> [options]
 commands:
   init               create a workspace in the current directory
   ls                 list workspaces
-  rm [id] [--yes]    remove a workspace and all of its ctx data
+  rm [id] [-y|--yes] remove a workspace and all of its ctx data
 
 options:
   -h, --help         show this help
-  --yes              skip removal confirmation`
+  -y, --yes          skip removal confirmation`
+
+const projectUsageText = `usage: ctx project <command> [options]
+
+Project is an optional convenience layer for ctx-managed directories under a
+configured root. Workspaces remain the core feature and can still be initialized
+directly in any directory with ctx workspace init.
+
+commands:
+  root [path]       show or set the projects root
+  new <name>        create a project and initialize a workspace
+  ls                list ctx projects under the configured root
+  rm <name> [-y|--yes] remove a project directory
+
+options:
+  -y, --yes         skip removal confirmation
+  -h, --help        show this help`
 
 const targetUsageText = `usage: ctx target <command> [options]
 
@@ -206,13 +225,13 @@ fields:
   active, workspace-id, workspace-name, workspace-root
   local-ip, local-interface, target-name, target-ip`
 
-const resetUsageText = `usage: ctx reset [--yes] [options]
+const resetUsageText = `usage: ctx reset [-y|--yes] [options]
 
 Remove all ctx data and configuration without uninstalling ctx.
 Workspace directories and shell history are not removed.
 
 options:
-  --yes       skip confirmation
+  -y, --yes   skip confirmation
   -h, --help  show this help`
 
 func Run(args []string, stdout io.Writer) error {
@@ -247,6 +266,8 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 		return writeExecutableInfo(stdout)
 	case "workspace":
 		return runWorkspace(args[2:], stdout)
+	case "project":
+		return runProject(args[2:], stdout)
 	case "target":
 		return runTarget(args[2:], stdout)
 	case "ip":
@@ -385,12 +406,12 @@ func runReset(args []string, stdout io.Writer) error {
 	switch len(args) {
 	case 0:
 	case 1:
-		if args[0] != "--yes" {
-			return errors.New("usage: ctx reset [--yes]")
+		if args[0] != "--yes" && args[0] != "-y" {
+			return errors.New("usage: ctx reset [-y|--yes]")
 		}
 		yes = true
 	default:
-		return errors.New("usage: ctx reset [--yes]")
+		return errors.New("usage: ctx reset [-y|--yes]")
 	}
 
 	if !yes {
@@ -626,19 +647,138 @@ func runWorkspace(args []string, stdout io.Writer) error {
 	}
 }
 
+func runProject(args []string, stdout io.Writer) error {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, projectUsageText)
+		return err
+	}
+	if len(args) > 1 && isHelpArg(args[1]) {
+		_, err := fmt.Fprintln(stdout, projectUsageText)
+		return err
+	}
+
+	switch args[0] {
+	case "root":
+		switch len(args) {
+		case 1:
+			root, err := GetProjectRoot()
+			if err != nil {
+				return err
+			}
+			if root == "" {
+				_, err = fmt.Fprintln(stdout, projectRootUnsetMessage)
+				return err
+			}
+			_, err = fmt.Fprintln(stdout, root)
+			return err
+		case 2:
+			root, err := SetProjectRoot(args[1])
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(stdout, root)
+			return err
+		default:
+			return errors.New("usage: ctx project root [path]")
+		}
+	case "new":
+		if len(args) != 2 {
+			return errors.New("usage: ctx project new <name>")
+		}
+		path, err := CreateProject(args[1])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, path)
+		return err
+	case "ls":
+		if len(args) != 1 {
+			return errors.New("usage: ctx project ls")
+		}
+		projects, err := ListProjects()
+		if err != nil {
+			if errors.Is(err, ErrProjectRootUnset) {
+				_, writeErr := fmt.Fprintln(stdout, projectRootUnsetMessage)
+				return writeErr
+			}
+			return err
+		}
+		if len(projects) == 0 {
+			_, err = fmt.Fprintln(stdout, "no projects")
+			return err
+		}
+		for _, project := range projects {
+			if _, err := fmt.Fprintln(stdout, project.Path); err != nil {
+				return err
+			}
+		}
+		return nil
+	case "rm":
+		name, yes, err := parseProjectRemoveArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		root, err := requiredProjectRoot()
+		if err != nil {
+			return err
+		}
+		path, err := projectPath(root, name)
+		if err != nil {
+			return err
+		}
+		if !yes {
+			ok, err := confirmProjectRemoval(stdout, bufio.NewScanner(workspaceStdin), name, path)
+			if err != nil || !ok {
+				return err
+			}
+		}
+		removedPath, err := RemoveProject(name)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "removed project: %s\n", removedPath)
+		return err
+	default:
+		return fmt.Errorf("unknown ctx project command: %s", args[0])
+	}
+}
+
+func parseProjectRemoveArgs(args []string) (string, bool, error) {
+	var name string
+	var yes bool
+	for _, arg := range args {
+		switch arg {
+		case "--yes", "-y":
+			if yes {
+				return "", false, errors.New("usage: ctx project rm <name> [-y|--yes]")
+			}
+			yes = true
+		default:
+			if strings.HasPrefix(arg, "-") || name != "" {
+				return "", false, errors.New("usage: ctx project rm <name> [-y|--yes]")
+			}
+			name = arg
+		}
+	}
+	if name == "" {
+		return "", false, errors.New("usage: ctx project rm <name> [-y|--yes]")
+	}
+	return name, yes, nil
+}
+
 func parseWorkspaceRemoveArgs(args []string) (string, bool, error) {
 	var id string
 	var yes bool
 	for _, arg := range args {
 		switch arg {
-		case "--yes":
+		case "--yes", "-y":
 			if yes {
-				return "", false, errors.New("usage: ctx workspace rm [id] [--yes]")
+				return "", false, errors.New("usage: ctx workspace rm [id] [-y|--yes]")
 			}
 			yes = true
 		default:
 			if strings.HasPrefix(arg, "-") || id != "" {
-				return "", false, errors.New("usage: ctx workspace rm [id] [--yes]")
+				return "", false, errors.New("usage: ctx workspace rm [id] [-y|--yes]")
 			}
 			id = arg
 		}
@@ -1081,6 +1221,20 @@ func completionValues(kind string) ([]string, error) {
 		}
 		return values, nil
 	}
+	if kind == "project" {
+		projects, err := ListProjects()
+		if err != nil {
+			if errors.Is(err, ErrProjectRootUnset) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		values := make([]string, 0, len(projects))
+		for _, project := range projects {
+			values = append(values, project.Name)
+		}
+		return values, nil
+	}
 
 	workspace, err := currentWorkspace()
 	if errors.Is(err, ErrWorkspaceNotFound) {
@@ -1135,6 +1289,20 @@ func completionDescriptions(kind string) ([]string, error) {
 		values := make([]string, 0, len(records))
 		for _, record := range records {
 			values = append(values, zshCompletionSpec(record.ID, record.RootPath))
+		}
+		return values, nil
+	}
+	if kind == "project" {
+		projects, err := ListProjects()
+		if err != nil {
+			if errors.Is(err, ErrProjectRootUnset) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		values := make([]string, 0, len(projects))
+		for _, project := range projects {
+			values = append(values, zshCompletionSpec(project.Name, project.Path))
 		}
 		return values, nil
 	}

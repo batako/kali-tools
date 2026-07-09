@@ -194,11 +194,12 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 
 _ctx_commands=(
   'status:show the current workspace'
   'workspace:initialize, list, or remove workspaces'
+  'project:create and manage projects under the configured root'
   'target:manage targets'
   'ip:show or update the primary target IP'
   'host:manage hostnames'
@@ -219,6 +220,13 @@ _ctx_workspace_commands=(
   'init:create a workspace in the current directory'
   'ls:list workspaces'
   'rm:remove a workspace and all of its ctx data'
+)
+
+_ctx_project_commands=(
+  'root:show or set the projects root'
+  'new:create a project and initialize a workspace'
+  'ls:list projects'
+  'rm:remove a project directory'
 )
 
 _ctx_target_commands=(
@@ -290,6 +298,7 @@ _ctx_prompt_formats=(shell json)
 _ctx_prompt_fields=(active workspace-id workspace-name workspace-root local-ip local-interface target-name target-ip)
 
 _ctx_reset_options=(
+  '-y:skip confirmation'
   '--yes:skip confirmation'
   '-h:show help'
   '--help:show help'
@@ -335,6 +344,7 @@ _ctx() {
   if (( CURRENT == command_position + 1 )); then
     case ${command} in
       workspace) _describe 'workspace command' _ctx_workspace_commands ;;
+      project) _describe 'project command' _ctx_project_commands ;;
       target) _describe 'target command' _ctx_target_commands ;;
       host) _describe 'host command' _ctx_host_commands ;;
       hosts) _describe 'hosts command' _ctx_hosts_commands ;;
@@ -357,6 +367,13 @@ _ctx() {
     workspace)
       if [[ ${subcommand} == rm ]] && (( CURRENT == command_position + 2 )); then
         _ctx_dynamic_descriptions workspace
+      else
+        _message 'argument'
+      fi
+      ;;
+    project)
+      if [[ ${subcommand} == rm ]] && (( CURRENT == command_position + 2 )); then
+        _ctx_dynamic_descriptions project
       else
         _message 'argument'
       fi
@@ -406,6 +423,20 @@ _xctx_call() { ctx "${0#x}" "$@" }
 xinit() { ctx workspace init "$@" }
 xstatus() { ctx status "$@" }
 xworkspace() { ctx workspace "$@" }
+xproject() {
+  if [[ $1 == new ]]; then
+    local project_path
+    project_path=$(ctx project "$@") || return
+    [[ -n ${project_path} ]] && cd "${project_path}"
+    return
+  fi
+  ctx project "$@"
+}
+xnew() {
+  local project_path
+  project_path=$(ctx project new "$@") || return
+  [[ -n ${project_path} ]] && cd "${project_path}"
+}
 xtarget() { ctx target "$@" }
 xip() { ctx ip "$@" }
 xhost() { ctx host "$@" }
@@ -422,7 +453,7 @@ xinit-shell() { ctx init-shell "$@" }
 xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `
 
 const bashCompletionScript = `_ctx_complete_values() {
@@ -467,6 +498,10 @@ _ctx_completion() {
     _ctx_complete_values workspace "${cur}"
     return
   fi
+  if [[ ${command} == project && ${subcommand} == rm && ${prev} == rm ]]; then
+    _ctx_complete_values project "${cur}"
+    return
+  fi
   if [[ ${command} == service && ${subcommand} == ls && ${prev} == --target ]]; then
     _ctx_complete_values target "${cur}"
     return
@@ -474,11 +509,15 @@ _ctx_completion() {
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status workspace target ip host hosts scan service note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status workspace project target ip host hosts scan service note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)
       COMPREPLY=($(compgen -W "init ls rm" -- "${cur}"))
+      return
+      ;;
+    project|xproject)
+      COMPREPLY=($(compgen -W "root new ls rm" -- "${cur}"))
       return
       ;;
     target|xtarget)
@@ -519,7 +558,7 @@ _ctx_completion() {
       return
       ;;
     reset|xreset)
-      COMPREPLY=($(compgen -W "--yes -h --help" -- "${cur}"))
+      COMPREPLY=($(compgen -W "-y --yes -h --help" -- "${cur}"))
       return
       ;;
     --format)
@@ -544,6 +583,20 @@ _ctx_completion() {
 xinit() { ctx workspace init "$@"; }
 xstatus() { ctx status "$@"; }
 xworkspace() { ctx workspace "$@"; }
+xproject() {
+  if [[ $1 == new ]]; then
+    local project_path
+    project_path=$(ctx project "$@") || return
+    [[ -n ${project_path} ]] && cd "${project_path}"
+    return
+  fi
+  ctx project "$@"
+}
+xnew() {
+  local project_path
+  project_path=$(ctx project new "$@") || return
+  [[ -n ${project_path} ]] && cd "${project_path}"
+}
 xtarget() { ctx target "$@"; }
 xip() { ctx ip "$@"; }
 xhost() { ctx host "$@"; }
@@ -560,5 +613,5 @@ xinit-shell() { ctx init-shell "$@"; }
 xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `

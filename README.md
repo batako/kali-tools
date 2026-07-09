@@ -72,9 +72,9 @@ function prompt_ctx() {
 
 Add `ctx` to `POWERLEVEL9K_LEFT_PROMPT_ELEMENTS` or `POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS`, then choose colors, icons, and formatting in the segment as desired. Use `ctx prompt --field <name>` for one value or `ctx prompt --format json` for structured output.
 
-`ctx workspace rm` removes the current workspace's marker, database records, and data directory after confirmation. Outside a workspace, it lists the registered workspaces for selection. Pass an ID to select one directly, or add `--yes` to skip confirmation.
+`ctx workspace rm` removes the current workspace's marker, database records, and data directory after confirmation. Outside a workspace, it lists the registered workspaces for selection. Pass an ID to select one directly, or add `--yes`/`-y` to skip confirmation.
 
-`ctx reset` removes all registered `.ctx` markers, ctx-owned database/log/data files, ctx blocks from `.zshrc` and `.bashrc`, and ctx-managed `/etc/hosts` blocks. It does not remove workspace directories, user files, shell history, or the `ctx` executable. Only the `/etc/hosts` cleanup requests `sudo` when necessary. Use `xreset` after shell integration or `ctx reset --yes` to skip confirmation, then restart the current shell to unload helper functions already in memory.
+`ctx reset` removes all registered `.ctx` markers, ctx-owned database/log/data files, ctx blocks from `.zshrc` and `.bashrc`, and ctx-managed `/etc/hosts` blocks. It does not remove workspace directories, user files, shell history, or the `ctx` executable. Only the `/etc/hosts` cleanup requests `sudo` when necessary. Use `xreset` after shell integration or `ctx reset --yes`/`ctx reset -y` to skip confirmation, then restart the current shell to unload helper functions already in memory.
 
 ## ctx Shell Setup
 

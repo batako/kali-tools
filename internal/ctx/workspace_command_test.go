@@ -216,6 +216,25 @@ func TestWorkspaceRemoveByIDWithYes(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRemoveByIDWithShortYes(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	workspace, err := InitWorkspace(root)
+	if err != nil {
+		t.Fatalf("InitWorkspace() error = %v", err)
+	}
+	chdirForTest(t, outside)
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "workspace", "rm", workspace.ID, "-y"}, &out); err != nil {
+		t.Fatalf("Run(ctx workspace rm <id> -y) error = %v", err)
+	}
+	if strings.Contains(out.String(), "[y/N]") {
+		t.Fatalf("output = %q, -y should skip confirmation", out.String())
+	}
+}
+
 func TestWorkspaceList(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
