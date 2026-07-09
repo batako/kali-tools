@@ -32,6 +32,8 @@ ctx workspace ls
 ctx workspace rm [id]
 ctx scan
 ctx scan 10.10.10.20 -p 22,80,443
+ctx service ls
+ctx service ls --target target2
 ctx note "SMB anonymous login possible"
 ctx log
 ctx log <id>
@@ -45,11 +47,14 @@ ctx --version
 ctx -V
 x <command> [args...]
 xscan [ip] [-p ports]
+xservice ls [--target name]
 ```
 
 `ctx x` runs the given command in the current ctx workspace, streams stdout/stderr to the terminal, and saves the command, expanded command, exit code, timestamps, stdout, and stderr to `ctx log`. If an argument contains `$IP` or `${IP}`, it is expanded to the current primary target IP before execution. After `ctx init-shell`, the `x` helper function is available as the short form of `ctx x`.
 
 `ctx scan [ip]` runs `nmap -Pn -n -sV` for the current target, saves the raw artifacts under `~/.ctx/workspaces/<workspace_id>/scans/`, records the exact `nmap` execution in `ctx log`, and stores parsed port/service rows in the workspace database. Use `-p`/`--ports` to pass an explicit nmap port expression, or `-n`/`--dry-run` to print the command first. After `ctx init-shell`, `xscan` is available as the short form of `ctx scan`.
+
+`ctx service ls` shows the saved port scan results for the primary target. Use `--target <name>` to show another target. After `ctx init-shell`, use `xservice ls`.
 
 `ctx note <text>` saves a note as a `note:<id>` entry in the `ctx log` timeline. After `ctx init-shell`, use `xnote <text>` as its short form.
 

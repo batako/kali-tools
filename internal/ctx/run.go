@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 )
 
 var (
@@ -39,6 +40,7 @@ commands:
   host     manage hostnames
   hosts    show, sync, or clean /etc/hosts entries
   scan     run nmap and save structured service results
+  service  show saved port scan results
   note     add a note to the workspace timeline
   log      show the workspace timeline
   prompt   print data for shell prompts
@@ -61,6 +63,7 @@ shortcuts (requires ctx init-shell):
   xhost        ctx host
   xhosts       ctx hosts
   xscan        ctx scan
+  xservice     ctx service
   xnote        ctx note
   xlog         ctx log
   xprompt      ctx prompt
@@ -162,6 +165,17 @@ options:
   -f, --force          run even if the same scan already succeeded
   -h, --help           show this help`
 
+const serviceUsageText = `usage: ctx service ls [--target <name>] [options]
+
+Show saved port scan results for the primary or selected target.
+
+commands:
+  ls  list saved ports and services
+
+options:
+  --target <name>  select a target by name
+  -h, --help       show this help`
+
 const logUsageText = `usage: ctx log [id] [options]
 
 Show the workspace timeline or command log details by ID.
@@ -251,6 +265,8 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 			return ExitCodeError{Code: code}
 		}
 		return nil
+	case "service":
+		return runService(args[2:], stdout)
 	case "note":
 		return runNote(args[2:], stdout)
 	case "log":
@@ -284,6 +300,73 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 	default:
 		return fmt.Errorf("unknown ctx command: %s", args[1])
 	}
+}
+
+func runService(args []string, stdout io.Writer) error {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, serviceUsageText)
+		return err
+	}
+	if len(args) > 1 && isHelpArg(args[1]) {
+		_, err := fmt.Fprintln(stdout, serviceUsageText)
+		return err
+	}
+	if args[0] != "ls" {
+		return fmt.Errorf("unknown ctx service command: %s", args[0])
+	}
+
+	targetName := ""
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--target":
+			if i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
+				return errors.New("usage: ctx service ls [--target <name>]")
+			}
+			i++
+			targetName = args[i]
+		default:
+			return errors.New("usage: ctx service ls [--target <name>]")
+		}
+	}
+
+	workspace, err := currentWorkspace()
+	if err != nil {
+		return err
+	}
+	var target *Target
+	if targetName == "" {
+		target, err = GetPrimaryTarget(workspace)
+	} else {
+		target, err = GetTargetByName(workspace, targetName)
+	}
+	if err != nil {
+		return err
+	}
+
+	services, err := ListServices(workspace, target)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "Target: %s (%s)\n", target.Name, target.IP); err != nil {
+		return err
+	}
+	if len(services) == 0 {
+		_, err = fmt.Fprintln(stdout, "no scan results")
+		return err
+	}
+
+	table := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(table, "PORT\tSTATE\tSERVICE\tPRODUCT\tVERSION"); err != nil {
+		return err
+	}
+	for _, service := range services {
+		port := fmt.Sprintf("%d/%s", service.Port, service.Protocol)
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n",
+			port, service.State, service.ServiceName, service.Product, service.Version); err != nil {
+			return err
+		}
+	}
+	return table.Flush()
 }
 
 func runReset(args []string, stdout io.Writer) error {

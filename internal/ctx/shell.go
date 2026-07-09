@@ -194,7 +194,7 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xscan xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 
 _ctx_commands=(
   'status:show the current workspace'
@@ -204,6 +204,7 @@ _ctx_commands=(
   'host:manage hostnames'
   'hosts:show, sync, or clean /etc/hosts entries'
   'scan:run nmap and save structured service results'
+  'service:show saved port scan results'
   'note:add a note to the workspace timeline'
   'log:show the workspace timeline'
   'prompt:print data for shell prompts'
@@ -248,6 +249,16 @@ _ctx_scan_options=(
   '--dry-run:print the nmap command without running it'
   '-f:run even if the same scan already succeeded'
   '--force:run even if the same scan already succeeded'
+  '-h:show help'
+  '--help:show help'
+)
+
+_ctx_service_commands=(
+  'ls:list saved ports and services'
+)
+
+_ctx_service_options=(
+  '--target:select a target by name'
   '-h:show help'
   '--help:show help'
 )
@@ -329,6 +340,7 @@ _ctx() {
       hosts) _describe 'hosts command' _ctx_hosts_commands ;;
       completion) _describe 'shell' _ctx_completion_shells ;;
       scan) _describe 'scan option' _ctx_scan_options ;;
+      service) _describe 'service command' _ctx_service_commands ;;
       log)
         _ctx_dynamic_descriptions log
         _describe 'log option' _ctx_log_options
@@ -372,6 +384,13 @@ _ctx() {
         *) _describe 'scan option' _ctx_scan_options ;;
       esac
       ;;
+    service)
+      if [[ ${subcommand} == ls && ${previous} == --target ]]; then
+        _ctx_dynamic_descriptions target
+      else
+        _describe 'service option' _ctx_service_options
+      fi
+      ;;
     prompt)
       case ${words[CURRENT-1]} in
         --format) _describe 'format' _ctx_prompt_formats ;;
@@ -392,6 +411,7 @@ xip() { ctx ip "$@" }
 xhost() { ctx host "$@" }
 xhosts() { ctx hosts "$@" }
 xscan() { ctx scan "$@" }
+xservice() { ctx service "$@" }
 xnote() { ctx note "$@" }
 xlog() { ctx log "$@" }
 xprompt() { ctx prompt "$@" }
@@ -402,7 +422,7 @@ xinit-shell() { ctx init-shell "$@" }
 xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xscan xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `
 
 const bashCompletionScript = `_ctx_complete_values() {
@@ -447,10 +467,14 @@ _ctx_completion() {
     _ctx_complete_values workspace "${cur}"
     return
   fi
+  if [[ ${command} == service && ${subcommand} == ls && ${prev} == --target ]]; then
+    _ctx_complete_values target "${cur}"
+    return
+  fi
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status workspace target ip host hosts scan note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status workspace target ip host hosts scan service note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)
@@ -472,6 +496,16 @@ _ctx_completion() {
     scan|xscan)
       COMPREPLY=($(compgen -W "-p --ports -n --dry-run -f --force -h --help" -- "${cur}"))
       return
+      ;;
+    service|xservice)
+      COMPREPLY=($(compgen -W "ls -h --help" -- "${cur}"))
+      return
+      ;;
+    ls)
+      if [[ ${command} == service ]]; then
+        COMPREPLY=($(compgen -W "--target -h --help" -- "${cur}"))
+        return
+      fi
       ;;
     log|xlog)
       _ctx_complete_values log "${cur}"
@@ -515,6 +549,7 @@ xip() { ctx ip "$@"; }
 xhost() { ctx host "$@"; }
 xhosts() { ctx hosts "$@"; }
 xscan() { ctx scan "$@"; }
+xservice() { ctx service "$@"; }
 xnote() { ctx note "$@"; }
 xlog() { ctx log "$@"; }
 xprompt() { ctx prompt "$@"; }
@@ -525,5 +560,5 @@ xinit-shell() { ctx init-shell "$@"; }
 xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xscan xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `
