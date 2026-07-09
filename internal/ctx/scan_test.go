@@ -50,8 +50,11 @@ func TestRunScanStoresServicesAndArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCommandLogs() error = %v", err)
 	}
-	if len(logs) != 1 || !strings.Contains(logs[0].Command, "-oX") || logs[0].Status != "success" {
-		t.Fatalf("logs = %+v, want successful nmap command log", logs)
+	if len(logs) != 1 ||
+		logs[0].Command != "ctx scan" ||
+		!strings.Contains(logs[0].ExpandedCommand, "-oX") ||
+		logs[0].Status != "success" {
+		t.Fatalf("logs = %+v, want ctx scan invocation and expanded nmap command", logs)
 	}
 
 	entries, err := os.ReadDir(filepath.Join(workspace.DataPath, "scans"))
@@ -60,6 +63,35 @@ func TestRunScanStoresServicesAndArtifacts(t *testing.T) {
 	}
 	if len(entries) != 2 {
 		t.Fatalf("scan artifact count = %d, want 2", len(entries))
+	}
+}
+
+func TestRunScanRecordsXScanInvocation(t *testing.T) {
+	workspace := initXTestWorkspace(t)
+	if _, err := SetPrimaryTargetIP(workspace, "10.10.10.10"); err != nil {
+		t.Fatalf("SetPrimaryTargetIP() error = %v", err)
+	}
+	installFakeNmap(t)
+	t.Setenv("CTX_INVOKED_AS", "xscan")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := RunScan([]string{"scan", "-p", "22,80"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("RunScan exit code = %d, want 0; stderr = %q", code, stderr.String())
+	}
+
+	logs, err := ListCommandLogs(workspace)
+	if err != nil {
+		t.Fatalf("ListCommandLogs() error = %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("logs len = %d, want 1", len(logs))
+	}
+	if logs[0].Command != "xscan -p 22,80" {
+		t.Fatalf("command = %q, want xscan invocation", logs[0].Command)
+	}
+	if !strings.HasPrefix(logs[0].ExpandedCommand, "nmap ") {
+		t.Fatalf("expanded command = %q, want nmap command", logs[0].ExpandedCommand)
 	}
 }
 

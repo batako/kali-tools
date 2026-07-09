@@ -410,7 +410,7 @@ xtarget() { ctx target "$@" }
 xip() { ctx ip "$@" }
 xhost() { ctx host "$@" }
 xhosts() { ctx hosts "$@" }
-xscan() { ctx scan "$@" }
+xscan() { CTX_INVOKED_AS=xscan ctx scan "$@" }
 xservice() { ctx service "$@" }
 xnote() { ctx note "$@" }
 xlog() { ctx log "$@" }
@@ -548,7 +548,7 @@ xtarget() { ctx target "$@"; }
 xip() { ctx ip "$@"; }
 xhost() { ctx host "$@"; }
 xhosts() { ctx hosts "$@"; }
-xscan() { ctx scan "$@"; }
+xscan() { CTX_INVOKED_AS=xscan ctx scan "$@"; }
 xservice() { ctx service "$@"; }
 xnote() { ctx note "$@"; }
 xlog() { ctx log "$@"; }

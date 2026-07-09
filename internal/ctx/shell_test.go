@@ -19,7 +19,9 @@ func TestCompletionScriptsIncludeXFunctionForEveryCommand(t *testing.T) {
 
 		for _, command := range commands {
 			var want string
-			if command == "x" {
+			if command == "scan" {
+				want = `xscan() { CTX_INVOKED_AS=xscan ctx scan "$@"`
+			} else if command == "x" {
 				want = `x() { ctx x "$@"`
 			} else {
 				want = "x" + command + `() { ctx ` + command + ` "$@"`

@@ -132,7 +132,7 @@ func RunScan(args []string, stdout, stderr io.Writer) int {
 		status = "failed"
 	}
 	logID, saveErr := SaveCommandLog(workspace, CommandLog{
-		Command:         commandString(commandArgs),
+		Command:         scanInvocationCommand(args),
 		ExpandedCommand: commandString(commandArgs),
 		Status:          status,
 		ExitCode:        exitCode,
@@ -170,6 +170,14 @@ func RunScan(args []string, stdout, stderr io.Writer) int {
 	_, _ = fmt.Fprintf(stdout, "Artifacts: %s  %s\n", normalPath, xmlPath)
 	_, _ = fmt.Fprintf(stdout, "Log: ctx log %d\n", logID)
 	return 0
+}
+
+func scanInvocationCommand(args []string) string {
+	command := []string{"ctx", "scan"}
+	if os.Getenv("CTX_INVOKED_AS") == "xscan" {
+		command = []string{"xscan"}
+	}
+	return commandString(append(command, args[1:]...))
 }
 
 func parseScanArgs(args []string) (scanOptions, error) {
