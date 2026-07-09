@@ -2,7 +2,6 @@ package ctx
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -146,9 +145,21 @@ func dataRoot() string {
 }
 
 func newWorkspaceID() (string, error) {
-	var raw [8]byte
+	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", fmt.Errorf("failed to generate workspace id: %w", err)
 	}
-	return "ctx-" + hex.EncodeToString(raw[:]), nil
+
+	// RFC 9562 UUID version 4.
+	raw[6] = (raw[6] & 0x0f) | 0x40
+	raw[8] = (raw[8] & 0x3f) | 0x80
+
+	return fmt.Sprintf(
+		"%08x-%04x-%04x-%04x-%012x",
+		raw[0:4],
+		raw[4:6],
+		raw[6:8],
+		raw[8:10],
+		raw[10:16],
+	), nil
 }

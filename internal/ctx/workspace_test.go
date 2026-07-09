@@ -3,6 +3,7 @@ package ctx
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -83,5 +84,83 @@ func TestFindWorkspaceReturnsHelpfulErrorOutsideWorkspace(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ctx workspace not found") {
 		t.Fatalf("error = %q, want workspace not found message", err.Error())
+	}
+}
+
+func TestNewWorkspaceIDUsesUUIDWithoutCtxPrefix(t *testing.T) {
+	t.Parallel()
+
+	id, err := newWorkspaceID()
+	if err != nil {
+		t.Fatalf("newWorkspaceID() error = %v", err)
+	}
+
+	pattern := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	if !pattern.MatchString(id) {
+		t.Fatalf("workspace id = %q, want UUID version 4", id)
+	}
+	if strings.HasPrefix(id, "ctx-") {
+		t.Fatalf("workspace id = %q, must not have ctx prefix", id)
+	}
+}
+
+func TestNewWorkspaceIDsDoNotRepeat(t *testing.T) {
+	t.Parallel()
+
+	const count = 1000
+	ids := make(map[string]struct{}, count)
+	for range count {
+		id, err := newWorkspaceID()
+		if err != nil {
+			t.Fatalf("newWorkspaceID() error = %v", err)
+		}
+		if _, exists := ids[id]; exists {
+			t.Fatalf("newWorkspaceID() generated duplicate %q", id)
+		}
+		ids[id] = struct{}{}
+	}
+}
+
+func TestSameNamedDirectoriesGetDifferentWorkspaceIDs(t *testing.T) {
+	ctxHome := filepath.Join(t.TempDir(), ".ctx")
+	t.Setenv("CTX_HOME", ctxHome)
+
+	firstRoot := filepath.Join(t.TempDir(), "project")
+	secondRoot := filepath.Join(t.TempDir(), "project")
+	for _, root := range []string{firstRoot, secondRoot} {
+		if err := os.Mkdir(root, 0755); err != nil {
+			t.Fatalf("Mkdir(%s) error = %v", root, err)
+		}
+	}
+
+	first, err := InitWorkspace(firstRoot)
+	if err != nil {
+		t.Fatalf("InitWorkspace(first) error = %v", err)
+	}
+	second, err := InitWorkspace(secondRoot)
+	if err != nil {
+		t.Fatalf("InitWorkspace(second) error = %v", err)
+	}
+
+	if first.ID == second.ID {
+		t.Fatalf("workspace ids are both %q, want different ids", first.ID)
+	}
+}
+
+func TestExistingPrefixedWorkspaceIDRemainsReadable(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+
+	const existingID = "ctx-0123456789abcdef"
+	if err := os.WriteFile(filepath.Join(root, MarkerFile), []byte(existingID+"\n"), 0644); err != nil {
+		t.Fatalf("WriteFile(.ctx) error = %v", err)
+	}
+
+	workspace, err := InitWorkspace(root)
+	if err != nil {
+		t.Fatalf("InitWorkspace() error = %v", err)
+	}
+	if workspace.ID != existingID {
+		t.Fatalf("workspace id = %q, want existing id %q", workspace.ID, existingID)
 	}
 }
