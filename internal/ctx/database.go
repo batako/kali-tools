@@ -2,6 +2,7 @@ package ctx
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,6 +73,38 @@ func GetWorkspaceRecord(workspace *Workspace) (*WorkspaceRecord, error) {
 	}
 
 	return &record, nil
+}
+
+func WorkspaceRecordExists(workspace *Workspace) (bool, error) {
+	if _, err := os.Stat(workspace.DatabasePath); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("failed to inspect database %s: %w", workspace.DatabasePath, err)
+	}
+
+	db, err := openDatabase(workspace.DatabasePath)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+
+	var tableExists int
+	if err := db.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace'
+		)
+	`).Scan(&tableExists); err != nil {
+		return false, fmt.Errorf("failed to inspect workspace table: %w", err)
+	}
+	if tableExists == 0 {
+		return false, nil
+	}
+
+	var recordExists int
+	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM workspace WHERE id = ?)`, workspace.ID).Scan(&recordExists); err != nil {
+		return false, fmt.Errorf("failed to inspect workspace record: %w", err)
+	}
+	return recordExists == 1, nil
 }
 
 func ListWorkspaceRecords() ([]WorkspaceRecord, error) {

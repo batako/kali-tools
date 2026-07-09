@@ -453,8 +453,16 @@ func runWorkspace(args []string, stdout io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("failed to get current directory: %w", err)
 		}
-		workspace, err := InitWorkspace(wd)
+		workspace, status, err := InitWorkspaceWithStatus(wd)
 		if err != nil {
+			return err
+		}
+		switch status {
+		case WorkspaceUpdated:
+			_, err = fmt.Fprintf(stdout, "updated ctx workspace %s\n", workspace.ID)
+			return err
+		case WorkspaceUnchanged:
+			_, err = fmt.Fprintf(stdout, "ctx workspace already initialized %s\n", workspace.ID)
 			return err
 		}
 		_, err = fmt.Fprintf(stdout, "initialized ctx workspace %s\n", workspace.ID)

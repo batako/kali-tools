@@ -23,6 +23,85 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, MarkerFile)); err != nil {
 		t.Fatalf("workspace marker missing: %v", err)
 	}
+
+	firstOutput := out.String()
+	out.Reset()
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(ctx workspace init) second error = %v", err)
+	}
+	if !strings.Contains(out.String(), "ctx workspace already initialized") {
+		t.Fatalf("second output = %q, want already initialized", out.String())
+	}
+	if strings.Contains(out.String(), "\ninitialized ctx workspace") {
+		t.Fatalf("second output = %q, should not report a new initialization", out.String())
+	}
+
+	firstID := strings.TrimSpace(strings.TrimPrefix(firstOutput, "initialized ctx workspace "))
+	secondID := strings.TrimSpace(strings.TrimPrefix(out.String(), "ctx workspace already initialized "))
+	if firstID != secondID {
+		t.Fatalf("workspace id changed from %q to %q", firstID, secondID)
+	}
+
+	workspace, err := FindWorkspace(root)
+	if err != nil {
+		t.Fatalf("FindWorkspace() error = %v", err)
+	}
+	db, err := openDatabase(workspace.DatabasePath)
+	if err != nil {
+		t.Fatalf("openDatabase() error = %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM workspace WHERE id = ?`, workspace.ID); err != nil {
+		db.Close()
+		t.Fatalf("delete workspace record error = %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(ctx workspace init) repair error = %v", err)
+	}
+	if got, want := out.String(), "updated ctx workspace "+workspace.ID+"\n"; got != want {
+		t.Fatalf("repair output = %q, want %q", got, want)
+	}
+	exists, err := WorkspaceRecordExists(workspace)
+	if err != nil {
+		t.Fatalf("WorkspaceRecordExists() error = %v", err)
+	}
+	if !exists {
+		t.Fatal("workspace record was not restored")
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(ctx workspace init) after repair error = %v", err)
+	}
+	if got, want := out.String(), "ctx workspace already initialized "+workspace.ID+"\n"; got != want {
+		t.Fatalf("after repair output = %q, want %q", got, want)
+	}
+
+	if err := os.Remove(workspace.DatabasePath); err != nil {
+		t.Fatalf("Remove(database) error = %v", err)
+	}
+	if err := os.WriteFile(workspace.DatabasePath, nil, 0644); err != nil {
+		t.Fatalf("WriteFile(empty database) error = %v", err)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(ctx workspace init) empty database repair error = %v", err)
+	}
+	if got, want := out.String(), "updated ctx workspace "+workspace.ID+"\n"; got != want {
+		t.Fatalf("empty database repair output = %q, want %q", got, want)
+	}
+	exists, err = WorkspaceRecordExists(workspace)
+	if err != nil {
+		t.Fatalf("WorkspaceRecordExists() after empty database error = %v", err)
+	}
+	if !exists {
+		t.Fatal("workspace record was not restored in empty database")
+	}
 }
 
 func TestWorkspaceRemoveUsesCurrentWorkspace(t *testing.T) {

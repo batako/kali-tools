@@ -20,45 +20,65 @@ type Workspace struct {
 	DatabasePath string
 }
 
+type WorkspaceInitStatus int
+
+const (
+	WorkspaceCreated WorkspaceInitStatus = iota
+	WorkspaceUpdated
+	WorkspaceUnchanged
+)
+
 func InitWorkspace(rootPath string) (*Workspace, error) {
+	workspace, _, err := InitWorkspaceWithStatus(rootPath)
+	return workspace, err
+}
+
+func InitWorkspaceWithStatus(rootPath string) (*Workspace, WorkspaceInitStatus, error) {
 	rootPath, err := filepath.Abs(rootPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve workspace root: %w", err)
+		return nil, WorkspaceUnchanged, fmt.Errorf("failed to resolve workspace root: %w", err)
 	}
 
 	markerPath := filepath.Join(rootPath, MarkerFile)
 	if existingID, err := readWorkspaceID(markerPath); err == nil {
 		workspace := workspaceFromID(existingID, rootPath)
+		needsUpdate, err := workspaceNeedsUpdate(workspace)
+		if err != nil {
+			return nil, WorkspaceUnchanged, err
+		}
 		if err := ensureWorkspaceDirs(workspace.DataPath); err != nil {
-			return nil, err
+			return nil, WorkspaceUnchanged, err
 		}
 		if err := EnsureDatabase(workspace); err != nil {
-			return nil, err
+			return nil, WorkspaceUnchanged, err
 		}
-		return workspace, nil
+		if needsUpdate {
+			return workspace, WorkspaceUpdated, nil
+		}
+		return workspace, WorkspaceUnchanged, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+		return nil, WorkspaceUnchanged, err
 	}
 
 	id, err := newWorkspaceID()
 	if err != nil {
-		return nil, err
+		return nil, WorkspaceUnchanged, err
 	}
 
 	if err := os.WriteFile(markerPath, []byte(id+"\n"), 0644); err != nil {
-		return nil, fmt.Errorf("failed to write %s: %w", markerPath, err)
+		return nil, WorkspaceUnchanged, fmt.Errorf("failed to write %s: %w", markerPath, err)
 	}
 
 	workspace := workspaceFromID(id, rootPath)
 	if err := ensureWorkspaceDirs(workspace.DataPath); err != nil {
-		return nil, err
+		return nil, WorkspaceUnchanged, err
 	}
 
 	if err := EnsureDatabase(workspace); err != nil {
-		return nil, err
+		return nil, WorkspaceUnchanged, err
 	}
 
-	return workspace, nil
+	return workspace, WorkspaceCreated, nil
 }
 
 func FindWorkspace(startPath string) (*Workspace, error) {
@@ -132,6 +152,31 @@ func ensureWorkspaceDirs(dataPath string) error {
 		}
 	}
 	return nil
+}
+
+func workspaceNeedsUpdate(workspace *Workspace) (bool, error) {
+	for _, dir := range []string{
+		workspace.DataPath,
+		filepath.Join(workspace.DataPath, "logs"),
+		filepath.Join(workspace.DataPath, "files"),
+		filepath.Join(workspace.DataPath, "scans"),
+	} {
+		info, err := os.Stat(dir)
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("failed to inspect %s: %w", dir, err)
+		}
+		if !info.IsDir() {
+			return true, nil
+		}
+	}
+	exists, err := WorkspaceRecordExists(workspace)
+	if err != nil {
+		return false, err
+	}
+	return !exists, nil
 }
 
 func dataRoot() string {
