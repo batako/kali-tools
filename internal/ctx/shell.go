@@ -243,6 +243,17 @@ _ctx_completion_shells=(
   'bash:print bash completion script'
 )
 
+_ctx_log_options=(
+  '-p:print a compact timeline'
+  '--plain:print a compact timeline'
+  '-v:print IDs, status, and exit codes'
+  '--verbose:print IDs, status, and exit codes'
+  '-i:open the interactive timeline'
+  '--interactive:open the interactive timeline'
+  '-h:show help'
+  '--help:show help'
+)
+
 _ctx_options=(
   '-h:show help'
   '--help:show help'
@@ -278,6 +289,7 @@ _ctx() {
       host) _describe 'host command' _ctx_host_commands ;;
       hosts) _describe 'hosts command' _ctx_hosts_commands ;;
       completion) _describe 'shell' _ctx_completion_shells ;;
+      log) _describe 'log option' _ctx_log_options ;;
       x) _command_names -e ;;
       *) _describe 'option' _ctx_options ;;
     esac
@@ -333,6 +345,10 @@ const bashCompletionScript = `_ctx_completion() {
       ;;
     hosts|xhosts)
       COMPREPLY=($(compgen -W "show sync clean" -- "${cur}"))
+      return
+      ;;
+    log|xlog)
+      COMPREPLY=($(compgen -W "-p --plain -v --verbose -i --interactive -h --help" -- "${cur}"))
       return
       ;;
     x)

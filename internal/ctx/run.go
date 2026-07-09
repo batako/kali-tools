@@ -146,7 +146,10 @@ const logUsageText = `usage: ctx log [id] [options]
 Show the workspace timeline or command log details by ID.
 
 options:
-  -h, --help  show this help`
+  -p, --plain        print a compact timeline
+  -v, --verbose      print IDs, status, and exit codes
+  -i, --interactive  open the interactive timeline
+  -h, --help         show this help`
 
 const noteUsageText = `usage: ctx note <text> [options]
 
@@ -416,8 +419,9 @@ func runLog(args []string, stdout io.Writer) error {
 		_, err := fmt.Fprintln(stdout, logUsageText)
 		return err
 	}
-	if len(args) > 1 {
-		return errors.New("usage: ctx log [id]")
+	id, mode, err := parseLogArgs(args)
+	if err != nil {
+		return err
 	}
 
 	workspace, err := currentWorkspace()
@@ -425,41 +429,63 @@ func runLog(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	if len(args) == 0 {
+	if id == "" {
 		entries, err := ListTimeline(workspace)
 		if err != nil {
 			return err
 		}
-		if len(entries) == 0 {
+		if len(entries) == 0 && mode != logDisplayInteractive && !(mode == logDisplayAuto && logIsTerminal(stdout)) {
 			_, err = fmt.Fprintln(stdout, "no logs")
 			return err
 		}
-		for _, entry := range entries {
-			if entry.IsCommand {
-				if _, err := fmt.Fprintf(stdout, "%s %s %s %d %s\n", entry.Ref, entry.Time, entry.Status, entry.ExitCode, entry.Text); err != nil {
-					return err
-				}
-				continue
-			}
-			if _, err := fmt.Fprintf(stdout, "%s %s %s %s\n", entry.Ref, entry.Time, entry.Status, entry.Text); err != nil {
-				return err
-			}
+		if mode == logDisplayInteractive || (mode == logDisplayAuto && logIsTerminal(stdout)) {
+			return runLogTUI(workspace, entries, stdout)
 		}
-		return nil
+		if mode == logDisplayVerbose {
+			return writeVerboseTimeline(stdout, entries)
+		}
+		return writePlainTimeline(stdout, entries)
 	}
 
-	log, err := GetCommandLog(workspace, args[0])
+	log, err := GetCommandLog(workspace, id)
 	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(stdout, "id: %d\ncommand: %s\nexpanded_command: %s\nstatus: %s\nexit_code: %d\nstarted_at: %s\nended_at: %s\n\nstdout:\n%s\nstderr:\n%s", log.ID, log.Command, log.ExpandedCommand, log.Status, log.ExitCode, log.StartedAt, log.EndedAt, log.Stdout, log.Stderr); err != nil {
+	if _, err := fmt.Fprintf(stdout, "id: %d\ncommand: %s\nexpanded_command: %s\nstatus: %s\nexit_code: %d\nstarted_at: %s\nended_at: %s\n\n", log.ID, log.Command, log.ExpandedCommand, log.Status, log.ExitCode, log.StartedAt, log.EndedAt); err != nil {
 		return err
 	}
-	if log.Stderr != "" && !strings.HasSuffix(log.Stderr, "\n") {
-		_, err = fmt.Fprintln(stdout)
-		return err
+	_, err = io.WriteString(stdout, commandOutputSections(log.Stdout, log.Stderr))
+	return err
+}
+
+func parseLogArgs(args []string) (string, logDisplayMode, error) {
+	var id string
+	mode := logDisplayAuto
+	for _, arg := range args {
+		var requested logDisplayMode
+		switch arg {
+		case "-p", "--plain":
+			requested = logDisplayPlain
+		case "-v", "--verbose":
+			requested = logDisplayVerbose
+		case "-i", "--interactive":
+			requested = logDisplayInteractive
+		default:
+			if strings.HasPrefix(arg, "-") || id != "" {
+				return "", logDisplayAuto, errors.New("usage: ctx log [id] [--plain|--verbose|--interactive]")
+			}
+			id = arg
+			continue
+		}
+		if mode != logDisplayAuto {
+			return "", logDisplayAuto, errors.New("usage: ctx log [id] [--plain|--verbose|--interactive]")
+		}
+		mode = requested
 	}
-	return nil
+	if id != "" && mode != logDisplayAuto {
+		return "", logDisplayAuto, errors.New("display options cannot be used with a log id")
+	}
+	return id, mode, nil
 }
 
 func runTarget(args []string, stdout io.Writer) error {

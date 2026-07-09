@@ -44,6 +44,8 @@ x <command> [args...]
 
 `ctx note <text>` saves a note as a `note:<id>` entry in the `ctx log` timeline. After `ctx init-shell`, use `xnote <text>` as its short form.
 
+On a terminal, `ctx log` opens an interactive timeline. Use `j`/`k` or the arrow keys to move, Enter to open command details, and `q` to return or quit. Use `-p`/`--plain` for a compact text timeline, `-v`/`--verbose` for IDs and execution status, or `-i`/`--interactive` to request the TUI explicitly.
+
 `ctx workspace rm` removes the current workspace's marker, database records, and data directory after confirmation. Outside a workspace, it lists the registered workspaces for selection. Pass an ID to select one directly, or add `--yes` to skip confirmation.
 
 ## ctx Shell Setup

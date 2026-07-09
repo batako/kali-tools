@@ -139,8 +139,8 @@ func TestRunLogListsAndShowsCommandLog(t *testing.T) {
 	if err := Run([]string{"ctx", "log"}, &out); err != nil {
 		t.Fatalf("Run(ctx log) error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "echo hi") || !strings.Contains(got, "success") {
-		t.Fatalf("ctx log output = %q, want summary", got)
+	if got := out.String(); !strings.Contains(got, "echo hi") || strings.Contains(got, "success") {
+		t.Fatalf("ctx log output = %q, want compact summary", got)
 	}
 
 	out.Reset()
@@ -152,11 +152,14 @@ func TestRunLogListsAndShowsCommandLog(t *testing.T) {
 		"id: 1",
 		"command: echo hi",
 		"expanded_command: echo hi",
-		"stdout:\nhi\n",
+		"---------------- stdout ----------------\nhi\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("ctx log %d output = %q, want %q", id, got, want)
 		}
+	}
+	if strings.Contains(got, "---------------- stderr ----------------") {
+		t.Fatalf("ctx log %d output = %q, should hide empty stderr", id, got)
 	}
 }
 

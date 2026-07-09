@@ -31,7 +31,7 @@ func TestRunNoteSavesNoteAndShowsItInLog(t *testing.T) {
 		t.Fatalf("Run(ctx log) error = %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "note:1") || !strings.Contains(got, "note SMB anonymous login possible") {
+	if strings.Contains(got, "note:1") || !strings.Contains(got, "# SMB anonymous login possible") {
 		t.Fatalf("ctx log output = %q, want note timeline entry", got)
 	}
 }

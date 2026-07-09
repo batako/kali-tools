@@ -141,3 +141,17 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		}
 	}
 }
+
+func TestRunLogHelpListsDisplayModes(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "log", "--help"}, &out); err != nil {
+		t.Fatalf("Run(ctx log --help) error = %v", err)
+	}
+	for _, option := range []string{"-p, --plain", "-v, --verbose", "-i, --interactive"} {
+		if !strings.Contains(out.String(), option) {
+			t.Fatalf("log help = %q, want %s", out.String(), option)
+		}
+	}
+}
