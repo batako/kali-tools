@@ -26,8 +26,10 @@ Options:
 ## ctx Usage
 
 ```sh
-ctx init
+ctx workspace init
 ctx status
+ctx workspace ls
+ctx workspace rm [id]
 ctx log
 ctx log <id>
 ctx x <command> [args...]
@@ -38,6 +40,8 @@ x <command> [args...]
 ```
 
 `ctx x` runs the given command in the current ctx workspace, streams stdout/stderr to the terminal, and saves the command, expanded command, exit code, timestamps, stdout, and stderr to `ctx log`. If an argument contains `$IP` or `${IP}`, it is expanded to the current primary target IP before execution. After `ctx init-shell`, the `x` helper function is available as the short form of `ctx x`.
+
+`ctx workspace rm` removes the current workspace's marker, database records, and data directory after confirmation. Outside a workspace, it lists the registered workspaces for selection. Pass an ID to select one directly, or add `--yes` to skip confirmation.
 
 ## ctx Shell Setup
 
@@ -51,7 +55,7 @@ ctx doctor
 
 `ctx completion zsh` and `ctx completion bash` only print shell scripts to stdout. They do not edit shell rc files.
 
-`ctx init-shell` detects the current shell and writes a marked ctx block to `.zshrc` or `.bashrc`. It also enables x-prefixed helper functions, so `ctx init` can be run as `xinit`, `ctx status` as `xstatus`, and `ctx hosts` as `xhosts`. ctx does not create aliases.
+`ctx init-shell` detects the current shell and writes a marked ctx block to `.zshrc` or `.bashrc`. It also enables x-prefixed helper functions, so `ctx workspace init` can be run as `xinit`, `ctx status` as `xstatus`, and `ctx hosts` as `xhosts`. ctx does not create aliases.
 
 ## Directory Structure
 

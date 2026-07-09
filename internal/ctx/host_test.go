@@ -61,8 +61,8 @@ func TestRunHostCommands(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "init"}, &out); err != nil {
-		t.Fatalf("Run(init) error = %v", err)
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
 	}
 	out.Reset()
 	if err := Run([]string{"ctx", "target", "set", "10.10.10.10"}, &out); err != nil {
@@ -171,8 +171,8 @@ func TestRunHostsShow(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "init"}, &out); err != nil {
-		t.Fatalf("Run(init) error = %v", err)
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
 	}
 	out.Reset()
 	if err := Run([]string{"ctx", "target", "set", "10.10.10.10"}, &out); err != nil {
@@ -304,8 +304,8 @@ func TestRunHostsSyncWritesConfiguredHostsFile(t *testing.T) {
 	t.Cleanup(func() { hostsFilePath = oldHostsFilePath })
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "init"}, &out); err != nil {
-		t.Fatalf("Run(init) error = %v", err)
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
 	}
 	out.Reset()
 	if err := Run([]string{"ctx", "target", "set", "10.10.10.10"}, &out); err != nil {
@@ -338,8 +338,8 @@ func TestRunHostsSyncPermissionDeniedTriggersSudoReexec(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "init"}, &out); err != nil {
-		t.Fatalf("Run(init) error = %v", err)
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
 	}
 
 	oldSyncHostsFileFunc := syncHostsFileFunc
@@ -380,8 +380,8 @@ func TestRunHostsSyncInternalDoesNotTriggerSudoReexec(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "init"}, &out); err != nil {
-		t.Fatalf("Run(init) error = %v", err)
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
 	}
 
 	oldSyncHostsFileFunc := syncHostsFileFunc
@@ -539,8 +539,8 @@ func TestRunHostsCleanWritesConfiguredHostsFile(t *testing.T) {
 	t.Cleanup(func() { hostsFilePath = oldHostsFilePath })
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "init"}, &out); err != nil {
-		t.Fatalf("Run(init) error = %v", err)
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
 	}
 	out.Reset()
 	if err := Run([]string{"ctx", "target", "set", "10.10.10.10"}, &out); err != nil {
@@ -577,8 +577,8 @@ func TestRunHostsCleanPermissionDeniedTriggersSudoReexec(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "init"}, &out); err != nil {
-		t.Fatalf("Run(init) error = %v", err)
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
 	}
 
 	oldCleanHostsFileFunc := cleanHostsFileFunc
@@ -619,8 +619,8 @@ func TestRunHostsCleanInternalDoesNotTriggerSudoReexec(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "init"}, &out); err != nil {
-		t.Fatalf("Run(init) error = %v", err)
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
 	}
 
 	oldCleanHostsFileFunc := cleanHostsFileFunc

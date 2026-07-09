@@ -164,3 +164,88 @@ func TestExistingPrefixedWorkspaceIDRemainsReadable(t *testing.T) {
 		t.Fatalf("workspace id = %q, want existing id %q", workspace.ID, existingID)
 	}
 }
+
+func TestRemoveWorkspaceDeletesMarkerDataAndDatabaseRecords(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+
+	workspace, err := InitWorkspace(root)
+	if err != nil {
+		t.Fatalf("InitWorkspace() error = %v", err)
+	}
+	if _, err := SetPrimaryTargetIP(workspace, "10.10.10.10"); err != nil {
+		t.Fatalf("SetPrimaryTargetIP() error = %v", err)
+	}
+	if _, err := AddHost(workspace, "target.example", ""); err != nil {
+		t.Fatalf("AddHost() error = %v", err)
+	}
+	if _, err := SaveCommandLog(workspace, CommandLog{
+		Command:         "echo test",
+		ExpandedCommand: "echo test",
+		Status:          "success",
+		StartedAt:       "2026-07-09T00:00:00Z",
+		EndedAt:         "2026-07-09T00:00:01Z",
+	}); err != nil {
+		t.Fatalf("SaveCommandLog() error = %v", err)
+	}
+
+	record, err := GetWorkspaceRecord(workspace)
+	if err != nil {
+		t.Fatalf("GetWorkspaceRecord() error = %v", err)
+	}
+	if err := RemoveWorkspace(*record); err != nil {
+		t.Fatalf("RemoveWorkspace() error = %v", err)
+	}
+
+	for _, path := range []string{filepath.Join(root, MarkerFile), workspace.DataPath} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("Stat(%s) error = %v, want not exist", path, err)
+		}
+	}
+
+	db, err := openDatabase(workspace.DatabasePath)
+	if err != nil {
+		t.Fatalf("openDatabase() error = %v", err)
+	}
+	defer db.Close()
+	for _, table := range []string{"workspace", "target", "host", "command_log"} {
+		var count int
+		query := "SELECT COUNT(*) FROM " + table + " WHERE "
+		if table == "workspace" {
+			query += "id = ?"
+		} else {
+			query += "workspace_id = ?"
+		}
+		if err := db.QueryRow(query, workspace.ID).Scan(&count); err != nil {
+			t.Fatalf("count %s records error = %v", table, err)
+		}
+		if count != 0 {
+			t.Fatalf("%s records = %d, want 0", table, count)
+		}
+	}
+}
+
+func TestRemoveWorkspaceRefusesMismatchedMarker(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+
+	workspace, err := InitWorkspace(root)
+	if err != nil {
+		t.Fatalf("InitWorkspace() error = %v", err)
+	}
+	record, err := GetWorkspaceRecord(workspace)
+	if err != nil {
+		t.Fatalf("GetWorkspaceRecord() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, MarkerFile), []byte("another-workspace\n"), 0644); err != nil {
+		t.Fatalf("WriteFile(.ctx) error = %v", err)
+	}
+
+	err = RemoveWorkspace(*record)
+	if err == nil || !strings.Contains(err.Error(), "refusing to remove") {
+		t.Fatalf("RemoveWorkspace() error = %v, want marker mismatch", err)
+	}
+	if _, err := os.Stat(workspace.DataPath); err != nil {
+		t.Fatalf("workspace data was removed: %v", err)
+	}
+}

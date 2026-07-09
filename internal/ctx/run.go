@@ -1,11 +1,13 @@
 package ctx
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -19,13 +21,14 @@ var (
 	reexecHostsCleanWithSudoFunc = reexecHostsCleanWithSudo
 	executableFunc               = os.Executable
 	execCommandFunc              = exec.Command
+	workspaceStdin               = io.Reader(os.Stdin)
 )
 
 const usageText = `usage: ctx <command> [options]
 
 commands:
-  init     create a ctx workspace
   status   show the current workspace
+  workspace  initialize, list, or remove workspaces
   target   manage targets
   ip       show or update the primary target IP
   host     manage hostnames
@@ -43,14 +46,7 @@ options:
 Run ctx <command> -h for command-specific help.
 
 Run ctx init-shell to enable x-prefixed shortcuts.
-Examples: ctx init -> xinit, ctx status -> xstatus`
-
-const initUsageText = `usage: ctx init [options]
-
-Create a ctx workspace in the current directory.
-
-options:
-  -h, --help  show this help`
+Examples: ctx workspace init -> xinit, ctx status -> xstatus`
 
 const statusUsageText = `usage: ctx status [options]
 
@@ -58,6 +54,17 @@ Show the current ctx workspace.
 
 options:
   -h, --help  show this help`
+
+const workspaceUsageText = `usage: ctx workspace <command> [options]
+
+commands:
+  init               create a workspace in the current directory
+  ls                 list workspaces
+  rm [id] [--yes]    remove a workspace and all of its ctx data
+
+options:
+  -h, --help         show this help
+  --yes              skip removal confirmation`
 
 const targetUsageText = `usage: ctx target <command> [options]
 
@@ -138,24 +145,6 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 	}
 
 	switch args[1] {
-	case "init":
-		if len(args) == 3 && isHelpArg(args[2]) {
-			_, err := fmt.Fprintln(stdout, initUsageText)
-			return err
-		}
-		if len(args) != 2 {
-			return errors.New("usage: ctx init")
-		}
-		wd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
-		}
-		workspace, err := InitWorkspace(wd)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(stdout, "initialized ctx workspace %s\n", workspace.ID)
-		return err
 	case "status":
 		if len(args) == 3 && isHelpArg(args[2]) {
 			_, err := fmt.Fprintln(stdout, statusUsageText)
@@ -176,6 +165,8 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		return writeExecutableInfo(stdout)
+	case "workspace":
+		return runWorkspace(args[2:], stdout)
 	case "target":
 		return runTarget(args[2:], stdout)
 	case "ip":
@@ -211,6 +202,166 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 	default:
 		return fmt.Errorf("unknown ctx command: %s", args[1])
 	}
+}
+
+func runWorkspace(args []string, stdout io.Writer) error {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, workspaceUsageText)
+		return err
+	}
+	if len(args) > 1 && isHelpArg(args[1]) {
+		_, err := fmt.Fprintln(stdout, workspaceUsageText)
+		return err
+	}
+
+	switch args[0] {
+	case "init":
+		if len(args) != 1 {
+			return errors.New("usage: ctx workspace init")
+		}
+		wd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+		workspace, err := InitWorkspace(wd)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "initialized ctx workspace %s\n", workspace.ID)
+		return err
+	case "ls":
+		if len(args) != 1 {
+			return errors.New("usage: ctx workspace ls")
+		}
+		records, err := ListWorkspaceRecords()
+		if err != nil {
+			return err
+		}
+		return printWorkspaceRecords(stdout, records, false)
+	case "rm":
+		id, yes, err := parseWorkspaceRemoveArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		records, err := ListWorkspaceRecords()
+		if err != nil {
+			return err
+		}
+		if len(records) == 0 {
+			return errors.New("no workspaces")
+		}
+
+		scanner := bufio.NewScanner(workspaceStdin)
+		record, err := selectWorkspaceForRemoval(id, records, scanner, stdout)
+		if err != nil {
+			return err
+		}
+		if !yes {
+			fmt.Fprintf(stdout, "Remove workspace %s (%s) and all ctx data? [y/N] ", record.Name, record.ID)
+			if !scanner.Scan() {
+				if err := scanner.Err(); err != nil {
+					return fmt.Errorf("failed to read confirmation: %w", err)
+				}
+				_, err := fmt.Fprintln(stdout, "\ncancelled")
+				return err
+			}
+			answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+			if answer != "y" && answer != "yes" {
+				_, err := fmt.Fprintln(stdout, "cancelled")
+				return err
+			}
+		}
+		if err := RemoveWorkspace(record); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "removed workspace: %s %s\n", record.ID, record.RootPath)
+		return err
+	default:
+		return fmt.Errorf("unknown ctx workspace command: %s", args[0])
+	}
+}
+
+func parseWorkspaceRemoveArgs(args []string) (string, bool, error) {
+	var id string
+	var yes bool
+	for _, arg := range args {
+		switch arg {
+		case "--yes":
+			if yes {
+				return "", false, errors.New("usage: ctx workspace rm [id] [--yes]")
+			}
+			yes = true
+		default:
+			if strings.HasPrefix(arg, "-") || id != "" {
+				return "", false, errors.New("usage: ctx workspace rm [id] [--yes]")
+			}
+			id = arg
+		}
+	}
+	return id, yes, nil
+}
+
+func selectWorkspaceForRemoval(id string, records []WorkspaceRecord, scanner *bufio.Scanner, stdout io.Writer) (WorkspaceRecord, error) {
+	if id != "" {
+		for _, record := range records {
+			if record.ID == id {
+				return record, nil
+			}
+		}
+		return WorkspaceRecord{}, fmt.Errorf("workspace not found: %s", id)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return WorkspaceRecord{}, fmt.Errorf("failed to get current directory: %w", err)
+	}
+	current, err := FindWorkspace(wd)
+	if err == nil {
+		for _, record := range records {
+			if record.ID == current.ID {
+				return record, nil
+			}
+		}
+		return WorkspaceRecord{}, fmt.Errorf("workspace not found in database: %s", current.ID)
+	}
+	if !errors.Is(err, ErrWorkspaceNotFound) {
+		return WorkspaceRecord{}, err
+	}
+
+	if err := printWorkspaceRecords(stdout, records, true); err != nil {
+		return WorkspaceRecord{}, err
+	}
+	fmt.Fprintf(stdout, "Select workspace to remove [1-%d]: ", len(records))
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return WorkspaceRecord{}, fmt.Errorf("failed to read workspace selection: %w", err)
+		}
+		return WorkspaceRecord{}, errors.New("workspace selection required")
+	}
+	selection, err := strconv.Atoi(strings.TrimSpace(scanner.Text()))
+	if err != nil || selection < 1 || selection > len(records) {
+		return WorkspaceRecord{}, fmt.Errorf("invalid workspace selection: %s", scanner.Text())
+	}
+	return records[selection-1], nil
+}
+
+func printWorkspaceRecords(stdout io.Writer, records []WorkspaceRecord, numbered bool) error {
+	if len(records) == 0 {
+		_, err := fmt.Fprintln(stdout, "no workspaces")
+		return err
+	}
+	for i, record := range records {
+		if numbered {
+			if _, err := fmt.Fprintf(stdout, "%d  %s  %s  %s\n", i+1, record.Name, record.ID, record.RootPath); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := fmt.Fprintf(stdout, "%s  %s  %s\n", record.ID, record.Name, record.RootPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runLog(args []string, stdout io.Writer) error {
@@ -610,7 +761,7 @@ func runDoctor(args []string, stdout io.Writer) error {
 		if _, writeErr := fmt.Fprintln(stdout, "workspace: not found"); writeErr != nil {
 			return writeErr
 		}
-		_, writeErr := fmt.Fprintln(stdout, "fix: run ctx init in a workspace directory")
+		_, writeErr := fmt.Fprintln(stdout, "fix: run ctx workspace init in a workspace directory")
 		return writeErr
 	}
 	_, err = fmt.Fprintf(stdout, "workspace: %s\nworkspace_root: %s\n", workspace.ID, workspace.RootPath)

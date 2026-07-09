@@ -194,11 +194,11 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
+const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
 
 _ctx_commands=(
-  'init:create a ctx workspace'
   'status:show the current workspace'
+  'workspace:initialize, list, or remove workspaces'
   'target:manage targets'
   'ip:show or update the primary target IP'
   'host:manage hostnames'
@@ -208,6 +208,12 @@ _ctx_commands=(
   'completion:print shell completion script'
   'init-shell:configure shell integration'
   'doctor:check ctx environment'
+)
+
+_ctx_workspace_commands=(
+  'init:create a workspace in the current directory'
+  'ls:list workspaces'
+  'rm:remove a workspace and all of its ctx data'
 )
 
 _ctx_target_commands=(
@@ -251,6 +257,9 @@ _ctx() {
   elif [[ ${invocation} == x ]]; then
     command=x
     command_position=1
+  elif [[ ${invocation} == xinit ]]; then
+    command=workspace-init
+    command_position=1
   else
     command=${invocation#x}
     command_position=1
@@ -263,6 +272,7 @@ _ctx() {
 
   if (( CURRENT == command_position + 1 )); then
     case ${command} in
+      workspace) _describe 'workspace command' _ctx_workspace_commands ;;
       target) _describe 'target command' _ctx_target_commands ;;
       host) _describe 'host command' _ctx_host_commands ;;
       hosts) _describe 'hosts command' _ctx_hosts_commands ;;
@@ -274,14 +284,15 @@ _ctx() {
   fi
 
   case ${command} in
-    target|host|hosts) _message 'argument' ;;
+    workspace|target|host|hosts) _message 'argument' ;;
     *) _describe 'option' _ctx_options ;;
   esac
 }
 
 _xctx_call() { ctx "${0#x}" "$@" }
-xinit() { ctx init "$@" }
+xinit() { ctx workspace init "$@" }
 xstatus() { ctx status "$@" }
+xworkspace() { ctx workspace "$@" }
 xtarget() { ctx target "$@" }
 xip() { ctx ip "$@" }
 xhost() { ctx host "$@" }
@@ -293,7 +304,7 @@ xdoctor() { ctx doctor "$@" }
 xinit-shell() { ctx init-shell "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
+compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
 `
 
 const bashCompletionScript = `_ctx_completion() {
@@ -303,7 +314,11 @@ const bashCompletionScript = `_ctx_completion() {
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "init status target ip host hosts log x completion init-shell doctor -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status workspace target ip host hosts log x completion init-shell doctor -h --help -V --version" -- "${cur}"))
+      return
+      ;;
+    workspace|xworkspace)
+      COMPREPLY=($(compgen -W "init ls rm" -- "${cur}"))
       return
       ;;
     target|xtarget)
@@ -329,8 +344,9 @@ const bashCompletionScript = `_ctx_completion() {
   esac
 }
 
-xinit() { ctx init "$@"; }
+xinit() { ctx workspace init "$@"; }
 xstatus() { ctx status "$@"; }
+xworkspace() { ctx workspace "$@"; }
 xtarget() { ctx target "$@"; }
 xip() { ctx ip "$@"; }
 xhost() { ctx host "$@"; }
@@ -342,5 +358,5 @@ xdoctor() { ctx doctor "$@"; }
 xinit-shell() { ctx init-shell "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
+complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
 `

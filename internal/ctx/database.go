@@ -74,6 +74,82 @@ func GetWorkspaceRecord(workspace *Workspace) (*WorkspaceRecord, error) {
 	return &record, nil
 }
 
+func ListWorkspaceRecords() ([]WorkspaceRecord, error) {
+	db, err := openDatabase(filepath.Join(dataRoot(), "db.sqlite"))
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	if err := createSchema(db); err != nil {
+		return nil, err
+	}
+
+	rows, err := db.Query(`
+		SELECT id, name, root_path, created_at, updated_at
+		FROM workspace
+		ORDER BY name ASC, root_path ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list workspaces: %w", err)
+	}
+	defer rows.Close()
+
+	var records []WorkspaceRecord
+	for rows.Next() {
+		var record WorkspaceRecord
+		if err := rows.Scan(&record.ID, &record.Name, &record.RootPath, &record.CreatedAt, &record.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to read workspace: %w", err)
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list workspaces: %w", err)
+	}
+	return records, nil
+}
+
+func RemoveWorkspace(record WorkspaceRecord) error {
+	markerPath := filepath.Join(record.RootPath, MarkerFile)
+	markerID, err := readWorkspaceID(markerPath)
+	switch {
+	case err == nil && markerID != record.ID:
+		return fmt.Errorf("refusing to remove workspace %s: %s belongs to workspace %s", record.ID, markerPath, markerID)
+	case err != nil && !os.IsNotExist(err):
+		return err
+	}
+
+	db, err := openDatabase(filepath.Join(dataRoot(), "db.sqlite"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if err := createSchema(db); err != nil {
+		return err
+	}
+
+	result, err := db.Exec(`DELETE FROM workspace WHERE id = ?`, record.ID)
+	if err != nil {
+		return fmt.Errorf("failed to remove workspace from database: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to inspect removed workspace: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("workspace not found: %s", record.ID)
+	}
+
+	if err := os.RemoveAll(filepath.Join(dataRoot(), "workspaces", record.ID)); err != nil {
+		return fmt.Errorf("failed to remove workspace data: %w", err)
+	}
+	if err := os.Remove(markerPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove workspace marker: %w", err)
+	}
+	return nil
+}
+
 func openDatabase(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)

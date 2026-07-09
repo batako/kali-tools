@@ -34,7 +34,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 		}
 		for _, hint := range []string{
 			"Run ctx init-shell to enable x-prefixed shortcuts.",
-			"Examples: ctx init -> xinit, ctx status -> xstatus",
+			"Examples: ctx workspace init -> xinit, ctx status -> xstatus",
 		} {
 			if !strings.Contains(got, hint) {
 				t.Fatalf("help output = %q, want shell shortcut hint %q", got, hint)
@@ -80,6 +80,16 @@ func TestRunDoesNotSupportHelpCommand(t *testing.T) {
 	}
 }
 
+func TestRunDoesNotSupportTopLevelInit(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	err := Run([]string{"ctx", "init"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "unknown ctx command: init") {
+		t.Fatalf("Run(ctx init) error = %v, want unknown command", err)
+	}
+}
+
 func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 	t.Parallel()
 
@@ -87,8 +97,10 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"ctx", "init", "-h"}, "usage: ctx init [options]"},
 		{[]string{"ctx", "status", "--help"}, "usage: ctx status [options]"},
+		{[]string{"ctx", "workspace", "-h"}, "usage: ctx workspace <command> [options]"},
+		{[]string{"ctx", "workspace", "init", "--help"}, "usage: ctx workspace <command> [options]"},
+		{[]string{"ctx", "workspace", "rm", "--help"}, "usage: ctx workspace <command> [options]"},
 		{[]string{"ctx", "target", "-h"}, "usage: ctx target <command> [options]"},
 		{[]string{"ctx", "target", "add", "--help"}, "usage: ctx target <command> [options]"},
 		{[]string{"ctx", "ip", "-h"}, "usage: ctx ip [ip] [options]"},

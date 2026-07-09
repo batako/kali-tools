@@ -11,6 +11,8 @@ import (
 
 const MarkerFile = ".ctx"
 
+var ErrWorkspaceNotFound = errors.New("ctx workspace not found (run ctx workspace init)")
+
 type Workspace struct {
 	ID           string
 	RootPath     string
@@ -85,7 +87,7 @@ func FindWorkspace(startPath string) (*Workspace, error) {
 
 		parent := filepath.Dir(current)
 		if parent == current {
-			return nil, errors.New("ctx workspace not found (run ctx init)")
+			return nil, ErrWorkspaceNotFound
 		}
 		current = parent
 	}

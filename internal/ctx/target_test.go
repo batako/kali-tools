@@ -59,8 +59,8 @@ func TestRunTargetAndIPCommands(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "init"}, &out); err != nil {
-		t.Fatalf("Run(init) error = %v", err)
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
 	}
 
 	out.Reset()

@@ -26,8 +26,10 @@ req -V
 ## ctx の使い方
 
 ```sh
-ctx init
+ctx workspace init
 ctx status
+ctx workspace ls
+ctx workspace rm [id]
 ctx log
 ctx log <id>
 ctx x <command> [args...]
@@ -38,6 +40,8 @@ x <command> [args...]
 ```
 
 `ctx x` は現在の ctx ワークスペース内で指定したコマンドを実行し、stdout/stderr を端末へ流しながら、実行コマンド、展開後コマンド、終了コード、時刻、stdout、stderr を `ctx log` に保存します。引数に `$IP` または `${IP}` が含まれる場合は、実行前に現在の primary target IP へ展開します。`ctx init-shell` 後は、`x` helper function を `ctx x` の短縮形として使えます。
+
+`ctx workspace rm` は確認後、現在のワークスペースのマーカー、DBレコード、データディレクトリを削除します。ワークスペース外では登録済み一覧から選択できます。IDを指定すれば直接選択でき、`--yes` を付けると確認を省略します。
 
 ## ctx のシェル初期設定
 
@@ -51,7 +55,7 @@ ctx doctor
 
 `ctx completion zsh` と `ctx completion bash` はシェルスクリプトを標準出力に出すだけで、rc ファイルは変更しません。
 
-`ctx init-shell` は現在のシェルを判定し、`.zshrc` または `.bashrc` に ctx 用のマーカー付きブロックを追記します。あわせて x プレフィックスの helper function も有効になるため、`ctx init` は `xinit`、`ctx status` は `xstatus`、`ctx hosts` は `xhosts` として実行できます。ctx は alias を作成しません。
+`ctx init-shell` は現在のシェルを判定し、`.zshrc` または `.bashrc` に ctx 用のマーカー付きブロックを追記します。あわせて x プレフィックスの helper function も有効になるため、`ctx workspace init` は `xinit`、`ctx status` は `xstatus`、`ctx hosts` は `xhosts` として実行できます。ctx は alias を作成しません。
 
 ## ディレクトリ構成
 

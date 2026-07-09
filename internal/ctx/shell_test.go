@@ -31,6 +31,20 @@ func TestCompletionScriptsIncludeXFunctionForEveryCommand(t *testing.T) {
 	}
 }
 
+func TestCompletionScriptsMapXInitToWorkspaceInit(t *testing.T) {
+	t.Parallel()
+
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell)
+		if err != nil {
+			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
+		}
+		if !strings.Contains(script, `xinit() { ctx workspace init "$@"`) {
+			t.Errorf("CompletionScript(%s) does not map xinit to ctx workspace init", shell)
+		}
+	}
+}
+
 func topLevelCommandsFromUsage(t *testing.T) []string {
 	t.Helper()
 
@@ -66,6 +80,7 @@ func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.
 
 	for _, want := range []string{
 		"'set:create or update the primary target'",
+		"'rm:remove a workspace and all of its ctx data'",
 		"'add:add a hostname'",
 		"'sync:sync the managed block to /etc/hosts'",
 		"'zsh:print zsh completion script'",
@@ -75,6 +90,7 @@ func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.
 		"-z ${command} || CURRENT == 2",
 		"CURRENT == command_position + 1",
 		"_describe 'target command' _ctx_target_commands",
+		"_describe 'workspace command' _ctx_workspace_commands",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("CompletionScript(zsh) missing %q", want)
