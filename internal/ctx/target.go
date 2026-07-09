@@ -254,6 +254,32 @@ func GetTargetByName(workspace *Workspace, name string) (*Target, error) {
 	return &target, nil
 }
 
+func GetTargetByIP(workspace *Workspace, ip string) (*Target, error) {
+	db, err := openWorkspaceDatabase(workspace)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	var target Target
+	var isPrimary int
+	err = db.QueryRow(`
+		SELECT id, name, ip, is_primary
+		FROM target
+		WHERE workspace_id = ? AND ip = ?
+		ORDER BY is_primary DESC, id ASC
+		LIMIT 1
+	`, workspace.ID, ip).Scan(&target.ID, &target.Name, &target.IP, &isPrimary)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("target not found for IP: %s", ip)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load target by IP: %w", err)
+	}
+	target.IsPrimary = isPrimary == 1
+	return &target, nil
+}
+
 func openWorkspaceDatabase(workspace *Workspace) (*sql.DB, error) {
 	db, err := openDatabase(workspace.DatabasePath)
 	if err != nil {

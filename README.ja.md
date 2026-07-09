@@ -30,6 +30,8 @@ ctx workspace init
 ctx status
 ctx workspace ls
 ctx workspace rm [id]
+ctx scan
+ctx scan 10.10.10.20 -p 22,80,443
 ctx note "SMB anonymous login possible"
 ctx log
 ctx log <id>
@@ -42,9 +44,12 @@ ctx --help
 ctx --version
 ctx -V
 x <command> [args...]
+xscan [ip] [-p ports]
 ```
 
 `ctx x` は現在の ctx ワークスペース内で指定したコマンドを実行し、stdout/stderr を端末へ流しながら、実行コマンド、展開後コマンド、終了コード、時刻、stdout、stderr を `ctx log` に保存します。引数に `$IP` または `${IP}` が含まれる場合は、実行前に現在の primary target IP へ展開します。`ctx init-shell` 後は、`x` helper function を `ctx x` の短縮形として使えます。
+
+`ctx scan [ip]` は現在のターゲットに対して `nmap -Pn -n -sV` を実行し、生の成果物を `~/.ctx/workspaces/<workspace_id>/scans/` に保存しつつ、実行した `nmap` コマンドを `ctx log` に記録し、解析したポート/サービス情報をワークスペースDBへ格納します。明示的な nmap のポート式は `-p`/`--ports`、実行前にコマンドだけ確認したい場合は `-n`/`--dry-run` を使います。`ctx init-shell` 後は、`xscan` を `ctx scan` の短縮形として使えます。
 
 `ctx note <text>` はノートを `note:<id>` として `ctx log` のタイムラインへ保存します。`ctx init-shell` 後は短縮形の `xnote <text>` を使えます。
 

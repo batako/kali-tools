@@ -287,6 +287,20 @@ func createSchema(db *sql.DB) error {
 			ended_at TEXT NOT NULL,
 			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS scan_run (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			workspace_id TEXT NOT NULL,
+			target_id INTEGER NOT NULL,
+			target_ip TEXT NOT NULL,
+			ports TEXT NOT NULL,
+			command_log_id INTEGER NOT NULL,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+			FOREIGN KEY (target_id) REFERENCES target(id) ON DELETE CASCADE,
+			FOREIGN KEY (command_log_id) REFERENCES command_log(id) ON DELETE CASCADE,
+			UNIQUE (workspace_id, target_id, target_ip, ports)
+		)`,
 		`CREATE TABLE IF NOT EXISTS note (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			workspace_id TEXT NOT NULL,

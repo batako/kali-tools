@@ -194,7 +194,7 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xscan xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 
 _ctx_commands=(
   'status:show the current workspace'
@@ -203,6 +203,7 @@ _ctx_commands=(
   'ip:show or update the primary target IP'
   'host:manage hostnames'
   'hosts:show, sync, or clean /etc/hosts entries'
+  'scan:run nmap and save structured service results'
   'note:add a note to the workspace timeline'
   'log:show the workspace timeline'
   'prompt:print data for shell prompts'
@@ -238,6 +239,17 @@ _ctx_hosts_commands=(
   'show:show the managed hosts block'
   'sync:sync the managed block to /etc/hosts'
   'clean:remove the managed block from /etc/hosts'
+)
+
+_ctx_scan_options=(
+  '-p:pass an explicit port list/range to nmap'
+  '--ports:pass an explicit port list/range to nmap'
+  '-n:print the nmap command without running it'
+  '--dry-run:print the nmap command without running it'
+  '-f:run even if the same scan already succeeded'
+  '--force:run even if the same scan already succeeded'
+  '-h:show help'
+  '--help:show help'
 )
 
 _ctx_completion_shells=(
@@ -316,6 +328,7 @@ _ctx() {
       host) _describe 'host command' _ctx_host_commands ;;
       hosts) _describe 'hosts command' _ctx_hosts_commands ;;
       completion) _describe 'shell' _ctx_completion_shells ;;
+      scan) _describe 'scan option' _ctx_scan_options ;;
       log)
         _ctx_dynamic_descriptions log
         _describe 'log option' _ctx_log_options
@@ -353,6 +366,12 @@ _ctx() {
       fi
       ;;
     hosts) _message 'argument' ;;
+    scan)
+      case ${words[CURRENT-1]} in
+        -p|--ports) _message 'ports' ;;
+        *) _describe 'scan option' _ctx_scan_options ;;
+      esac
+      ;;
     prompt)
       case ${words[CURRENT-1]} in
         --format) _describe 'format' _ctx_prompt_formats ;;
@@ -372,6 +391,7 @@ xtarget() { ctx target "$@" }
 xip() { ctx ip "$@" }
 xhost() { ctx host "$@" }
 xhosts() { ctx hosts "$@" }
+xscan() { ctx scan "$@" }
 xnote() { ctx note "$@" }
 xlog() { ctx log "$@" }
 xprompt() { ctx prompt "$@" }
@@ -382,7 +402,7 @@ xinit-shell() { ctx init-shell "$@" }
 xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xscan xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `
 
 const bashCompletionScript = `_ctx_complete_values() {
@@ -430,7 +450,7 @@ _ctx_completion() {
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status workspace target ip host hosts note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status workspace target ip host hosts scan note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)
@@ -447,6 +467,10 @@ _ctx_completion() {
       ;;
     hosts|xhosts)
       COMPREPLY=($(compgen -W "show sync clean" -- "${cur}"))
+      return
+      ;;
+    scan|xscan)
+      COMPREPLY=($(compgen -W "-p --ports -n --dry-run -f --force -h --help" -- "${cur}"))
       return
       ;;
     log|xlog)
@@ -490,6 +514,7 @@ xtarget() { ctx target "$@"; }
 xip() { ctx ip "$@"; }
 xhost() { ctx host "$@"; }
 xhosts() { ctx hosts "$@"; }
+xscan() { ctx scan "$@"; }
 xnote() { ctx note "$@"; }
 xlog() { ctx log "$@"; }
 xprompt() { ctx prompt "$@"; }
@@ -500,5 +525,5 @@ xinit-shell() { ctx init-shell "$@"; }
 xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xscan xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `

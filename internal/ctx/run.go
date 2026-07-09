@@ -38,6 +38,7 @@ commands:
   ip       show or update the primary target IP
   host     manage hostnames
   hosts    show, sync, or clean /etc/hosts entries
+  scan     run nmap and save structured service results
   note     add a note to the workspace timeline
   log      show the workspace timeline
   prompt   print data for shell prompts
@@ -59,6 +60,7 @@ shortcuts (requires ctx init-shell):
   xip          ctx ip
   xhost        ctx host
   xhosts       ctx hosts
+  xscan        ctx scan
   xnote        ctx note
   xlog         ctx log
   xprompt      ctx prompt
@@ -150,6 +152,16 @@ commands:
 options:
   -h, --help  show this help`
 
+const scanUsageText = `usage: ctx scan [ip] [options]
+
+Run nmap for the current ctx workspace and save structured service results.
+
+options:
+  -p, --ports <ports>  pass an explicit port list/range to nmap
+  -n, --dry-run        print the nmap command without running it
+  -f, --force          run even if the same scan already succeeded
+  -h, --help           show this help`
+
 const logUsageText = `usage: ctx log [id] [options]
 
 Show the workspace timeline or command log details by ID.
@@ -229,6 +241,16 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 		return runHost(args[2:], stdout)
 	case "hosts":
 		return runHosts(args[2:], stdout)
+	case "scan":
+		if len(args) == 3 && isHelpArg(args[2]) {
+			_, err := fmt.Fprintln(stdout, scanUsageText)
+			return err
+		}
+		code := RunScan(append([]string{"scan"}, args[2:]...), stdout, stderr)
+		if code != 0 {
+			return ExitCodeError{Code: code}
+		}
+		return nil
 	case "note":
 		return runNote(args[2:], stdout)
 	case "log":

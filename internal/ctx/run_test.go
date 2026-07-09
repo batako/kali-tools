@@ -24,7 +24,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 		if !strings.Contains(got, "-V, --version") {
 			t.Fatalf("help output = %q, want -V/--version option", got)
 		}
-		for _, command := range []string{"completion", "init-shell", "doctor"} {
+		for _, command := range []string{"scan", "completion", "init-shell", "doctor"} {
 			if !strings.Contains(got, command) {
 				t.Fatalf("help output = %q, want command %q", got, command)
 			}
@@ -43,6 +43,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 			"xip":         "ctx ip",
 			"xhost":       "ctx host",
 			"xhosts":      "ctx hosts",
+			"xscan":       "ctx scan",
 			"xnote":       "ctx note",
 			"xlog":        "ctx log",
 			"x":           "ctx x",
@@ -124,6 +125,7 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "host", "add", "-h"}, "usage: ctx host <command> [options]"},
 		{[]string{"ctx", "hosts", "-h"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "hosts", "sync", "--help"}, "usage: ctx hosts <command> [options]"},
+		{[]string{"ctx", "scan", "--help"}, "usage: ctx scan [ip] [options]"},
 		{[]string{"ctx", "note", "--help"}, "usage: ctx note <text> [options]"},
 		{[]string{"ctx", "log", "--help"}, "usage: ctx log [id] [options]"},
 		{[]string{"ctx", "prompt", "--help"}, "usage: ctx prompt [options]"},
