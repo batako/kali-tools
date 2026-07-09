@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -40,7 +41,7 @@ func LoadPromptData(startPath string) (PromptData, error) {
 	data := PromptData{
 		Active:        true,
 		WorkspaceID:   record.ID,
-		WorkspaceName: record.Name,
+		WorkspaceName: filepath.Base(record.RootPath),
 		WorkspaceRoot: record.RootPath,
 	}
 

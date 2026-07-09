@@ -35,6 +35,7 @@ func TestLoadPromptDataReturnsWorkspaceTargetAndLocalAddress(t *testing.T) {
 	}
 	if !data.Active ||
 		data.WorkspaceID != workspace.ID ||
+		data.WorkspaceName != filepath.Base(root) ||
 		data.TargetName != "default" ||
 		data.TargetIP != "10.10.10.10" ||
 		data.LocalIP != "10.8.0.2" ||

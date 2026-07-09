@@ -129,32 +129,27 @@ func TestResetCtxDataRemovesCtxTracesAndPreservesUserData(t *testing.T) {
 	}
 }
 
-func TestResetCtxDataRefusesMismatchedMarkerBeforeRemovingAnything(t *testing.T) {
+func TestResetCtxDataRemovesMarkerWhenDatabaseContainsStaleIDs(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
-	firstRoot := t.TempDir()
-	secondRoot := t.TempDir()
-	first, err := InitWorkspace(firstRoot)
+	root := t.TempDir()
+	workspace, err := InitWorkspace(root)
 	if err != nil {
-		t.Fatalf("InitWorkspace(first) error = %v", err)
+		t.Fatalf("InitWorkspace() error = %v", err)
 	}
-	second, err := InitWorkspace(secondRoot)
-	if err != nil {
-		t.Fatalf("InitWorkspace(second) error = %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(secondRoot, MarkerFile), []byte("different\n"), 0644); err != nil {
-		t.Fatalf("WriteFile(marker) error = %v", err)
-	}
-
 	err = ResetCtxData([]WorkspaceRecord{
-		{ID: first.ID, RootPath: firstRoot},
-		{ID: second.ID, RootPath: secondRoot},
+		{ID: "stale-id-1", RootPath: root},
+		{ID: "stale-id-2", RootPath: root},
+		{ID: workspace.ID, RootPath: root},
 	})
-	if err == nil || !strings.Contains(err.Error(), "refusing to remove") {
-		t.Fatalf("ResetCtxData() error = %v, want marker mismatch", err)
+	if err != nil {
+		t.Fatalf("ResetCtxData() error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(firstRoot, MarkerFile)); err != nil {
-		t.Fatalf("first marker was removed before preflight completed: %v", err)
+	if _, err := os.Stat(root); err != nil {
+		t.Fatalf("workspace root was removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, MarkerFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("workspace marker still exists: %v", err)
 	}
 }
 

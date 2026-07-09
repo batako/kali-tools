@@ -68,19 +68,13 @@ func ResetHostsBlocks(hostsPath string, workspaceIDs []string) error {
 }
 
 func ResetCtxData(records []WorkspaceRecord) error {
+	roots := make(map[string]struct{}, len(records))
 	for _, record := range records {
-		markerPath := filepath.Join(record.RootPath, MarkerFile)
-		markerID, err := readWorkspaceID(markerPath)
-		switch {
-		case err == nil && markerID != record.ID:
-			return fmt.Errorf("refusing to remove %s: marker belongs to workspace %s", markerPath, markerID)
-		case err != nil && !errors.Is(err, os.ErrNotExist):
-			return err
-		}
+		roots[record.RootPath] = struct{}{}
 	}
 
-	for _, record := range records {
-		markerPath := filepath.Join(record.RootPath, MarkerFile)
+	for root := range roots {
+		markerPath := filepath.Join(root, MarkerFile)
 		if err := os.Remove(markerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("failed to remove workspace marker %s: %w", markerPath, err)
 		}

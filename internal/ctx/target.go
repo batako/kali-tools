@@ -259,11 +259,7 @@ func openWorkspaceDatabase(workspace *Workspace) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := createSchema(db); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := upsertWorkspace(db, workspace); err != nil {
+	if err := ensureWorkspaceDatabase(db, workspace); err != nil {
 		db.Close()
 		return nil, err
 	}

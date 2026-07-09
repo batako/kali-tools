@@ -102,6 +102,24 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if !exists {
 		t.Fatal("workspace record was not restored in empty database")
 	}
+
+	if err := os.Remove(filepath.Join(root, MarkerFile)); err != nil {
+		t.Fatalf("Remove(.ctx) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(ctx workspace init) marker restore error = %v", err)
+	}
+	if got, want := out.String(), "updated ctx workspace "+workspace.ID+"\n"; got != want {
+		t.Fatalf("marker restore output = %q, want %q", got, want)
+	}
+	marker, err := os.ReadFile(filepath.Join(root, MarkerFile))
+	if err != nil {
+		t.Fatalf("ReadFile(restored .ctx) error = %v", err)
+	}
+	if got := strings.TrimSpace(string(marker)); got != workspace.ID {
+		t.Fatalf("restored marker id = %q, want %q", got, workspace.ID)
+	}
 }
 
 func TestWorkspaceRemoveUsesCurrentWorkspace(t *testing.T) {

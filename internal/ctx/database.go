@@ -12,7 +12,6 @@ import (
 
 type WorkspaceRecord struct {
 	ID        string
-	Name      string
 	RootPath  string
 	CreatedAt string
 	UpdatedAt string
@@ -25,10 +24,7 @@ func EnsureDatabase(workspace *Workspace) error {
 	}
 	defer db.Close()
 
-	if err := createSchema(db); err != nil {
-		return err
-	}
-	if err := upsertWorkspace(db, workspace); err != nil {
+	if err := ensureWorkspaceDatabase(db, workspace); err != nil {
 		return err
 	}
 
@@ -42,36 +38,19 @@ func GetWorkspaceRecord(workspace *Workspace) (*WorkspaceRecord, error) {
 	}
 	defer db.Close()
 
-	if err := createSchema(db); err != nil {
+	if err := ensureWorkspaceDatabase(db, workspace); err != nil {
 		return nil, err
 	}
 
 	var record WorkspaceRecord
 	err = db.QueryRow(`
-		SELECT id, name, root_path, created_at, updated_at
+		SELECT id, root_path, created_at, updated_at
 		FROM workspace
 		WHERE id = ?
-	`, workspace.ID).Scan(&record.ID, &record.Name, &record.RootPath, &record.CreatedAt, &record.UpdatedAt)
-	if err == nil {
-		return &record, nil
-	}
-	if err != sql.ErrNoRows {
-		return nil, fmt.Errorf("failed to load workspace: %w", err)
-	}
-
-	if err := upsertWorkspace(db, workspace); err != nil {
-		return nil, err
-	}
-
-	err = db.QueryRow(`
-		SELECT id, name, root_path, created_at, updated_at
-		FROM workspace
-		WHERE id = ?
-	`, workspace.ID).Scan(&record.ID, &record.Name, &record.RootPath, &record.CreatedAt, &record.UpdatedAt)
+	`, workspace.ID).Scan(&record.ID, &record.RootPath, &record.CreatedAt, &record.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load workspace: %w", err)
 	}
-
 	return &record, nil
 }
 
@@ -117,11 +96,14 @@ func ListWorkspaceRecords() ([]WorkspaceRecord, error) {
 	if err := createSchema(db); err != nil {
 		return nil, err
 	}
+	if err := migrateWorkspaceRoots(db, nil); err != nil {
+		return nil, err
+	}
 
 	rows, err := db.Query(`
-		SELECT id, name, root_path, created_at, updated_at
+		SELECT id, root_path, created_at, updated_at
 		FROM workspace
-		ORDER BY name ASC, root_path ASC, id ASC
+		ORDER BY root_path ASC, id ASC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list workspaces: %w", err)
@@ -131,7 +113,7 @@ func ListWorkspaceRecords() ([]WorkspaceRecord, error) {
 	var records []WorkspaceRecord
 	for rows.Next() {
 		var record WorkspaceRecord
-		if err := rows.Scan(&record.ID, &record.Name, &record.RootPath, &record.CreatedAt, &record.UpdatedAt); err != nil {
+		if err := rows.Scan(&record.ID, &record.RootPath, &record.CreatedAt, &record.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to read workspace: %w", err)
 		}
 		records = append(records, record)
@@ -159,6 +141,9 @@ func RemoveWorkspace(record WorkspaceRecord) error {
 	defer db.Close()
 
 	if err := createSchema(db); err != nil {
+		return err
+	}
+	if err := migrateWorkspaceRoots(db, nil); err != nil {
 		return err
 	}
 
@@ -204,7 +189,6 @@ func createSchema(db *sql.DB) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS workspace (
 			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
 			root_path TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -323,23 +307,256 @@ func createSchema(db *sql.DB) error {
 	return nil
 }
 
-func upsertWorkspace(db *sql.DB, workspace *Workspace) error {
-	name := filepath.Base(workspace.RootPath)
-	if name == "." || name == string(filepath.Separator) {
-		name = workspace.ID
-	}
+type workspaceExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
 
+func upsertWorkspace(db workspaceExecer, workspace *Workspace) error {
 	_, err := db.Exec(`
-		INSERT INTO workspace (id, name, root_path, created_at, updated_at)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		INSERT INTO workspace (id, root_path, created_at, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT(id) DO UPDATE SET
-			name = excluded.name,
 			root_path = excluded.root_path,
 			updated_at = CURRENT_TIMESTAMP
-	`, workspace.ID, name, workspace.RootPath)
+	`, workspace.ID, workspace.RootPath)
 	if err != nil {
 		return fmt.Errorf("failed to save workspace: %w", err)
 	}
 
+	return nil
+}
+
+func ensureWorkspaceDatabase(db *sql.DB, workspace *Workspace) error {
+	if err := createSchema(db); err != nil {
+		return err
+	}
+	return migrateWorkspaceRoots(db, workspace)
+}
+
+func migrateWorkspaceRoots(db *sql.DB, preferred *Workspace) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to start workspace migration: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := dropWorkspaceNameColumn(tx); err != nil {
+		return err
+	}
+
+	rows, err := tx.Query(`
+		SELECT id, root_path
+		FROM workspace
+		ORDER BY updated_at DESC, created_at DESC, id DESC
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to inspect workspace roots: %w", err)
+	}
+
+	type workspaceRootRecord struct {
+		id   string
+		root string
+	}
+	var records []workspaceRootRecord
+	for rows.Next() {
+		var record workspaceRootRecord
+		if err := rows.Scan(&record.id, &record.root); err != nil {
+			rows.Close()
+			return fmt.Errorf("failed to read workspace root: %w", err)
+		}
+		records = append(records, record)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("failed to close workspace roots: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to list workspace roots: %w", err)
+	}
+
+	groups := make(map[string][]string)
+	var rootOrder []string
+	for _, record := range records {
+		if _, exists := groups[record.root]; !exists {
+			rootOrder = append(rootOrder, record.root)
+		}
+		groups[record.root] = append(groups[record.root], record.id)
+	}
+
+	for _, root := range rootOrder {
+		ids := groups[root]
+		keepID := ids[0]
+		if preferred != nil && preferred.RootPath == root {
+			keepID = preferred.ID
+		} else if markerID, err := readWorkspaceID(filepath.Join(root, MarkerFile)); err == nil && containsWorkspaceID(ids, markerID) {
+			keepID = markerID
+		}
+		for _, id := range ids {
+			if id == keepID {
+				continue
+			}
+			if _, err := tx.Exec(`DELETE FROM workspace WHERE id = ?`, id); err != nil {
+				return fmt.Errorf("failed to remove duplicate workspace %s: %w", id, err)
+			}
+		}
+	}
+
+	if preferred != nil {
+		if _, err := tx.Exec(`DELETE FROM workspace WHERE root_path = ? AND id <> ?`, preferred.RootPath, preferred.ID); err != nil {
+			return fmt.Errorf("failed to reconcile workspace root %s: %w", preferred.RootPath, err)
+		}
+		if err := upsertWorkspace(tx, preferred); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_root_path ON workspace(root_path)`); err != nil {
+		return fmt.Errorf("failed to enforce unique workspace root paths: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit workspace migration: %w", err)
+	}
+	return nil
+}
+
+func containsWorkspaceID(ids []string, want string) bool {
+	for _, id := range ids {
+		if id == want {
+			return true
+		}
+	}
+	return false
+}
+
+func GetWorkspaceRecordByRoot(rootPath string) (*WorkspaceRecord, error) {
+	dbPath := filepath.Join(dataRoot(), "db.sqlite")
+	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to inspect database %s: %w", dbPath, err)
+	}
+
+	db, err := openDatabase(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	if err := createSchema(db); err != nil {
+		return nil, err
+	}
+	if err := migrateWorkspaceRoots(db, nil); err != nil {
+		return nil, err
+	}
+
+	var record WorkspaceRecord
+	err = db.QueryRow(`
+		SELECT id, root_path, created_at, updated_at
+		FROM workspace
+		WHERE root_path = ?
+	`, rootPath).Scan(&record.ID, &record.RootPath, &record.CreatedAt, &record.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load workspace by root: %w", err)
+	}
+	return &record, nil
+}
+
+func WorkspaceDatabaseReady(workspace *Workspace) (bool, error) {
+	if _, err := os.Stat(workspace.DatabasePath); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("failed to inspect database %s: %w", workspace.DatabasePath, err)
+	}
+
+	db, err := openDatabase(workspace.DatabasePath)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+
+	var tableExists int
+	if err := db.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace'
+		)
+	`).Scan(&tableExists); err != nil {
+		return false, fmt.Errorf("failed to inspect workspace table: %w", err)
+	}
+	if tableExists == 0 {
+		return false, nil
+	}
+
+	columns, err := db.Query(`PRAGMA table_info(workspace)`)
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect workspace columns: %w", err)
+	}
+	for columns.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := columns.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			columns.Close()
+			return false, fmt.Errorf("failed to read workspace column: %w", err)
+		}
+		if name == "name" {
+			columns.Close()
+			return false, nil
+		}
+	}
+	if err := columns.Close(); err != nil {
+		return false, fmt.Errorf("failed to close workspace columns: %w", err)
+	}
+
+	var matchingRecords int
+	if err := db.QueryRow(`
+		SELECT COUNT(*) FROM workspace WHERE id = ? AND root_path = ?
+	`, workspace.ID, workspace.RootPath).Scan(&matchingRecords); err != nil {
+		return false, fmt.Errorf("failed to inspect workspace record: %w", err)
+	}
+	var rootRecords int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM workspace WHERE root_path = ?`, workspace.RootPath).Scan(&rootRecords); err != nil {
+		return false, fmt.Errorf("failed to inspect workspace root records: %w", err)
+	}
+	var uniqueIndex int
+	if err := db.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM sqlite_master
+			WHERE type = 'index' AND name = 'idx_workspace_root_path'
+		)
+	`).Scan(&uniqueIndex); err != nil {
+		return false, fmt.Errorf("failed to inspect workspace root index: %w", err)
+	}
+	return matchingRecords == 1 && rootRecords == 1 && uniqueIndex == 1, nil
+}
+
+func dropWorkspaceNameColumn(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA table_info(workspace)`)
+	if err != nil {
+		return fmt.Errorf("failed to inspect workspace columns: %w", err)
+	}
+	hasName := false
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return fmt.Errorf("failed to read workspace column: %w", err)
+		}
+		if name == "name" {
+			hasName = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("failed to close workspace columns: %w", err)
+	}
+	if !hasName {
+		return nil
+	}
+	if _, err := tx.Exec(`ALTER TABLE workspace DROP COLUMN name`); err != nil {
+		return fmt.Errorf("failed to remove workspace name column: %w", err)
+	}
 	return nil
 }

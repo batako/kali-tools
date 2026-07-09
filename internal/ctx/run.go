@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -214,7 +215,7 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if _, err = fmt.Fprintf(stdout, "workspace: %s\nname: %s\nroot: %s\ndata: %s\ndatabase: %s\n", record.ID, record.Name, record.RootPath, workspace.DataPath, workspace.DatabasePath); err != nil {
+		if _, err = fmt.Fprintf(stdout, "workspace: %s\nname: %s\nroot: %s\ndata: %s\ndatabase: %s\n", record.ID, filepath.Base(record.RootPath), record.RootPath, workspace.DataPath, workspace.DatabasePath); err != nil {
 			return err
 		}
 		return writeExecutableInfo(stdout)

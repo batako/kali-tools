@@ -60,6 +60,24 @@ func InitWorkspaceWithStatus(rootPath string) (*Workspace, WorkspaceInitStatus, 
 		return nil, WorkspaceUnchanged, err
 	}
 
+	record, err := GetWorkspaceRecordByRoot(rootPath)
+	if err != nil {
+		return nil, WorkspaceUnchanged, err
+	}
+	if record != nil {
+		if err := os.WriteFile(markerPath, []byte(record.ID+"\n"), 0644); err != nil {
+			return nil, WorkspaceUnchanged, fmt.Errorf("failed to restore %s: %w", markerPath, err)
+		}
+		workspace := workspaceFromID(record.ID, rootPath)
+		if err := ensureWorkspaceDirs(workspace.DataPath); err != nil {
+			return nil, WorkspaceUnchanged, err
+		}
+		if err := EnsureDatabase(workspace); err != nil {
+			return nil, WorkspaceUnchanged, err
+		}
+		return workspace, WorkspaceUpdated, nil
+	}
+
 	id, err := newWorkspaceID()
 	if err != nil {
 		return nil, WorkspaceUnchanged, err
@@ -172,11 +190,11 @@ func workspaceNeedsUpdate(workspace *Workspace) (bool, error) {
 			return true, nil
 		}
 	}
-	exists, err := WorkspaceRecordExists(workspace)
+	ready, err := WorkspaceDatabaseReady(workspace)
 	if err != nil {
 		return false, err
 	}
-	return !exists, nil
+	return !ready, nil
 }
 
 func dataRoot() string {
