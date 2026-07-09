@@ -32,12 +32,26 @@ func TestRunTopLevelHelp(t *testing.T) {
 		if !strings.Contains(got, "Run ctx <command> -h for command-specific help.") {
 			t.Fatalf("help output = %q, want command-specific help hint", got)
 		}
-		for _, hint := range []string{
-			"Run ctx init-shell to enable x-prefixed shortcuts.",
-			"Examples: ctx workspace init -> xinit, ctx status -> xstatus",
-		} {
-			if !strings.Contains(got, hint) {
-				t.Fatalf("help output = %q, want shell shortcut hint %q", got, hint)
+		if !strings.Contains(got, "shortcuts (requires ctx init-shell):") {
+			t.Fatalf("help output = %q, want shell shortcut requirement", got)
+		}
+		shortcuts := map[string]string{
+			"xinit":       "ctx workspace init",
+			"xstatus":     "ctx status",
+			"xworkspace":  "ctx workspace",
+			"xtarget":     "ctx target",
+			"xip":         "ctx ip",
+			"xhost":       "ctx host",
+			"xhosts":      "ctx hosts",
+			"xlog":        "ctx log",
+			"x":           "ctx x",
+			"xcompletion": "ctx completion",
+			"xdoctor":     "ctx doctor",
+			"xinit-shell": "ctx init-shell",
+		}
+		for shortcut, command := range shortcuts {
+			if !strings.Contains(got, shortcut) || !strings.Contains(got, command) {
+				t.Fatalf("help output = %q, want shortcut %s for %s", got, shortcut, command)
 			}
 		}
 		for _, detail := range []string{"target set <ip>", "host add <hostname>", "hosts sync"} {

@@ -43,10 +43,21 @@ options:
   -h, --help     show this help
   -V, --version  show version
 
-Run ctx <command> -h for command-specific help.
+shortcuts (requires ctx init-shell):
+  xinit        ctx workspace init
+  xstatus      ctx status
+  xworkspace   ctx workspace
+  xtarget      ctx target
+  xip          ctx ip
+  xhost        ctx host
+  xhosts       ctx hosts
+  xlog         ctx log
+  x            ctx x
+  xcompletion  ctx completion
+  xdoctor      ctx doctor
+  xinit-shell  ctx init-shell
 
-Run ctx init-shell to enable x-prefixed shortcuts.
-Examples: ctx workspace init -> xinit, ctx status -> xstatus`
+Run ctx <command> -h for command-specific help.`
 
 const statusUsageText = `usage: ctx status [options]
 
