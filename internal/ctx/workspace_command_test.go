@@ -74,7 +74,12 @@ func TestWorkspaceRemoveOutsideWorkspaceListsAndSelects(t *testing.T) {
 		t.Fatalf("Run(ctx workspace rm) error = %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"1  alpha", "2  beta", "Select workspace to remove", "removed workspace: " + beta.ID} {
+	for _, want := range []string{
+		"1  " + alpha.ID + "  " + alphaRoot,
+		"2  " + beta.ID + "  " + betaRoot,
+		"Select workspace to remove",
+		"removed workspace: " + beta.ID,
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("output = %q, want %q", text, want)
 		}
@@ -126,10 +131,8 @@ func TestWorkspaceList(t *testing.T) {
 	if err := Run([]string{"ctx", "workspace", "ls"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace ls) error = %v", err)
 	}
-	for _, want := range []string{workspace.ID, filepath.Base(root), root} {
-		if !strings.Contains(out.String(), want) {
-			t.Fatalf("output = %q, want %q", out.String(), want)
-		}
+	if got, want := out.String(), workspace.ID+"  "+root+"\n"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
 

@@ -487,7 +487,7 @@ func runWorkspace(args []string, stdout io.Writer) error {
 			return err
 		}
 		if !yes {
-			fmt.Fprintf(stdout, "Remove workspace %s (%s) and all ctx data? [y/N] ", record.Name, record.ID)
+			fmt.Fprintf(stdout, "Remove workspace %s (%s) and all ctx data? [y/N] ", record.ID, record.RootPath)
 			if !scanner.Scan() {
 				if err := scanner.Err(); err != nil {
 					return fmt.Errorf("failed to read confirmation: %w", err)
@@ -582,12 +582,12 @@ func printWorkspaceRecords(stdout io.Writer, records []WorkspaceRecord, numbered
 	}
 	for i, record := range records {
 		if numbered {
-			if _, err := fmt.Fprintf(stdout, "%d  %s  %s  %s\n", i+1, record.Name, record.ID, record.RootPath); err != nil {
+			if _, err := fmt.Fprintf(stdout, "%d  %s  %s\n", i+1, record.ID, record.RootPath); err != nil {
 				return err
 			}
 			continue
 		}
-		if _, err := fmt.Fprintf(stdout, "%s  %s  %s\n", record.ID, record.Name, record.RootPath); err != nil {
+		if _, err := fmt.Fprintf(stdout, "%s  %s\n", record.ID, record.RootPath); err != nil {
 			return err
 		}
 	}
@@ -1019,7 +1019,7 @@ func completionDescriptions(kind string) ([]string, error) {
 		}
 		values := make([]string, 0, len(records))
 		for _, record := range records {
-			values = append(values, zshCompletionSpec(record.ID, record.Name+"  "+record.RootPath))
+			values = append(values, zshCompletionSpec(record.ID, record.RootPath))
 		}
 		return values, nil
 	}
