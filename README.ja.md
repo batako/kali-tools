@@ -30,6 +30,7 @@ ctx workspace init
 ctx status
 ctx workspace ls
 ctx workspace rm [id]
+ctx note "SMB anonymous login possible"
 ctx log
 ctx log <id>
 ctx x <command> [args...]
@@ -40,6 +41,8 @@ x <command> [args...]
 ```
 
 `ctx x` は現在の ctx ワークスペース内で指定したコマンドを実行し、stdout/stderr を端末へ流しながら、実行コマンド、展開後コマンド、終了コード、時刻、stdout、stderr を `ctx log` に保存します。引数に `$IP` または `${IP}` が含まれる場合は、実行前に現在の primary target IP へ展開します。`ctx init-shell` 後は、`x` helper function を `ctx x` の短縮形として使えます。
+
+`ctx note <text>` はノートを `note:<id>` として `ctx log` のタイムラインへ保存します。`ctx init-shell` 後は短縮形の `xnote <text>` を使えます。
 
 `ctx workspace rm` は確認後、現在のワークスペースのマーカー、DBレコード、データディレクトリを削除します。ワークスペース外では登録済み一覧から選択できます。IDを指定すれば直接選択でき、`--yes` を付けると確認を省略します。
 

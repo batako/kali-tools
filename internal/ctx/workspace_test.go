@@ -188,6 +188,9 @@ func TestRemoveWorkspaceDeletesMarkerDataAndDatabaseRecords(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveCommandLog() error = %v", err)
 	}
+	if _, err := SaveNote(workspace, "workspace note"); err != nil {
+		t.Fatalf("SaveNote() error = %v", err)
+	}
 
 	record, err := GetWorkspaceRecord(workspace)
 	if err != nil {
@@ -208,7 +211,7 @@ func TestRemoveWorkspaceDeletesMarkerDataAndDatabaseRecords(t *testing.T) {
 		t.Fatalf("openDatabase() error = %v", err)
 	}
 	defer db.Close()
-	for _, table := range []string{"workspace", "target", "host", "command_log"} {
+	for _, table := range []string{"workspace", "target", "host", "command_log", "note"} {
 		var count int
 		query := "SELECT COUNT(*) FROM " + table + " WHERE "
 		if table == "workspace" {

@@ -30,6 +30,7 @@ ctx workspace init
 ctx status
 ctx workspace ls
 ctx workspace rm [id]
+ctx note "SMB anonymous login possible"
 ctx log
 ctx log <id>
 ctx x <command> [args...]
@@ -40,6 +41,8 @@ x <command> [args...]
 ```
 
 `ctx x` runs the given command in the current ctx workspace, streams stdout/stderr to the terminal, and saves the command, expanded command, exit code, timestamps, stdout, and stderr to `ctx log`. If an argument contains `$IP` or `${IP}`, it is expanded to the current primary target IP before execution. After `ctx init-shell`, the `x` helper function is available as the short form of `ctx x`.
+
+`ctx note <text>` saves a note as a `note:<id>` entry in the `ctx log` timeline. After `ctx init-shell`, use `xnote <text>` as its short form.
 
 `ctx workspace rm` removes the current workspace's marker, database records, and data directory after confirmation. Outside a workspace, it lists the registered workspaces for selection. Pass an ID to select one directly, or add `--yes` to skip confirmation.
 

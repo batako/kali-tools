@@ -194,7 +194,7 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
+const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog x xcompletion xdoctor xinit-shell
 
 _ctx_commands=(
   'status:show the current workspace'
@@ -203,7 +203,8 @@ _ctx_commands=(
   'ip:show or update the primary target IP'
   'host:manage hostnames'
   'hosts:show, sync, or clean /etc/hosts entries'
-  'log:show command execution logs'
+  'note:add a note to the workspace timeline'
+  'log:show the workspace timeline'
   'x:run a command and save execution logs'
   'completion:print shell completion script'
   'init-shell:configure shell integration'
@@ -297,6 +298,7 @@ xtarget() { ctx target "$@" }
 xip() { ctx ip "$@" }
 xhost() { ctx host "$@" }
 xhosts() { ctx hosts "$@" }
+xnote() { ctx note "$@" }
 xlog() { ctx log "$@" }
 x() { ctx x "$@" }
 xcompletion() { ctx completion "$@" }
@@ -304,7 +306,7 @@ xdoctor() { ctx doctor "$@" }
 xinit-shell() { ctx init-shell "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
+compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog x xcompletion xdoctor xinit-shell
 `
 
 const bashCompletionScript = `_ctx_completion() {
@@ -314,7 +316,7 @@ const bashCompletionScript = `_ctx_completion() {
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status workspace target ip host hosts log x completion init-shell doctor -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status workspace target ip host hosts note log x completion init-shell doctor -h --help -V --version" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)
@@ -351,6 +353,7 @@ xtarget() { ctx target "$@"; }
 xip() { ctx ip "$@"; }
 xhost() { ctx host "$@"; }
 xhosts() { ctx hosts "$@"; }
+xnote() { ctx note "$@"; }
 xlog() { ctx log "$@"; }
 x() { ctx x "$@"; }
 xcompletion() { ctx completion "$@"; }
@@ -358,5 +361,5 @@ xdoctor() { ctx doctor "$@"; }
 xinit-shell() { ctx init-shell "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
+complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog x xcompletion xdoctor xinit-shell
 `

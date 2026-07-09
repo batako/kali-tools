@@ -33,7 +33,8 @@ commands:
   ip       show or update the primary target IP
   host     manage hostnames
   hosts    show, sync, or clean /etc/hosts entries
-  log      show command execution logs
+  note     add a note to the workspace timeline
+  log      show the workspace timeline
   x        run a command and save execution logs
   completion  print shell completion script
   init-shell  configure shell integration
@@ -51,6 +52,7 @@ shortcuts (requires ctx init-shell):
   xip          ctx ip
   xhost        ctx host
   xhosts       ctx hosts
+  xnote        ctx note
   xlog         ctx log
   x            ctx x
   xcompletion  ctx completion
@@ -141,7 +143,14 @@ options:
 
 const logUsageText = `usage: ctx log [id] [options]
 
-Show command execution logs captured by x.
+Show the workspace timeline or command log details by ID.
+
+options:
+  -h, --help  show this help`
+
+const noteUsageText = `usage: ctx note <text> [options]
+
+Add a note to the current workspace timeline.
 
 options:
   -h, --help  show this help`
@@ -186,6 +195,8 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 		return runHost(args[2:], stdout)
 	case "hosts":
 		return runHosts(args[2:], stdout)
+	case "note":
+		return runNote(args[2:], stdout)
 	case "log":
 		return runLog(args[2:], stdout)
 	case "x":
@@ -213,6 +224,31 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 	default:
 		return fmt.Errorf("unknown ctx command: %s", args[1])
 	}
+}
+
+func runNote(args []string, stdout io.Writer) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, noteUsageText)
+		return err
+	}
+	if len(args) == 0 {
+		return errors.New("usage: ctx note <text>")
+	}
+
+	body := strings.TrimSpace(strings.Join(args, " "))
+	if body == "" {
+		return errors.New("note must not be empty")
+	}
+	workspace, err := currentWorkspace()
+	if err != nil {
+		return err
+	}
+	note, err := SaveNote(workspace, body)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "saved note: note:%d\n", note.ID)
+	return err
 }
 
 func runWorkspace(args []string, stdout io.Writer) error {
@@ -390,16 +426,22 @@ func runLog(args []string, stdout io.Writer) error {
 	}
 
 	if len(args) == 0 {
-		logs, err := ListCommandLogs(workspace)
+		entries, err := ListTimeline(workspace)
 		if err != nil {
 			return err
 		}
-		if len(logs) == 0 {
+		if len(entries) == 0 {
 			_, err = fmt.Fprintln(stdout, "no logs")
 			return err
 		}
-		for _, log := range logs {
-			if _, err := fmt.Fprintf(stdout, "%d %s %s %d %s\n", log.ID, log.StartedAt, log.Status, log.ExitCode, log.Command); err != nil {
+		for _, entry := range entries {
+			if entry.IsCommand {
+				if _, err := fmt.Fprintf(stdout, "%s %s %s %d %s\n", entry.Ref, entry.Time, entry.Status, entry.ExitCode, entry.Text); err != nil {
+					return err
+				}
+				continue
+			}
+			if _, err := fmt.Fprintf(stdout, "%s %s %s %s\n", entry.Ref, entry.Time, entry.Status, entry.Text); err != nil {
 				return err
 			}
 		}
