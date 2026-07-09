@@ -36,6 +36,7 @@ ctx log <id>
 ctx prompt
 ctx prompt --field target-ip
 ctx prompt --format json
+ctx reset
 ctx x <command> [args...]
 ctx --help
 ctx --version
@@ -62,6 +63,8 @@ function prompt_ctx() {
 `POWERLEVEL9K_LEFT_PROMPT_ELEMENTS` または `POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS` に `ctx` を追加し、色、アイコン、表示形式は必要に応じてセグメント側で設定します。単一の値は `ctx prompt --field <name>`、構造化データは `ctx prompt --format json` で取得できます。
 
 `ctx workspace rm` は確認後、現在のワークスペースのマーカー、DBレコード、データディレクトリを削除します。ワークスペース外では登録済み一覧から選択できます。IDを指定すれば直接選択でき、`--yes` を付けると確認を省略します。
+
+`ctx reset` は登録済みの全`.ctx`マーカー、ctx所有のDB/ログ/データ、`.zshrc`と`.bashrc`のctxブロック、`/etc/hosts`のctx管理ブロックを削除します。workspaceディレクトリ本体、ユーザーファイル、shell history、`ctx`実行ファイルは削除しません。必要な場合も`sudo`を要求するのは`/etc/hosts`の削除処理だけです。shell integration後は`xreset`を使え、`ctx reset --yes`で確認を省略できます。現在のshellへ読み込み済みのhelper functionを解除するには、実行後にshellを再起動します。
 
 ## ctx のシェル初期設定
 

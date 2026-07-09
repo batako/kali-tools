@@ -49,6 +49,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 			"xcompletion": "ctx completion",
 			"xdoctor":     "ctx doctor",
 			"xinit-shell": "ctx init-shell",
+			"xreset":      "ctx reset",
 		}
 		for shortcut, command := range shortcuts {
 			if !strings.Contains(got, shortcut) || !strings.Contains(got, command) {
@@ -130,6 +131,7 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "completion", "-h"}, "usage: ctx completion <zsh|bash> [options]"},
 		{[]string{"ctx", "init-shell", "--help"}, "usage: ctx init-shell [--remove] [options]"},
 		{[]string{"ctx", "doctor", "-h"}, "usage: ctx doctor [options]"},
+		{[]string{"ctx", "reset", "-h"}, "usage: ctx reset [--yes] [options]"},
 	}
 
 	for _, tt := range tests {

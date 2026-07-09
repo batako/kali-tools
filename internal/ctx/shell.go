@@ -194,7 +194,7 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell
+const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 
 _ctx_commands=(
   'status:show the current workspace'
@@ -210,6 +210,7 @@ _ctx_commands=(
   'completion:print shell completion script'
   'init-shell:configure shell integration'
   'doctor:check ctx environment'
+  'reset:remove all ctx data and configuration'
 )
 
 _ctx_workspace_commands=(
@@ -265,6 +266,12 @@ _ctx_prompt_options=(
 _ctx_prompt_formats=(shell json)
 _ctx_prompt_fields=(active workspace-id workspace-name workspace-root local-ip local-interface target-name target-ip)
 
+_ctx_reset_options=(
+  '--yes:skip confirmation'
+  '-h:show help'
+  '--help:show help'
+)
+
 _ctx_options=(
   '-h:show help'
   '--help:show help'
@@ -314,6 +321,7 @@ _ctx() {
         _describe 'log option' _ctx_log_options
         ;;
       prompt) _describe 'prompt option' _ctx_prompt_options ;;
+      reset) _describe 'reset option' _ctx_reset_options ;;
       x) _command_names -e ;;
       *) _describe 'option' _ctx_options ;;
     esac
@@ -371,9 +379,10 @@ x() { ctx x "$@" }
 xcompletion() { ctx completion "$@" }
 xdoctor() { ctx doctor "$@" }
 xinit-shell() { ctx init-shell "$@" }
+xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell
+compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `
 
 const bashCompletionScript = `_ctx_complete_values() {
@@ -421,7 +430,7 @@ _ctx_completion() {
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status workspace target ip host hosts note log prompt x completion init-shell doctor -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status workspace target ip host hosts note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)
@@ -449,6 +458,10 @@ _ctx_completion() {
       ;;
     prompt|xprompt)
       COMPREPLY=($(compgen -W "--format --field -h --help" -- "${cur}"))
+      return
+      ;;
+    reset|xreset)
+      COMPREPLY=($(compgen -W "--yes -h --help" -- "${cur}"))
       return
       ;;
     --format)
@@ -484,7 +497,8 @@ x() { ctx x "$@"; }
 xcompletion() { ctx completion "$@"; }
 xdoctor() { ctx doctor "$@"; }
 xinit-shell() { ctx init-shell "$@"; }
+xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell
+complete -F _ctx_completion xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `

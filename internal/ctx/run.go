@@ -19,6 +19,9 @@ var (
 	reexecHostsSyncWithSudoFunc  = reexecHostsSyncWithSudo
 	cleanHostsFileFunc           = CleanHostsFile
 	reexecHostsCleanWithSudoFunc = reexecHostsCleanWithSudo
+	resetHostsBlocksFunc         = ResetHostsBlocks
+	reexecResetHostsWithSudoFunc = reexecResetHostsWithSudo
+	resetCtxDataFunc             = ResetCtxData
 	executableFunc               = os.Executable
 	execCommandFunc              = exec.Command
 	workspaceStdin               = io.Reader(os.Stdin)
@@ -40,6 +43,7 @@ commands:
   completion  print shell completion script
   init-shell  configure shell integration
   doctor   check ctx environment
+  reset    remove all ctx data and configuration
 
 options:
   -h, --help     show this help
@@ -60,6 +64,7 @@ shortcuts (requires ctx init-shell):
   xcompletion  ctx completion
   xdoctor      ctx doctor
   xinit-shell  ctx init-shell
+  xreset       ctx reset
 
 Run ctx <command> -h for command-specific help.`
 
@@ -173,6 +178,15 @@ fields:
   active, workspace-id, workspace-name, workspace-root
   local-ip, local-interface, target-name, target-ip`
 
+const resetUsageText = `usage: ctx reset [--yes] [options]
+
+Remove all ctx data and configuration without uninstalling ctx.
+Workspace directories and shell history are not removed.
+
+options:
+  --yes       skip confirmation
+  -h, --help  show this help`
+
 func Run(args []string, stdout io.Writer) error {
 	return RunWithIO(args, stdout, stdout)
 }
@@ -235,6 +249,8 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 		return runInitShell(args[2:], stdout)
 	case "doctor":
 		return runDoctor(args[2:], stdout)
+	case "reset":
+		return runReset(args[2:], stdout)
 	case "-h", "--help":
 		_, err := fmt.Fprintln(stdout, usageText)
 		return err
@@ -244,6 +260,104 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 	default:
 		return fmt.Errorf("unknown ctx command: %s", args[1])
 	}
+}
+
+func runReset(args []string, stdout io.Writer) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, resetUsageText)
+		return err
+	}
+	if len(args) >= 1 && args[0] == "--internal-hosts" {
+		if len(args) == 1 {
+			return errors.New("reset hosts cleanup requires at least one workspace id")
+		}
+		return resetHostsBlocksFunc(hostsFilePath, args[1:])
+	}
+
+	yes := false
+	switch len(args) {
+	case 0:
+	case 1:
+		if args[0] != "--yes" {
+			return errors.New("usage: ctx reset [--yes]")
+		}
+		yes = true
+	default:
+		return errors.New("usage: ctx reset [--yes]")
+	}
+
+	if !yes {
+		if _, err := fmt.Fprint(stdout, "Remove all ctx data and configuration? [y/N] "); err != nil {
+			return err
+		}
+		scanner := bufio.NewScanner(workspaceStdin)
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return fmt.Errorf("failed to read reset confirmation: %w", err)
+			}
+			_, err := fmt.Fprintln(stdout, "\ncancelled")
+			return err
+		}
+		answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+		if answer != "y" && answer != "yes" {
+			_, err := fmt.Fprintln(stdout, "cancelled")
+			return err
+		}
+	}
+
+	records, err := ListWorkspaceRecords()
+	if err != nil {
+		return err
+	}
+	workspaceIDs, err := CtxHostsWorkspaceIDs(hostsFilePath)
+	if err != nil {
+		return err
+	}
+	workspaceIDs = mergeWorkspaceIDs(workspaceIDs, records)
+
+	if err := resetHostsBlocksFunc(hostsFilePath, workspaceIDs); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			if _, writeErr := fmt.Fprintln(stdout, "Need administrator privileges to remove ctx entries from /etc/hosts."); writeErr != nil {
+				return writeErr
+			}
+			if _, writeErr := fmt.Fprintln(stdout, "Re-running ctx hosts cleanup with sudo..."); writeErr != nil {
+				return writeErr
+			}
+			if err := reexecResetHostsWithSudoFunc(workspaceIDs, stdout); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	if err := resetCtxDataFunc(records); err != nil {
+		return err
+	}
+	if _, err = fmt.Fprintln(stdout, "ctx data and configuration removed"); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, "Restart the current shell to unload ctx helper functions.")
+	return err
+}
+
+func mergeWorkspaceIDs(ids []string, records []WorkspaceRecord) []string {
+	seen := make(map[string]struct{}, len(ids)+len(records))
+	merged := make([]string, 0, len(ids)+len(records))
+	for _, id := range ids {
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		merged = append(merged, id)
+	}
+	for _, record := range records {
+		if _, exists := seen[record.ID]; exists {
+			continue
+		}
+		seen[record.ID] = struct{}{}
+		merged = append(merged, record.ID)
+	}
+	return merged
 }
 
 func runPrompt(args []string, stdout io.Writer) error {
@@ -1205,6 +1319,27 @@ func reexecHostsCleanWithSudo(stdout io.Writer) error {
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("sudo hosts clean failed: %w", err)
+	}
+	return nil
+}
+
+func reexecResetHostsWithSudo(workspaceIDs []string, stdout io.Writer) error {
+	if len(workspaceIDs) == 0 {
+		return nil
+	}
+	executable, err := executableFunc()
+	if err != nil {
+		return fmt.Errorf("failed to locate ctx executable: %w", err)
+	}
+
+	args := []string{executable, "reset", "--internal-hosts"}
+	args = append(args, workspaceIDs...)
+	cmd := execCommandFunc("sudo", args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("sudo ctx hosts cleanup failed: %w", err)
 	}
 	return nil
 }
