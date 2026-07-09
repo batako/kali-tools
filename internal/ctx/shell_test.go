@@ -95,9 +95,31 @@ func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.
 		"_describe 'workspace command' _ctx_workspace_commands",
 		"_describe 'log option' _ctx_log_options",
 		"_describe 'prompt option' _ctx_prompt_options",
+		"_ctx_dynamic_descriptions target",
+		"ctx completion descriptions \"${kind}\"",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("CompletionScript(zsh) missing %q", want)
+		}
+	}
+}
+
+func TestBashCompletionIncludesDynamicWorkspaceValues(t *testing.T) {
+	script, err := CompletionScript("bash")
+	if err != nil {
+		t.Fatalf("CompletionScript(bash) error = %v", err)
+	}
+	for _, want := range []string{
+		"_ctx_complete_values target",
+		"_ctx_complete_values host",
+		"_ctx_complete_values workspace",
+		"_ctx_complete_values log",
+		`ctx completion values "${kind}"`,
+		"${subcommand} == use",
+		"${prev} == --target",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("CompletionScript(bash) missing %q", want)
 		}
 	}
 }

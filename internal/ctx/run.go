@@ -805,6 +805,30 @@ func runCompletion(args []string, stdout io.Writer) error {
 		_, err := fmt.Fprintln(stdout, completionUsageText)
 		return err
 	}
+	if len(args) == 2 && args[0] == "values" {
+		values, err := completionValues(args[1])
+		if err != nil {
+			return err
+		}
+		for _, value := range values {
+			if _, err := fmt.Fprintln(stdout, value); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if len(args) == 2 && args[0] == "descriptions" {
+		values, err := completionDescriptions(args[1])
+		if err != nil {
+			return err
+		}
+		for _, value := range values {
+			if _, err := fmt.Fprintln(stdout, value); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if len(args) != 1 {
 		return errors.New("usage: ctx completion <zsh|bash>")
 	}
@@ -814,6 +838,131 @@ func runCompletion(args []string, stdout io.Writer) error {
 	}
 	_, err = io.WriteString(stdout, script)
 	return err
+}
+
+func completionValues(kind string) ([]string, error) {
+	if kind == "workspace" {
+		records, err := ListWorkspaceRecords()
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(records))
+		for _, record := range records {
+			values = append(values, record.ID)
+		}
+		return values, nil
+	}
+
+	workspace, err := currentWorkspace()
+	if errors.Is(err, ErrWorkspaceNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	switch kind {
+	case "target":
+		targets, err := ListTargets(workspace)
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(targets))
+		for _, target := range targets {
+			values = append(values, target.Name)
+		}
+		return values, nil
+	case "host":
+		hosts, err := ListHosts(workspace)
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(hosts))
+		for _, host := range hosts {
+			values = append(values, host.Hostname)
+		}
+		return values, nil
+	case "log":
+		logs, err := ListCommandLogs(workspace)
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(logs))
+		for _, log := range logs {
+			values = append(values, strconv.FormatInt(log.ID, 10))
+		}
+		return values, nil
+	default:
+		return nil, fmt.Errorf("unknown completion value kind: %s", kind)
+	}
+}
+
+func completionDescriptions(kind string) ([]string, error) {
+	if kind == "workspace" {
+		records, err := ListWorkspaceRecords()
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(records))
+		for _, record := range records {
+			values = append(values, zshCompletionSpec(record.ID, record.Name+"  "+record.RootPath))
+		}
+		return values, nil
+	}
+
+	workspace, err := currentWorkspace()
+	if errors.Is(err, ErrWorkspaceNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	switch kind {
+	case "target":
+		targets, err := ListTargets(workspace)
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(targets))
+		for _, target := range targets {
+			description := target.IP
+			if target.IsPrimary {
+				description += " (primary)"
+			}
+			values = append(values, zshCompletionSpec(target.Name, description))
+		}
+		return values, nil
+	case "host":
+		hosts, err := ListHosts(workspace)
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(hosts))
+		for _, host := range hosts {
+			values = append(values, zshCompletionSpec(host.Hostname, strings.TrimSpace(host.TargetName+"  "+host.TargetIP)))
+		}
+		return values, nil
+	case "log":
+		logs, err := ListCommandLogs(workspace)
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(logs))
+		for _, log := range logs {
+			values = append(values, zshCompletionSpec(strconv.FormatInt(log.ID, 10), oneLine(log.Command)))
+		}
+		return values, nil
+	default:
+		return nil, fmt.Errorf("unknown completion description kind: %s", kind)
+	}
+}
+
+func zshCompletionSpec(value, description string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, ":", `\:`)
+	description = oneLine(description)
+	return value + ":" + description
 }
 
 func runInitShell(args []string, stdout io.Writer) error {

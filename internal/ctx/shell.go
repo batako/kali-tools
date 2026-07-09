@@ -270,8 +270,15 @@ _ctx_options=(
   '--help:show help'
 )
 
+_ctx_dynamic_descriptions() {
+  local kind=$1
+  local -a values
+  values=("${(@f)$(ctx completion descriptions "${kind}" 2>/dev/null)}")
+  (( ${#values} )) && _describe "${kind}" values
+}
+
 _ctx() {
-  local invocation command command_position
+  local invocation command command_position subcommand previous
   invocation=${words[1]:t}
 
   if [[ ${invocation} == ctx ]]; then
@@ -287,6 +294,8 @@ _ctx() {
     command=${invocation#x}
     command_position=1
   fi
+  subcommand=${words[command_position+1]}
+  previous=${words[CURRENT-1]}
 
   if [[ ${invocation} == ctx && ( -z ${command} || CURRENT == 2 ) ]]; then
     _describe 'ctx command' _ctx_commands
@@ -300,7 +309,10 @@ _ctx() {
       host) _describe 'host command' _ctx_host_commands ;;
       hosts) _describe 'hosts command' _ctx_hosts_commands ;;
       completion) _describe 'shell' _ctx_completion_shells ;;
-      log) _describe 'log option' _ctx_log_options ;;
+      log)
+        _ctx_dynamic_descriptions log
+        _describe 'log option' _ctx_log_options
+        ;;
       prompt) _describe 'prompt option' _ctx_prompt_options ;;
       x) _command_names -e ;;
       *) _describe 'option' _ctx_options ;;
@@ -309,7 +321,30 @@ _ctx() {
   fi
 
   case ${command} in
-    workspace|target|host|hosts) _message 'argument' ;;
+    workspace)
+      if [[ ${subcommand} == rm ]] && (( CURRENT == command_position + 2 )); then
+        _ctx_dynamic_descriptions workspace
+      else
+        _message 'argument'
+      fi
+      ;;
+    target)
+      if [[ ${subcommand} == use || ${subcommand} == rm ]] && (( CURRENT == command_position + 2 )); then
+        _ctx_dynamic_descriptions target
+      else
+        _message 'argument'
+      fi
+      ;;
+    host)
+      if [[ ${subcommand} == rm ]] && (( CURRENT == command_position + 2 )); then
+        _ctx_dynamic_descriptions host
+      elif [[ ${subcommand} == add && ${previous} == --target ]]; then
+        _ctx_dynamic_descriptions target
+      else
+        _message 'argument'
+      fi
+      ;;
+    hosts) _message 'argument' ;;
     prompt)
       case ${words[CURRENT-1]} in
         --format) _describe 'format' _ctx_prompt_formats ;;
@@ -341,10 +376,48 @@ compdef _ctx ctx
 compdef _ctx xinit xstatus xworkspace xtarget xip xhost xhosts xnote xlog xprompt x xcompletion xdoctor xinit-shell
 `
 
-const bashCompletionScript = `_ctx_completion() {
-  local cur prev
+const bashCompletionScript = `_ctx_complete_values() {
+  local kind=$1
+  local prefix=$2
+  local value
+  while IFS= read -r value; do
+    [[ ${value} == "${prefix}"* ]] && COMPREPLY+=("${value}")
+  done < <(ctx completion values "${kind}" 2>/dev/null)
+}
+
+_ctx_completion() {
+  local cur prev invocation command subcommand
+  COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
+  invocation="${COMP_WORDS[0]##*/}"
+
+  if [[ ${invocation} == ctx ]]; then
+    command="${COMP_WORDS[1]}"
+    subcommand="${COMP_WORDS[2]}"
+  elif [[ ${invocation} == x ]]; then
+    command=x
+  else
+    command="${invocation#x}"
+    subcommand="${COMP_WORDS[1]}"
+  fi
+
+  if [[ ${command} == target && (${subcommand} == use || ${subcommand} == rm) && ${prev} == "${subcommand}" ]]; then
+    _ctx_complete_values target "${cur}"
+    return
+  fi
+  if [[ ${command} == host && ${subcommand} == rm && ${prev} == rm ]]; then
+    _ctx_complete_values host "${cur}"
+    return
+  fi
+  if [[ ${command} == host && ${subcommand} == add && ${prev} == --target ]]; then
+    _ctx_complete_values target "${cur}"
+    return
+  fi
+  if [[ ${command} == workspace && ${subcommand} == rm && ${prev} == rm ]]; then
+    _ctx_complete_values workspace "${cur}"
+    return
+  fi
 
   case "${prev}" in
     ctx)
@@ -368,7 +441,10 @@ const bashCompletionScript = `_ctx_completion() {
       return
       ;;
     log|xlog)
-      COMPREPLY=($(compgen -W "-p --plain -v --verbose -i --interactive -h --help" -- "${cur}"))
+      _ctx_complete_values log "${cur}"
+      local -a log_options
+      log_options=($(compgen -W "-p --plain -v --verbose -i --interactive -h --help" -- "${cur}"))
+      COMPREPLY+=("${log_options[@]}")
       return
       ;;
     prompt|xprompt)
