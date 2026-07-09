@@ -85,6 +85,7 @@ func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.
 		"'sync:sync the managed block to /etc/hosts'",
 		"'zsh:print zsh completion script'",
 		"'--interactive:open the interactive timeline'",
+		"'--field:print one prompt field'",
 		"invocation=${words[1]:t}",
 		"elif [[ ${invocation} == x ]]",
 		"command=${invocation#x}",
@@ -93,6 +94,7 @@ func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.
 		"_describe 'target command' _ctx_target_commands",
 		"_describe 'workspace command' _ctx_workspace_commands",
 		"_describe 'log option' _ctx_log_options",
+		"_describe 'prompt option' _ctx_prompt_options",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("CompletionScript(zsh) missing %q", want)

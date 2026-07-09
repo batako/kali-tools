@@ -33,6 +33,9 @@ ctx workspace rm [id]
 ctx note "SMB anonymous login possible"
 ctx log
 ctx log <id>
+ctx prompt
+ctx prompt --field target-ip
+ctx prompt --format json
 ctx x <command> [args...]
 ctx --help
 ctx --version
@@ -45,6 +48,18 @@ x <command> [args...]
 `ctx note <text>` saves a note as a `note:<id>` entry in the `ctx log` timeline. After `ctx init-shell`, use `xnote <text>` as its short form.
 
 On a terminal, `ctx log` opens an interactive timeline. Use `j`/`k` or the arrow keys to move, Enter to open command details, and `q` to return or quit. Use `-p`/`--plain` for a compact text timeline, `-v`/`--verbose` for IDs and execution status, or `-i`/`--interactive` to request the TUI explicitly.
+
+`ctx prompt` prints safely quoted shell variables for prompt integrations. It includes workspace, local interface/IP, and primary target data. Outside a workspace, `CTX_ACTIVE` is `0`. A minimal Powerlevel10k custom segment for `.p10k.zsh` is:
+
+```zsh
+function prompt_ctx() {
+  eval "$(ctx prompt)" || return
+  (( CTX_ACTIVE )) || return
+  p10k segment -t "${CTX_LOCAL_IP} -> ${CTX_TARGET_IP}"
+}
+```
+
+Add `ctx` to `POWERLEVEL9K_LEFT_PROMPT_ELEMENTS` or `POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS`, then choose colors, icons, and formatting in the segment as desired. Use `ctx prompt --field <name>` for one value or `ctx prompt --format json` for structured output.
 
 `ctx workspace rm` removes the current workspace's marker, database records, and data directory after confirmation. Outside a workspace, it lists the registered workspaces for selection. Pass an ID to select one directly, or add `--yes` to skip confirmation.
 

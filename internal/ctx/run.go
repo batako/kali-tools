@@ -35,6 +35,7 @@ commands:
   hosts    show, sync, or clean /etc/hosts entries
   note     add a note to the workspace timeline
   log      show the workspace timeline
+  prompt   print data for shell prompts
   x        run a command and save execution logs
   completion  print shell completion script
   init-shell  configure shell integration
@@ -54,6 +55,7 @@ shortcuts (requires ctx init-shell):
   xhosts       ctx hosts
   xnote        ctx note
   xlog         ctx log
+  xprompt      ctx prompt
   x            ctx x
   xcompletion  ctx completion
   xdoctor      ctx doctor
@@ -158,6 +160,19 @@ Add a note to the current workspace timeline.
 options:
   -h, --help  show this help`
 
+const promptUsageText = `usage: ctx prompt [options]
+
+Print workspace, local IP, and target data for shell prompts.
+
+options:
+  --format <shell|json>  select output format (default: shell)
+  --field <name>         print one field
+  -h, --help             show this help
+
+fields:
+  active, workspace-id, workspace-name, workspace-root
+  local-ip, local-interface, target-name, target-ip`
+
 func Run(args []string, stdout io.Writer) error {
 	return RunWithIO(args, stdout, stdout)
 }
@@ -202,6 +217,8 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 		return runNote(args[2:], stdout)
 	case "log":
 		return runLog(args[2:], stdout)
+	case "prompt":
+		return runPrompt(args[2:], stdout)
 	case "x":
 		if len(args) == 3 && isHelpArg(args[2]) {
 			_, err := fmt.Fprintln(stdout, xUsageText)
@@ -227,6 +244,55 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 	default:
 		return fmt.Errorf("unknown ctx command: %s", args[1])
 	}
+}
+
+func runPrompt(args []string, stdout io.Writer) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, promptUsageText)
+		return err
+	}
+
+	format, field, err := parsePromptArgs(args)
+	if err != nil {
+		return err
+	}
+	data, err := currentPromptData()
+	if err != nil {
+		return err
+	}
+	return WritePromptData(stdout, data, format, field)
+}
+
+func parsePromptArgs(args []string) (string, string, error) {
+	format := "shell"
+	var field string
+	var formatSet bool
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--format":
+			if formatSet || i+1 >= len(args) {
+				return "", "", errors.New("usage: ctx prompt [--format <shell|json>] [--field <name>]")
+			}
+			i++
+			format = args[i]
+			formatSet = true
+		case "--field":
+			if field != "" || i+1 >= len(args) {
+				return "", "", errors.New("usage: ctx prompt [--format <shell|json>] [--field <name>]")
+			}
+			i++
+			field = args[i]
+		default:
+			return "", "", fmt.Errorf("unknown ctx prompt option: %s", args[i])
+		}
+	}
+	if field != "" && formatSet {
+		return "", "", errors.New("--field and --format cannot be used together")
+	}
+	if format != "shell" && format != "json" {
+		return "", "", fmt.Errorf("unsupported prompt format: %s", format)
+	}
+	return format, field, nil
 }
 
 func runNote(args []string, stdout io.Writer) error {

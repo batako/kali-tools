@@ -33,6 +33,9 @@ ctx workspace rm [id]
 ctx note "SMB anonymous login possible"
 ctx log
 ctx log <id>
+ctx prompt
+ctx prompt --field target-ip
+ctx prompt --format json
 ctx x <command> [args...]
 ctx --help
 ctx --version
@@ -45,6 +48,18 @@ x <command> [args...]
 `ctx note <text>` はノートを `note:<id>` として `ctx log` のタイムラインへ保存します。`ctx init-shell` 後は短縮形の `xnote <text>` を使えます。
 
 端末で `ctx log` を実行すると対話型タイムラインが開きます。`j`/`k` または矢印キーで移動し、Enterでコマンド詳細を開き、`q`で戻るか終了します。コンパクトなテキスト表示には `-p`/`--plain`、IDや実行状態を含む表示には `-v`/`--verbose`、明示的にTUIを開く場合は `-i`/`--interactive` を使います。
+
+`ctx prompt` はプロンプト連携用に、安全にクォートしたシェル変数を出力します。ワークスペース、ローカルインターフェース/IP、primary targetの情報を含みます。ワークスペース外では `CTX_ACTIVE` が `0` になります。`.p10k.zsh` で使う最小限のPowerlevel10kカスタムセグメント例は次のとおりです。
+
+```zsh
+function prompt_ctx() {
+  eval "$(ctx prompt)" || return
+  (( CTX_ACTIVE )) || return
+  p10k segment -t "${CTX_LOCAL_IP} -> ${CTX_TARGET_IP}"
+}
+```
+
+`POWERLEVEL9K_LEFT_PROMPT_ELEMENTS` または `POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS` に `ctx` を追加し、色、アイコン、表示形式は必要に応じてセグメント側で設定します。単一の値は `ctx prompt --field <name>`、構造化データは `ctx prompt --format json` で取得できます。
 
 `ctx workspace rm` は確認後、現在のワークスペースのマーカー、DBレコード、データディレクトリを削除します。ワークスペース外では登録済み一覧から選択できます。IDを指定すれば直接選択でき、`--yes` を付けると確認を省略します。
 

@@ -125,6 +125,7 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "hosts", "sync", "--help"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "note", "--help"}, "usage: ctx note <text> [options]"},
 		{[]string{"ctx", "log", "--help"}, "usage: ctx log [id] [options]"},
+		{[]string{"ctx", "prompt", "--help"}, "usage: ctx prompt [options]"},
 		{[]string{"ctx", "x", "--help"}, "usage: ctx x <command> [args...]"},
 		{[]string{"ctx", "completion", "-h"}, "usage: ctx completion <zsh|bash> [options]"},
 		{[]string{"ctx", "init-shell", "--help"}, "usage: ctx init-shell [--remove] [options]"},
