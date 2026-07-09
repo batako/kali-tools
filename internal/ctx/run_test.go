@@ -32,6 +32,14 @@ func TestRunTopLevelHelp(t *testing.T) {
 		if !strings.Contains(got, "Run ctx <command> -h for command-specific help.") {
 			t.Fatalf("help output = %q, want command-specific help hint", got)
 		}
+		for _, hint := range []string{
+			"Run ctx init-shell to enable x-prefixed shortcuts.",
+			"Examples: ctx init -> xinit, ctx status -> xstatus",
+		} {
+			if !strings.Contains(got, hint) {
+				t.Fatalf("help output = %q, want shell shortcut hint %q", got, hint)
+			}
+		}
 		for _, detail := range []string{"target set <ip>", "host add <hostname>", "hosts sync"} {
 			if strings.Contains(got, detail) {
 				t.Fatalf("help output = %q, should not include detailed command %q", got, detail)
@@ -88,6 +96,8 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "host", "add", "-h"}, "usage: ctx host <command> [options]"},
 		{[]string{"ctx", "hosts", "-h"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "hosts", "sync", "--help"}, "usage: ctx hosts <command> [options]"},
+		{[]string{"ctx", "log", "--help"}, "usage: ctx log [id] [options]"},
+		{[]string{"ctx", "x", "--help"}, "usage: ctx x <command> [args...]"},
 		{[]string{"ctx", "completion", "-h"}, "usage: ctx completion <zsh|bash> [options]"},
 		{[]string{"ctx", "init-shell", "--help"}, "usage: ctx init-shell [--remove] [options]"},
 		{[]string{"ctx", "doctor", "-h"}, "usage: ctx doctor [options]"},

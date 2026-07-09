@@ -28,10 +28,16 @@ req -V
 ```sh
 ctx init
 ctx status
+ctx log
+ctx log <id>
+ctx x <command> [args...]
 ctx --help
 ctx --version
 ctx -V
+x <command> [args...]
 ```
+
+`ctx x` は現在の ctx ワークスペース内で指定したコマンドを実行し、stdout/stderr を端末へ流しながら、実行コマンド、展開後コマンド、終了コード、時刻、stdout、stderr を `ctx log` に保存します。引数に `$IP` または `${IP}` が含まれる場合は、実行前に現在の primary target IP へ展開します。`ctx init-shell` 後は、`x` helper function を `ctx x` の短縮形として使えます。
 
 ## ctx のシェル初期設定
 
@@ -131,6 +137,7 @@ dist/<package>_<version>_<architecture>.deb
 - アーキテクチャは `dpkg --print-architecture` で取得します
 - Go の `GOARCH` は Debian アーキテクチャに合わせて変換します
 - パッケージを省略した場合は `req` を生成します
+- `ctx` パッケージに入る実行ファイルは `ctx` です。`x` は shell integration が提供する `ctx x` 用 helper です
 - バージョンは `debian/<package>/VERSION` から読み込みます
 - `./scripts/check-version.sh ctx` で `debian/ctx/VERSION` と `internal/ctx.Version` の一致を確認します
 

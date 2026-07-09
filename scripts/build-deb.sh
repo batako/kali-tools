@@ -72,11 +72,17 @@ for script in postinst prerm postrm preinst; do
   fi
 done
 
-CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build \
-  -ldflags "-X req/internal/${PACKAGE_NAME}.Version=${VERSION}" \
-  -o "${PKG_ROOT}/usr/local/bin/${PACKAGE_NAME}" \
-  "./cmd/${PACKAGE_NAME}"
-chmod 0755 "${PKG_ROOT}/usr/local/bin/${PACKAGE_NAME}"
+build_binary() {
+  binary_name="$1"
+  package_path="$2"
+  CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build \
+    -ldflags "-X req/internal/${PACKAGE_NAME}.Version=${VERSION}" \
+    -o "${PKG_ROOT}/usr/local/bin/${binary_name}" \
+    "${package_path}"
+  chmod 0755 "${PKG_ROOT}/usr/local/bin/${binary_name}"
+}
+
+build_binary "${PACKAGE_NAME}" "./cmd/${PACKAGE_NAME}"
 
 dpkg-deb --root-owner-group --build "${PKG_ROOT}" "${OUTPUT_DEB}"
 

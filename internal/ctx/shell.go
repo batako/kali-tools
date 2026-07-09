@@ -194,7 +194,7 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xtarget xip xhost xhosts xcompletion xdoctor xinit-shell
+const zshCompletionScript = `#compdef ctx xinit xstatus xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
 
 _ctx_commands=(
   'init:create a ctx workspace'
@@ -203,6 +203,8 @@ _ctx_commands=(
   'ip:show or update the primary target IP'
   'host:manage hostnames'
   'hosts:show, sync, or clean /etc/hosts entries'
+  'log:show command execution logs'
+  'x:run a command and save execution logs'
   'completion:print shell completion script'
   'init-shell:configure shell integration'
   'doctor:check ctx environment'
@@ -246,6 +248,9 @@ _ctx() {
   if [[ ${invocation} == ctx ]]; then
     command=${words[2]}
     command_position=2
+  elif [[ ${invocation} == x ]]; then
+    command=x
+    command_position=1
   else
     command=${invocation#x}
     command_position=1
@@ -262,6 +267,7 @@ _ctx() {
       host) _describe 'host command' _ctx_host_commands ;;
       hosts) _describe 'hosts command' _ctx_hosts_commands ;;
       completion) _describe 'shell' _ctx_completion_shells ;;
+      x) _command_names -e ;;
       *) _describe 'option' _ctx_options ;;
     esac
     return
@@ -280,12 +286,14 @@ xtarget() { ctx target "$@" }
 xip() { ctx ip "$@" }
 xhost() { ctx host "$@" }
 xhosts() { ctx hosts "$@" }
+xlog() { ctx log "$@" }
+x() { ctx x "$@" }
 xcompletion() { ctx completion "$@" }
 xdoctor() { ctx doctor "$@" }
 xinit-shell() { ctx init-shell "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xtarget xip xhost xhosts xcompletion xdoctor xinit-shell
+compdef _ctx xinit xstatus xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
 `
 
 const bashCompletionScript = `_ctx_completion() {
@@ -295,7 +303,7 @@ const bashCompletionScript = `_ctx_completion() {
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "init status target ip host hosts completion init-shell doctor -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "init status target ip host hosts log x completion init-shell doctor -h --help -V --version" -- "${cur}"))
       return
       ;;
     target|xtarget)
@@ -308,6 +316,10 @@ const bashCompletionScript = `_ctx_completion() {
       ;;
     hosts|xhosts)
       COMPREPLY=($(compgen -W "show sync clean" -- "${cur}"))
+      return
+      ;;
+    x)
+      COMPREPLY=($(compgen -c -- "${cur}"))
       return
       ;;
     completion|xcompletion)
@@ -323,10 +335,12 @@ xtarget() { ctx target "$@"; }
 xip() { ctx ip "$@"; }
 xhost() { ctx host "$@"; }
 xhosts() { ctx hosts "$@"; }
+xlog() { ctx log "$@"; }
+x() { ctx x "$@"; }
 xcompletion() { ctx completion "$@"; }
 xdoctor() { ctx doctor "$@"; }
 xinit-shell() { ctx init-shell "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xtarget xip xhost xhosts xcompletion xdoctor xinit-shell
+complete -F _ctx_completion xinit xstatus xtarget xip xhost xhosts xlog x xcompletion xdoctor xinit-shell
 `

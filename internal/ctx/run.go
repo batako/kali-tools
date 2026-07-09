@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 var (
@@ -29,6 +30,8 @@ commands:
   ip       show or update the primary target IP
   host     manage hostnames
   hosts    show, sync, or clean /etc/hosts entries
+  log      show command execution logs
+  x        run a command and save execution logs
   completion  print shell completion script
   init-shell  configure shell integration
   doctor   check ctx environment
@@ -37,7 +40,10 @@ options:
   -h, --help     show this help
   -V, --version  show version
 
-Run ctx <command> -h for command-specific help.`
+Run ctx <command> -h for command-specific help.
+
+Run ctx init-shell to enable x-prefixed shortcuts.
+Examples: ctx init -> xinit, ctx status -> xstatus`
 
 const initUsageText = `usage: ctx init [options]
 
@@ -115,7 +121,18 @@ commands:
 options:
   -h, --help  show this help`
 
+const logUsageText = `usage: ctx log [id] [options]
+
+Show command execution logs captured by x.
+
+options:
+  -h, --help  show this help`
+
 func Run(args []string, stdout io.Writer) error {
+	return RunWithIO(args, stdout, stdout)
+}
+
+func RunWithIO(args []string, stdout, stderr io.Writer) error {
 	if len(args) < 2 {
 		return errors.New("usage: ctx <command>")
 	}
@@ -167,6 +184,18 @@ func Run(args []string, stdout io.Writer) error {
 		return runHost(args[2:], stdout)
 	case "hosts":
 		return runHosts(args[2:], stdout)
+	case "log":
+		return runLog(args[2:], stdout)
+	case "x":
+		if len(args) == 3 && isHelpArg(args[2]) {
+			_, err := fmt.Fprintln(stdout, xUsageText)
+			return err
+		}
+		code := RunX(append([]string{"x"}, args[2:]...), stdout, stderr)
+		if code != 0 {
+			return ExitCodeError{Code: code}
+		}
+		return nil
 	case "completion":
 		return runCompletion(args[2:], stdout)
 	case "init-shell":
@@ -182,6 +211,51 @@ func Run(args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown ctx command: %s", args[1])
 	}
+}
+
+func runLog(args []string, stdout io.Writer) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, logUsageText)
+		return err
+	}
+	if len(args) > 1 {
+		return errors.New("usage: ctx log [id]")
+	}
+
+	workspace, err := currentWorkspace()
+	if err != nil {
+		return err
+	}
+
+	if len(args) == 0 {
+		logs, err := ListCommandLogs(workspace)
+		if err != nil {
+			return err
+		}
+		if len(logs) == 0 {
+			_, err = fmt.Fprintln(stdout, "no logs")
+			return err
+		}
+		for _, log := range logs {
+			if _, err := fmt.Fprintf(stdout, "%d %s %s %d %s\n", log.ID, log.StartedAt, log.Status, log.ExitCode, log.Command); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	log, err := GetCommandLog(workspace, args[0])
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "id: %d\ncommand: %s\nexpanded_command: %s\nstatus: %s\nexit_code: %d\nstarted_at: %s\nended_at: %s\n\nstdout:\n%s\nstderr:\n%s", log.ID, log.Command, log.ExpandedCommand, log.Status, log.ExitCode, log.StartedAt, log.EndedAt, log.Stdout, log.Stderr); err != nil {
+		return err
+	}
+	if log.Stderr != "" && !strings.HasSuffix(log.Stderr, "\n") {
+		_, err = fmt.Fprintln(stdout)
+		return err
+	}
+	return nil
 }
 
 func runTarget(args []string, stdout io.Writer) error {

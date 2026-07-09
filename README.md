@@ -28,10 +28,16 @@ Options:
 ```sh
 ctx init
 ctx status
+ctx log
+ctx log <id>
+ctx x <command> [args...]
 ctx --help
 ctx --version
 ctx -V
+x <command> [args...]
 ```
+
+`ctx x` runs the given command in the current ctx workspace, streams stdout/stderr to the terminal, and saves the command, expanded command, exit code, timestamps, stdout, and stderr to `ctx log`. If an argument contains `$IP` or `${IP}`, it is expanded to the current primary target IP before execution. After `ctx init-shell`, the `x` helper function is available as the short form of `ctx x`.
 
 ## ctx Shell Setup
 
@@ -131,6 +137,7 @@ Notes:
 - If no argument is given, the target architecture is detected using `dpkg --print-architecture`.
 - The corresponding Go `GOARCH` value is derived from the Debian architecture.
 - The package defaults to `req` when omitted.
+- The `ctx` package installs `ctx`; `x` is provided by shell integration as a helper for `ctx x`.
 - The package version is read from `debian/<package>/VERSION`.
 - `./scripts/check-version.sh ctx` checks that `debian/ctx/VERSION` matches `internal/ctx.Version`.
 

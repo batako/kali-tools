@@ -18,7 +18,12 @@ func TestCompletionScriptsIncludeXFunctionForEveryCommand(t *testing.T) {
 		}
 
 		for _, command := range commands {
-			want := "x" + command + `() { ctx ` + command + ` "$@"`
+			var want string
+			if command == "x" {
+				want = `x() { ctx x "$@"`
+			} else {
+				want = "x" + command + `() { ctx ` + command + ` "$@"`
+			}
 			if !strings.Contains(script, want) {
 				t.Errorf("CompletionScript(%s) missing function for %q", shell, command)
 			}
@@ -65,6 +70,7 @@ func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.
 		"'sync:sync the managed block to /etc/hosts'",
 		"'zsh:print zsh completion script'",
 		"invocation=${words[1]:t}",
+		"elif [[ ${invocation} == x ]]",
 		"command=${invocation#x}",
 		"-z ${command} || CURRENT == 2",
 		"CURRENT == command_position + 1",
@@ -172,7 +178,7 @@ func TestRunCompletionAndInitShell(t *testing.T) {
 	if err := Run([]string{"ctx", "completion", "bash"}, &out); err != nil {
 		t.Fatalf("Run(completion bash) error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "complete -F _ctx_completion ctx") || !strings.Contains(got, "xinit()") {
+	if got := out.String(); !strings.Contains(got, "complete -F _ctx_completion ctx") || !strings.Contains(got, "xinit()") || !strings.Contains(got, "x() { ctx x") {
 		t.Fatalf("completion output = %q", got)
 	}
 

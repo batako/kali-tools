@@ -65,7 +65,12 @@ check_deb_metadata() {
 
 check_deb_contents() {
   deb_path="$1"
-  dpkg-deb -c "${deb_path}" | grep -q "./usr/local/bin/${PACKAGE_NAME}$"
+  contents="${TMP_DIR}/deb-contents"
+  dpkg-deb -c "${deb_path}" >"${contents}"
+  grep -q "./usr/local/bin/${PACKAGE_NAME}$" "${contents}" || return 1
+  if [ "${PACKAGE_NAME}" = "ctx" ]; then
+    ! grep -q "./usr/local/bin/x$" "${contents}" || return 1
+  fi
 }
 
 check_deb_version() {
@@ -76,7 +81,12 @@ check_deb_version() {
   rm -rf "${extract_dir}"
   mkdir -p "${extract_dir}"
   dpkg-deb -x "${deb_path}" "${extract_dir}"
-  test "$("${extract_dir}/usr/local/bin/${PACKAGE_NAME}" -V)" = "${PACKAGE_NAME} ${expected_version}"
+  test "$("${extract_dir}/usr/local/bin/${PACKAGE_NAME}" -V)" = "${PACKAGE_NAME} ${expected_version}" || return 1
+  if [ "${PACKAGE_NAME}" = "ctx" ]; then
+    "${extract_dir}/usr/local/bin/ctx" x --help | grep -q "usage: ctx x <command>" || return 1
+    "${extract_dir}/usr/local/bin/ctx" completion bash | grep -q 'x() { ctx x "$@"; }' || return 1
+    "${extract_dir}/usr/local/bin/ctx" completion zsh | grep -q 'x() { ctx x "$@" }' || return 1
+  fi
 }
 
 check_ctx_completion() {
@@ -171,7 +181,7 @@ check_ctx_init_shell() {
       exit 1
 
     HOME="${real_home}" "${shell_path}" -ic \
-      'type xtarget >/dev/null && type xhosts >/dev/null && ctx -V >/dev/null'
+      'type x >/dev/null && type xtarget >/dev/null && type xhosts >/dev/null && ctx -V >/dev/null && ctx x --help >/dev/null && x 2>&1 | grep -q "usage: ctx x <command>"'
 
     completed=1
   )
@@ -204,6 +214,9 @@ check_deb_install() {
   if [ "${PACKAGE_NAME}" = "ctx" ]; then
     if ! grep -q "ctx installed successfully." "${install_output}" ||
       ! grep -q "ctx init-shell" "${install_output}" ||
+      ! ctx x --help | grep -q "usage: ctx x <command>" ||
+      ! ctx completion bash | grep -q 'x() { ctx x "$@"; }' ||
+      ! ctx completion zsh | grep -q 'x() { ctx x "$@" }' ||
       ! SHELL=/usr/bin/zsh ctx doctor | grep -q "shell: zsh"; then
       cat "${install_output}"
       return 1
