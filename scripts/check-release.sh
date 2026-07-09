@@ -217,7 +217,7 @@ check_deb_install() {
       ! ctx x --help | grep -q "usage: ctx x <command>" ||
       ! ctx completion bash | grep -q 'x() { ctx x "$@"; }' ||
       ! ctx completion zsh | grep -q 'x() { ctx x "$@" }' ||
-      ! SHELL=/usr/bin/zsh ctx doctor | grep -q "shell: zsh"; then
+      ! SHELL=/usr/bin/zsh ctx doctor 2>&1 | grep -A1 '^OK  Shell$' | grep -q 'zsh'; then
       cat "${install_output}"
       return 1
     fi

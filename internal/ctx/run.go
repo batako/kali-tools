@@ -23,6 +23,7 @@ var (
 	reexecResetHostsWithSudoFunc = reexecResetHostsWithSudo
 	resetCtxDataFunc             = ResetCtxData
 	executableFunc               = os.Executable
+	lookPathFunc                 = exec.LookPath
 	execCommandFunc              = exec.Command
 	workspaceStdin               = io.Reader(os.Stdin)
 )
@@ -1137,51 +1138,11 @@ func runDoctor(args []string, stdout io.Writer) error {
 	if len(args) != 0 {
 		return errors.New("usage: ctx doctor")
 	}
-
-	if _, err := fmt.Fprintf(stdout, "ctx: %s\n", Version); err != nil {
+	_, err := writeDoctorReport(stdout, collectDoctorChecks())
+	if err != nil {
 		return err
 	}
-	if err := writeExecutableInfo(stdout); err != nil {
-		return err
-	}
-
-	config, shellErr := DetectShell()
-	if shellErr != nil {
-		if _, err := fmt.Fprintf(stdout, "shell: error (%v)\n", shellErr); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintln(stdout, "fix: set SHELL to zsh or bash, then run ctx init-shell"); err != nil {
-			return err
-		}
-	} else {
-		configured, err := CompletionConfigured(config)
-		if err != nil {
-			return fmt.Errorf("failed to inspect %s: %w", config.Path, err)
-		}
-		if _, err := fmt.Fprintf(stdout, "shell: %s\nconfig: %s\ncompletion: %t\n", config.Shell, config.Path, configured); err != nil {
-			return err
-		}
-		if !configured {
-			if _, err := fmt.Fprintln(stdout, "fix: run ctx init-shell"); err != nil {
-				return err
-			}
-		}
-	}
-
-	wd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
-	}
-	workspace, err := FindWorkspace(wd)
-	if err != nil {
-		if _, writeErr := fmt.Fprintln(stdout, "workspace: not found"); writeErr != nil {
-			return writeErr
-		}
-		_, writeErr := fmt.Fprintln(stdout, "fix: run ctx workspace init in a workspace directory")
-		return writeErr
-	}
-	_, err = fmt.Fprintf(stdout, "workspace: %s\nworkspace_root: %s\n", workspace.ID, workspace.RootPath)
-	return err
+	return nil
 }
 
 func writeExecutableInfo(stdout io.Writer) error {

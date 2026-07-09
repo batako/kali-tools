@@ -80,6 +80,8 @@ ctx doctor
 
 `ctx init-shell` detects the current shell and writes a marked ctx block to `.zshrc` or `.bashrc`. It also enables x-prefixed helper functions, so `ctx workspace init` can be run as `xinit`, `ctx status` as `xstatus`, and `ctx hosts` as `xhosts`. ctx does not create aliases.
 
+`ctx doctor` reports each executable, PATH, shell, shell integration, and workspace check as `OK` or `NG`. Terminal output colors `OK` green, `NG` red, and `Fix:` yellow. Every `NG` includes a corrective action, but diagnostic NG results do not make the command itself fail.
+
 ## Directory Structure
 
 - `cmd/req/`: Entry point for the `req` command

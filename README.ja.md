@@ -80,6 +80,8 @@ ctx doctor
 
 `ctx init-shell` は現在のシェルを判定し、`.zshrc` または `.bashrc` に ctx 用のマーカー付きブロックを追記します。あわせて x プレフィックスの helper function も有効になるため、`ctx workspace init` は `xinit`、`ctx status` は `xstatus`、`ctx hosts` は `xhosts` として実行できます。ctx は alias を作成しません。
 
+`ctx doctor` は実行ファイル、PATH、shell、shell integration、workspaceをそれぞれ`OK`または`NG`で表示します。端末では`OK`を緑、`NG`を赤、`Fix:`を黄で表示します。すべての`NG`には改善方法を示しますが、診断結果のNGだけではコマンド自体をエラー終了しません。
+
 ## ディレクトリ構成
 
 - `cmd/req/`: `req` のエントリポイント
