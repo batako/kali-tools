@@ -59,6 +59,11 @@ func TestRunTopLevelHelp(t *testing.T) {
 				t.Fatalf("help output = %q, want shortcut %s for %s", got, shortcut, command)
 			}
 		}
+		for _, detail := range []string{"extra shortcuts (requires ctx init-shell --extra-shortcuts):", "pj           ctx project", "ta           ctx target"} {
+			if !strings.Contains(got, detail) {
+				t.Fatalf("help output = %q, want %q", got, detail)
+			}
+		}
 		for _, detail := range []string{"target set <ip>", "host add <hostname>", "hosts sync"} {
 			if strings.Contains(got, detail) {
 				t.Fatalf("help output = %q, should not include detailed command %q", got, detail)
@@ -187,7 +192,7 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "prompt", "--help"}, "usage: ctx prompt [options]"},
 		{[]string{"ctx", "x", "--help"}, "usage: ctx x <command> [args...]"},
 		{[]string{"ctx", "completion", "-h"}, "usage: ctx completion <zsh|bash> [options]"},
-		{[]string{"ctx", "init-shell", "--help"}, "usage: ctx init-shell [--remove] [options]"},
+		{[]string{"ctx", "init-shell", "--help"}, "usage: ctx init-shell [--remove|--extra-shortcuts] [options]"},
 		{[]string{"ctx", "doctor", "-h"}, "usage: ctx doctor [options]"},
 		{[]string{"ctx", "reset", "-h"}, "usage: ctx reset [-y|--yes] [options]"},
 	}
@@ -214,6 +219,18 @@ func TestRunLogHelpListsDisplayModes(t *testing.T) {
 		if !strings.Contains(out.String(), option) {
 			t.Fatalf("log help = %q, want %s", out.String(), option)
 		}
+	}
+}
+
+func TestRunCompletionHelpListsExtraShortcutsOption(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "completion", "--help"}, &out); err != nil {
+		t.Fatalf("Run(ctx completion --help) error = %v", err)
+	}
+	if !strings.Contains(out.String(), "--extra-shortcuts") {
+		t.Fatalf("completion help = %q, want extra shortcuts option", out.String())
 	}
 }
 

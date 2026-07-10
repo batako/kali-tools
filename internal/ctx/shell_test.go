@@ -70,6 +70,56 @@ func TestCompletionScriptsIncludeProjectHelpers(t *testing.T) {
 	}
 }
 
+func TestCompletionScriptsIncludeExtraShortcutsWhenRequested(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell, CompletionOptions{ExtraShortcuts: true})
+		if err != nil {
+			t.Fatalf("CompletionScript(%s, true) error = %v", shell, err)
+		}
+		wants := []string{
+			"pj() { xproject \"$@\"",
+			"ta() { xtarget \"$@\"",
+		}
+		if shell == "zsh" {
+			wants = append(wants,
+				"elif [[ ${invocation} == pj ]]",
+				"elif [[ ${invocation} == ta ]]",
+				"compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta",
+			)
+		} else {
+			wants = append(wants,
+				"project|xproject|pj",
+				"target|xtarget|ta",
+			)
+		}
+		for _, want := range wants {
+			if !strings.Contains(script, want) {
+				t.Fatalf("CompletionScript(%s, true) missing %q", shell, want)
+			}
+		}
+	}
+}
+
+func TestCompletionScriptsDoNotIncludeExtraShortcutsByDefault(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell)
+		if err != nil {
+			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
+		}
+		for _, unwanted := range []string{
+			"pj() { xproject",
+			"ta() { xtarget",
+			"elif [[ ${invocation} == pj ]]",
+			"project|xproject|pj",
+			"pj ta",
+		} {
+			if strings.Contains(script, unwanted) {
+				t.Fatalf("CompletionScript(%s) unexpectedly contains %q", shell, unwanted)
+			}
+		}
+	}
+}
+
 func topLevelCommandsFromUsage(t *testing.T) []string {
 	t.Helper()
 
@@ -178,6 +228,9 @@ func TestInitShellWritesAndRemovesMarkedBlock(t *testing.T) {
 	if !strings.Contains(text, shellBlockStart) || !strings.Contains(text, "source <(ctx completion zsh)") || !strings.Contains(text, shellBlockEnd) {
 		t.Fatalf("shell config = %q, want ctx block", text)
 	}
+	if strings.Contains(text, "--extra-shortcuts") {
+		t.Fatalf("shell config = %q, should not include extra shortcuts by default", text)
+	}
 
 	_, changed, err = InstallShellConfig()
 	if err != nil {
@@ -253,6 +306,17 @@ func TestRunCompletionAndInitShell(t *testing.T) {
 	if got := out.String(); !strings.Contains(got, "complete -F _ctx_completion ctx") || !strings.Contains(got, "xinit()") || !strings.Contains(got, "x() { ctx x") {
 		t.Fatalf("completion output = %q", got)
 	}
+	if strings.Contains(out.String(), "pj()") || strings.Contains(out.String(), "ta()") {
+		t.Fatalf("completion output unexpectedly contains extra shortcuts: %q", out.String())
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "completion", "bash", "--extra-shortcuts"}, &out); err != nil {
+		t.Fatalf("Run(completion bash --extra-shortcuts) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "pj() { xproject \"$@\"") || !strings.Contains(got, "ta() { xtarget \"$@\"") {
+		t.Fatalf("completion output with extra shortcuts = %q", got)
+	}
 
 	out.Reset()
 	if err := Run([]string{"ctx", "init-shell"}, &out); err != nil {
@@ -266,7 +330,19 @@ func TestRunCompletionAndInitShell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(.bashrc) error = %v", err)
 	}
-	if !strings.Contains(string(content), "source <(ctx completion bash)") {
+	if !strings.Contains(string(content), "source <(ctx completion bash)") || strings.Contains(string(content), "--extra-shortcuts") {
 		t.Fatalf(".bashrc = %q", string(content))
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "init-shell", "--extra-shortcuts"}, &out); err != nil {
+		t.Fatalf("Run(init-shell --extra-shortcuts) error = %v", err)
+	}
+	content, err = os.ReadFile(filepath.Join(home, ".bashrc"))
+	if err != nil {
+		t.Fatalf("ReadFile(.bashrc extra) error = %v", err)
+	}
+	if !strings.Contains(string(content), "source <(ctx completion bash --extra-shortcuts)") {
+		t.Fatalf(".bashrc with extra shortcuts = %q", string(content))
 	}
 }

@@ -20,14 +20,43 @@ type ShellConfig struct {
 	Path  string
 }
 
+type CompletionOptions struct {
+	ExtraShortcuts bool
+}
+
+type ShellIntegrationOptions struct {
+	ExtraShortcuts bool
+}
+
 var parentProcessNameFunc = parentProcessName
 
-func CompletionScript(shell string) (string, error) {
+func CompletionScript(shell string, options ...CompletionOptions) (string, error) {
+	completionOptions := CompletionOptions{}
+	if len(options) > 0 {
+		completionOptions = options[0]
+	}
+
 	switch shell {
 	case "zsh":
-		return zshCompletionScript, nil
+		script := zshCompletionScript
+		if completionOptions.ExtraShortcuts {
+			var err error
+			script, err = enableExtraShortcutsInZshCompletionScript(script)
+			if err != nil {
+				return "", err
+			}
+		}
+		return script, nil
 	case "bash":
-		return bashCompletionScript, nil
+		script := bashCompletionScript
+		if completionOptions.ExtraShortcuts {
+			var err error
+			script, err = enableExtraShortcutsInBashCompletionScript(script)
+			if err != nil {
+				return "", err
+			}
+		}
+		return script, nil
 	default:
 		return "", fmt.Errorf("unsupported shell: %s", shell)
 	}
@@ -82,7 +111,12 @@ func parentProcessName() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func InstallShellConfig() (ShellConfig, bool, error) {
+func InstallShellConfig(options ...ShellIntegrationOptions) (ShellConfig, bool, error) {
+	shellOptions := ShellIntegrationOptions{}
+	if len(options) > 0 {
+		shellOptions = options[0]
+	}
+
 	config, err := DetectShell()
 	if err != nil {
 		return ShellConfig{}, false, err
@@ -94,7 +128,7 @@ func InstallShellConfig() (ShellConfig, bool, error) {
 	}
 
 	text := string(content)
-	block := shellBlock(config.Shell)
+	block := shellBlockWithOptions(config.Shell, shellOptions.ExtraShortcuts)
 	updated, changed := upsertMarkedBlock(text, block)
 	if !changed {
 		return config, false, nil
@@ -146,7 +180,130 @@ func CompletionConfigured(config ShellConfig) (bool, error) {
 }
 
 func shellBlock(shell string) string {
-	return shellBlockStart + "\nsource <(ctx completion " + shell + ")\n" + shellBlockEnd + "\n"
+	return shellBlockWithOptions(shell, false)
+}
+
+func shellBlockWithOptions(shell string, includeExtraShortcuts bool) string {
+	command := "ctx completion " + shell
+	if includeExtraShortcuts {
+		command += " --extra-shortcuts"
+	}
+	return shellBlockStart + "\nsource <(" + command + ")\n" + shellBlockEnd + "\n"
+}
+
+type scriptReplacement struct {
+	old string
+	new string
+}
+
+func applyScriptReplacements(script string, replacements []scriptReplacement) (string, error) {
+	for _, replacement := range replacements {
+		if !strings.Contains(script, replacement.old) {
+			return "", errors.New("failed to enable extra shortcuts: completion script anchor not found")
+		}
+		script = strings.Replace(script, replacement.old, replacement.new, 1)
+	}
+	return script, nil
+}
+
+func enableExtraShortcutsInZshCompletionScript(script string) (string, error) {
+	return applyScriptReplacements(script, []scriptReplacement{
+		{
+			old: `  elif [[ ${invocation} == xinit ]]; then
+    command=workspace-init
+    command_position=1
+  else
+    command=${invocation#x}
+    command_position=1
+  fi`,
+			new: `  elif [[ ${invocation} == xinit ]]; then
+    command=workspace-init
+    command_position=1
+  elif [[ ${invocation} == pj ]]; then
+    command=project
+    command_position=1
+  elif [[ ${invocation} == ta ]]; then
+    command=target
+    command_position=1
+  else
+    command=${invocation#x}
+    command_position=1
+  fi`,
+		},
+		{
+			old: `xreset() { ctx reset "$@" }
+
+compdef _ctx ctx
+compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+`,
+			new: `xreset() { ctx reset "$@" }
+pj() { xproject "$@" }
+ta() { xtarget "$@" }
+
+compdef _ctx ctx
+compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta
+`,
+		},
+	})
+}
+
+func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
+	return applyScriptReplacements(script, []scriptReplacement{
+		{
+			old: `  elif [[ ${invocation} == x ]]; then
+    command=x
+  else
+    command="${invocation#x}"
+    subcommand="${COMP_WORDS[1]}"
+  fi`,
+			new: `  elif [[ ${invocation} == x ]]; then
+    command=x
+  elif [[ ${invocation} == pj ]]; then
+    command=project
+    subcommand="${COMP_WORDS[1]}"
+  elif [[ ${invocation} == ta ]]; then
+    command=target
+    subcommand="${COMP_WORDS[1]}"
+  else
+    command="${invocation#x}"
+    subcommand="${COMP_WORDS[1]}"
+  fi`,
+		},
+		{
+			old: `    project|xproject)
+      COMPREPLY=($(compgen -W "root new ls rm" -- "${cur}"))
+      return
+      ;;
+    target|xtarget)
+      COMPREPLY=($(compgen -W "set add update use rm ls" -- "${cur}"))
+      return
+      ;;
+`,
+			new: `    project|xproject|pj)
+      COMPREPLY=($(compgen -W "root new ls rm" -- "${cur}"))
+      return
+      ;;
+    target|xtarget|ta)
+      COMPREPLY=($(compgen -W "set add update use rm ls" -- "${cur}"))
+      return
+      ;;
+`,
+		},
+		{
+			old: `xreset() { ctx reset "$@"; }
+
+complete -F _ctx_completion ctx
+complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+`,
+			new: `xreset() { ctx reset "$@"; }
+pj() { xproject "$@"; }
+ta() { xtarget "$@"; }
+
+complete -F _ctx_completion ctx
+complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta
+`,
+		},
+	})
 }
 
 func upsertMarkedBlock(text, block string) (string, bool) {
@@ -276,6 +433,19 @@ _ctx_completion_shells=(
   'bash:print bash completion script'
 )
 
+_ctx_completion_options=(
+  '--extra-shortcuts:include pj and ta shortcuts'
+  '-h:show help'
+  '--help:show help'
+)
+
+_ctx_init_shell_options=(
+  '--extra-shortcuts:include pj and ta shortcuts'
+  '--remove:remove ctx shell integration'
+  '-h:show help'
+  '--help:show help'
+)
+
 _ctx_log_options=(
   '-p:print a compact timeline'
   '--plain:print a compact timeline'
@@ -357,6 +527,7 @@ _ctx() {
         ;;
       prompt) _describe 'prompt option' _ctx_prompt_options ;;
       reset) _describe 'reset option' _ctx_reset_options ;;
+      init-shell) _describe 'init-shell option' _ctx_init_shell_options ;;
       x) _command_names -e ;;
       *) _describe 'option' _ctx_options ;;
     esac
@@ -369,6 +540,13 @@ _ctx() {
         _ctx_dynamic_descriptions workspace
       else
         _message 'argument'
+      fi
+      ;;
+    completion)
+      if [[ ${previous} == zsh || ${previous} == bash ]]; then
+        _describe 'completion option' _ctx_completion_options
+      else
+        _describe 'shell' _ctx_completion_shells
       fi
       ;;
     project)
@@ -561,6 +739,10 @@ _ctx_completion() {
       COMPREPLY=($(compgen -W "-y --yes -h --help" -- "${cur}"))
       return
       ;;
+    init-shell|xinit-shell)
+      COMPREPLY=($(compgen -W "--extra-shortcuts --remove -h --help" -- "${cur}"))
+      return
+      ;;
     --format)
       COMPREPLY=($(compgen -W "shell json" -- "${cur}"))
       return
@@ -574,7 +756,11 @@ _ctx_completion() {
       return
       ;;
     completion|xcompletion)
-      COMPREPLY=($(compgen -W "zsh bash" -- "${cur}"))
+      if [[ ${cur} == -* ]]; then
+        COMPREPLY=($(compgen -W "--extra-shortcuts -h --help" -- "${cur}"))
+      else
+        COMPREPLY=($(compgen -W "zsh bash" -- "${cur}"))
+      fi
       return
       ;;
   esac

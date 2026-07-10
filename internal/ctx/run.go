@@ -76,6 +76,10 @@ shortcuts (requires ctx init-shell):
   xinit-shell  ctx init-shell
   xreset       ctx reset
 
+extra shortcuts (requires ctx init-shell --extra-shortcuts):
+  pj           ctx project
+  ta           ctx target
+
 Run ctx <command> -h for command-specific help.`
 
 const statusUsageText = `usage: ctx status [options]
@@ -156,15 +160,17 @@ const completionUsageText = `usage: ctx completion <zsh|bash> [options]
 Print shell completion script to stdout.
 
 options:
-  -h, --help  show this help`
+  --extra-shortcuts  include pj and ta shortcuts
+  -h, --help         show this help`
 
-const initShellUsageText = `usage: ctx init-shell [--remove] [options]
+const initShellUsageText = `usage: ctx init-shell [--remove|--extra-shortcuts] [options]
 
 Configure ctx shell integration for the current shell.
 
 options:
-  --remove    remove ctx shell integration
-  -h, --help  show this help`
+  --extra-shortcuts  include pj and ta shortcuts
+  --remove           remove ctx shell integration
+  -h, --help         show this help`
 
 const doctorUsageText = `usage: ctx doctor [options]
 
@@ -1307,10 +1313,18 @@ func runCompletion(args []string, stdout io.Writer) error {
 		}
 		return nil
 	}
-	if len(args) != 1 {
-		return errors.New("usage: ctx completion <zsh|bash>")
+	includeExtraShortcuts := false
+	switch len(args) {
+	case 1:
+	case 2:
+		if args[1] != "--extra-shortcuts" {
+			return errors.New("usage: ctx completion <zsh|bash> [--extra-shortcuts]")
+		}
+		includeExtraShortcuts = true
+	default:
+		return errors.New("usage: ctx completion <zsh|bash> [--extra-shortcuts]")
 	}
-	script, err := CompletionScript(args[0])
+	script, err := CompletionScript(args[0], CompletionOptions{ExtraShortcuts: includeExtraShortcuts})
 	if err != nil {
 		return err
 	}
@@ -1477,15 +1491,19 @@ func runInitShell(args []string, stdout io.Writer) error {
 		return err
 	}
 	remove := false
-	switch len(args) {
-	case 0:
-	case 1:
-		if args[0] != "--remove" {
-			return errors.New("usage: ctx init-shell [--remove]")
+	extraShortcuts := false
+	for _, arg := range args {
+		switch arg {
+		case "--remove":
+			remove = true
+		case "--extra-shortcuts":
+			extraShortcuts = true
+		default:
+			return errors.New("usage: ctx init-shell [--remove|--extra-shortcuts]")
 		}
-		remove = true
-	default:
-		return errors.New("usage: ctx init-shell [--remove]")
+	}
+	if remove && extraShortcuts {
+		return errors.New("usage: ctx init-shell [--remove|--extra-shortcuts]")
 	}
 
 	if remove {
@@ -1501,7 +1519,7 @@ func runInitShell(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	config, changed, err := InstallShellConfig()
+	config, changed, err := InstallShellConfig(ShellIntegrationOptions{ExtraShortcuts: extraShortcuts})
 	if err != nil {
 		return err
 	}
