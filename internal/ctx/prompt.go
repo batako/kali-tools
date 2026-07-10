@@ -16,7 +16,7 @@ type PromptData struct {
 	Active         bool   `json:"active"`
 	WorkspaceID    string `json:"workspace_id"`
 	WorkspaceName  string `json:"workspace_name"`
-	WorkspaceRoot  string `json:"workspace_root"`
+	WorkspacePath  string `json:"workspace_path"`
 	LocalIP        string `json:"local_ip"`
 	LocalInterface string `json:"local_interface"`
 	TargetName     string `json:"target_name"`
@@ -42,7 +42,7 @@ func LoadPromptData(startPath string) (PromptData, error) {
 		Active:        true,
 		WorkspaceID:   record.ID,
 		WorkspaceName: filepath.Base(record.RootPath),
-		WorkspaceRoot: record.RootPath,
+		WorkspacePath: record.RootPath,
 	}
 
 	targets, err := ListTargets(workspace)
@@ -83,7 +83,7 @@ func WritePromptData(stdout io.Writer, data PromptData, format, field string) er
 			{"CTX_ACTIVE", boolDigit(data.Active)},
 			{"CTX_WORKSPACE_ID", data.WorkspaceID},
 			{"CTX_WORKSPACE_NAME", data.WorkspaceName},
-			{"CTX_WORKSPACE_ROOT", data.WorkspaceRoot},
+			{"CTX_WORKSPACE_PATH", data.WorkspacePath},
 			{"CTX_LOCAL_IP", data.LocalIP},
 			{"CTX_LOCAL_INTERFACE", data.LocalInterface},
 			{"CTX_TARGET_NAME", data.TargetName},
@@ -109,7 +109,7 @@ func promptField(data PromptData, field string) (string, bool) {
 		"active":          boolDigit(data.Active),
 		"workspace-id":    data.WorkspaceID,
 		"workspace-name":  data.WorkspaceName,
-		"workspace-root":  data.WorkspaceRoot,
+		"workspace-path":  data.WorkspacePath,
 		"local-ip":        data.LocalIP,
 		"local-interface": data.LocalInterface,
 		"target-name":     data.TargetName,

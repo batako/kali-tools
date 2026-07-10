@@ -465,7 +465,7 @@ _ctx_prompt_options=(
 )
 
 _ctx_prompt_formats=(shell json)
-_ctx_prompt_fields=(active workspace-id workspace-name workspace-root local-ip local-interface target-name target-ip)
+_ctx_prompt_fields=(active workspace-id workspace-name workspace-path local-ip local-interface target-name target-ip)
 
 _ctx_reset_options=(
   '-y:skip confirmation'
@@ -748,7 +748,7 @@ _ctx_completion() {
       return
       ;;
     --field)
-      COMPREPLY=($(compgen -W "active workspace-id workspace-name workspace-root local-ip local-interface target-name target-ip" -- "${cur}"))
+      COMPREPLY=($(compgen -W "active workspace-id workspace-name workspace-path local-ip local-interface target-name target-ip" -- "${cur}"))
       return
       ;;
     x)

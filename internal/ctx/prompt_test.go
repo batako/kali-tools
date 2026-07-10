@@ -61,7 +61,7 @@ func TestWritePromptDataShellIsSafeAndComplete(t *testing.T) {
 		Active:         true,
 		WorkspaceID:    "workspace-id",
 		WorkspaceName:  "operator's lab",
-		WorkspaceRoot:  "/tmp/operator's lab",
+		WorkspacePath:  "/tmp/operator's lab",
 		LocalIP:        "10.8.0.2",
 		LocalInterface: "tun0",
 		TargetName:     "dc",

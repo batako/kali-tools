@@ -237,7 +237,7 @@ options:
   -h, --help             show this help
 
 fields:
-  active, workspace-id, workspace-name, workspace-root
+  active, workspace-id, workspace-name, workspace-path
   local-ip, local-interface, target-name, target-ip`
 
 const resetUsageText = `usage: ctx reset [-y|--yes] [options]
