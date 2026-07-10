@@ -35,7 +35,7 @@ const usageText = `usage: ctx <command> [options]
 commands:
   status   show the current workspace
   workspace  initialize, list, or remove workspaces
-  project  create and manage projects under the configured root
+  project    create and manage projects under the configured root
   target   manage targets
   ip       show or update the primary target IP
   host     manage hostnames
@@ -57,8 +57,8 @@ options:
 
 shortcuts (requires ctx init-shell):
   xinit        ctx workspace init
-  xstatus      ctx status
   xworkspace   ctx workspace
+  xstatus      ctx status
   xproject     ctx project
   xnew         ctx project new
   xtarget      ctx target
