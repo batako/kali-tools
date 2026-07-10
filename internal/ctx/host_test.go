@@ -99,6 +99,115 @@ func TestRunHostCommands(t *testing.T) {
 	}
 
 	out.Reset()
+	if err := Run([]string{"ctx", "host"}, &out); err != nil {
+		t.Fatalf("Run(host default view) error = %v", err)
+	}
+	got = out.String()
+	if !strings.Contains(got, "example.thm default 10.10.10.10") || !strings.Contains(got, "dc01.example.local dc 10.10.10.20") {
+		t.Fatalf("host default view output = %q", got)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "host", "rm", "example.thm"}, &out); err != nil {
+		t.Fatalf("Run(host rm) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "removed host: example.thm") {
+		t.Fatalf("host rm output = %q", got)
+	}
+}
+
+func TestRunHostShorthandMatchesAdd(t *testing.T) {
+	explicitOutput, explicitHosts := runHostCommandInFreshWorkspace(t, []string{"ctx", "host", "add", "example.thm"})
+	shorthandOutput, shorthandHosts := runHostCommandInFreshWorkspace(t, []string{"ctx", "host", "example.thm"})
+
+	if shorthandOutput != explicitOutput {
+		t.Fatalf("shorthand output = %q, want %q", shorthandOutput, explicitOutput)
+	}
+	if len(shorthandHosts) != 1 || len(explicitHosts) != 1 {
+		t.Fatalf("hosts = %+v, want one host in each workspace", shorthandHosts)
+	}
+	if shorthandHosts[0].Hostname != explicitHosts[0].Hostname ||
+		shorthandHosts[0].TargetName != explicitHosts[0].TargetName ||
+		shorthandHosts[0].TargetIP != explicitHosts[0].TargetIP {
+		t.Fatalf("shorthand host = %+v, want %+v", shorthandHosts[0], explicitHosts[0])
+	}
+}
+
+func TestRunHostShorthandAcceptsAddOptions(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", t.TempDir())
+	t.Chdir(root)
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "target", "set", "10.10.10.10"}, &out); err != nil {
+		t.Fatalf("Run(target set) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "target", "add", "10.10.10.20", "--name", "dc"}, &out); err != nil {
+		t.Fatalf("Run(target add) error = %v", err)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "host", "dc01.example.local", "--target", "dc"}, &out); err != nil {
+		t.Fatalf("Run(host shorthand --target) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "dc01.example.local dc 10.10.10.20") {
+		t.Fatalf("host shorthand --target output = %q", got)
+	}
+}
+
+func TestRunHostShorthandInvalidHostnameUsesAddValidation(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", t.TempDir())
+	t.Chdir(root)
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "target", "set", "10.10.10.10"}, &out); err != nil {
+		t.Fatalf("Run(target set) error = %v", err)
+	}
+
+	out.Reset()
+	err := Run([]string{"ctx", "host", "bad host"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "invalid hostname") {
+		t.Fatalf("Run(ctx host 'bad host') error = %v, want invalid hostname validation", err)
+	}
+}
+
+func TestRunHostExistingSubcommandsUnaffectedByDefaultAction(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", t.TempDir())
+	t.Chdir(root)
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "target", "set", "10.10.10.10"}, &out); err != nil {
+		t.Fatalf("Run(target set) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "host", "add", "example.thm"}, &out); err != nil {
+		t.Fatalf("Run(host add) error = %v", err)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "host", "ls"}, &out); err != nil {
+		t.Fatalf("Run(host ls) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "example.thm default 10.10.10.10") {
+		t.Fatalf("host ls output = %q", got)
+	}
+
+	out.Reset()
 	if err := Run([]string{"ctx", "host", "rm", "example.thm"}, &out); err != nil {
 		t.Fatalf("Run(host rm) error = %v", err)
 	}
@@ -117,6 +226,36 @@ func TestAddHostRequiresPrimaryTarget(t *testing.T) {
 	if !strings.Contains(err.Error(), "primary target not set") {
 		t.Fatalf("error = %q, want primary target not set", err.Error())
 	}
+}
+
+func runHostCommandInFreshWorkspace(t *testing.T, args []string) (string, []Host) {
+	t.Helper()
+
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", t.TempDir())
+	t.Chdir(root)
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "target", "set", "10.10.10.10"}, &out); err != nil {
+		t.Fatalf("Run(target set) error = %v", err)
+	}
+	out.Reset()
+	if err := Run(args, &out); err != nil {
+		t.Fatalf("Run(%v) error = %v", args, err)
+	}
+	workspace, err := FindWorkspace(root)
+	if err != nil {
+		t.Fatalf("FindWorkspace() error = %v", err)
+	}
+	hosts, err := ListHosts(workspace)
+	if err != nil {
+		t.Fatalf("ListHosts() error = %v", err)
+	}
+	return out.String(), hosts
 }
 
 func TestAddHostRejectsInvalidHostname(t *testing.T) {
@@ -190,6 +329,15 @@ func TestRunHostsShow(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "# >>> ctx: ") || !strings.Contains(got, "10.10.10.10 example.thm") || !strings.Contains(got, "# <<< ctx: ") {
 		t.Fatalf("hosts show output = %q", got)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "hosts"}, &out); err != nil {
+		t.Fatalf("Run(hosts default view) error = %v", err)
+	}
+	got = out.String()
+	if !strings.Contains(got, "# >>> ctx: ") || !strings.Contains(got, "10.10.10.10 example.thm") || !strings.Contains(got, "# <<< ctx: ") {
+		t.Fatalf("hosts default view output = %q", got)
 	}
 }
 

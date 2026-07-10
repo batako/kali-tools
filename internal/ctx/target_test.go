@@ -100,6 +100,87 @@ func TestRunTargetAndIPCommands(t *testing.T) {
 	if !strings.Contains(got, "  default 10.10.10.10") || !strings.Contains(got, "* dc 10.10.10.20") {
 		t.Fatalf("target ls output = %q", got)
 	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "target"}, &out); err != nil {
+		t.Fatalf("Run(target default view) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "  default 10.10.10.10") || !strings.Contains(got, "* dc 10.10.10.20") {
+		t.Fatalf("target default view output = %q", got)
+	}
+}
+
+func TestRunTargetShorthandMatchesSet(t *testing.T) {
+	explicitOutput, explicitTargets := runTargetCommandInFreshWorkspace(t, []string{"ctx", "target", "set", "10.10.10.10"})
+	shorthandOutput, shorthandTargets := runTargetCommandInFreshWorkspace(t, []string{"ctx", "target", "10.10.10.10"})
+
+	if shorthandOutput != explicitOutput {
+		t.Fatalf("shorthand output = %q, want %q", shorthandOutput, explicitOutput)
+	}
+	if len(shorthandTargets) != 1 || len(explicitTargets) != 1 {
+		t.Fatalf("targets = %+v, want one target in each workspace", shorthandTargets)
+	}
+	if shorthandTargets[0].Name != explicitTargets[0].Name ||
+		shorthandTargets[0].IP != explicitTargets[0].IP ||
+		shorthandTargets[0].IsPrimary != explicitTargets[0].IsPrimary {
+		t.Fatalf("shorthand target = %+v, want %+v", shorthandTargets[0], explicitTargets[0])
+	}
+}
+
+func TestRunTargetShorthandInvalidIPUsesSetValidation(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", t.TempDir())
+	t.Chdir(root)
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
+	}
+
+	out.Reset()
+	err := Run([]string{"ctx", "target", "hoge"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "invalid IP address: hoge") {
+		t.Fatalf("Run(ctx target hoge) error = %v, want invalid IP validation", err)
+	}
+}
+
+func TestRunTargetExistingSubcommandsUnaffectedByDefaultAction(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", t.TempDir())
+	t.Chdir(root)
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "target", "set", "10.10.10.10"}, &out); err != nil {
+		t.Fatalf("Run(target set) error = %v", err)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "target", "add", "10.10.10.20", "--name", "dc"}, &out); err != nil {
+		t.Fatalf("Run(target add) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, " dc 10.10.10.20") {
+		t.Fatalf("target add output = %q", got)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "target", "use", "dc"}, &out); err != nil {
+		t.Fatalf("Run(target use) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "primary target: dc 10.10.10.20") {
+		t.Fatalf("target use output = %q", got)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "target", "rm", "dc"}, &out); err != nil {
+		t.Fatalf("Run(target rm) error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "removed target: dc") {
+		t.Fatalf("target rm output = %q", got)
+	}
 }
 
 func TestSetPrimaryTargetIPRejectsInvalidIP(t *testing.T) {
@@ -112,6 +193,32 @@ func TestSetPrimaryTargetIPRejectsInvalidIP(t *testing.T) {
 	if !strings.Contains(err.Error(), "invalid IP address") {
 		t.Fatalf("error = %q, want invalid IP address", err.Error())
 	}
+}
+
+func runTargetCommandInFreshWorkspace(t *testing.T, args []string) (string, []Target) {
+	t.Helper()
+
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", t.TempDir())
+	t.Chdir(root)
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
+		t.Fatalf("Run(workspace init) error = %v", err)
+	}
+	out.Reset()
+	if err := Run(args, &out); err != nil {
+		t.Fatalf("Run(%v) error = %v", args, err)
+	}
+	workspace, err := FindWorkspace(root)
+	if err != nil {
+		t.Fatalf("FindWorkspace() error = %v", err)
+	}
+	targets, err := ListTargets(workspace)
+	if err != nil {
+		t.Fatalf("ListTargets() error = %v", err)
+	}
+	return out.String(), targets
 }
 
 func initTestWorkspace(t *testing.T) *Workspace {

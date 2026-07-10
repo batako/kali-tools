@@ -96,7 +96,7 @@ options:
   -h, --help         show this help
   -y, --yes          skip removal confirmation`
 
-const projectUsageText = `usage: ctx project <command> [options]
+const projectUsageText = `usage: ctx project [<name> | <command>] [options]
 
 Project is an optional convenience layer for ctx-managed directories under a
 configured root. Workspaces remain the core feature and can still be initialized
@@ -110,9 +110,12 @@ commands:
 
 options:
   -y, --yes         skip removal confirmation
-  -h, --help        show this help`
+  -h, --help        show this help
 
-const targetUsageText = `usage: ctx target <command> [options]
+shorthand:
+  ctx project <name>           same as 'ctx project new <name>'`
+
+const targetUsageText = `usage: ctx target [<ip> | <command>] [options]
 
 commands:
   set <ip>                 create or update the primary target
@@ -123,7 +126,10 @@ commands:
   ls                       list targets
 
 options:
-  -h, --help               show this help`
+  -h, --help               show this help
+
+shorthand:
+  ctx target <ip>          same as 'ctx target set <ip>'`
 
 const ipUsageText = `usage: ctx ip [ip] [options]
 
@@ -132,7 +138,7 @@ Show or update the primary target IP.
 options:
   -h, --help  show this help`
 
-const hostUsageText = `usage: ctx host <command> [options]
+const hostUsageText = `usage: ctx host [<hostname> | <command>] [options]
 
 commands:
   add <hostname> [--target <name>] add a host
@@ -140,7 +146,10 @@ commands:
   ls                               list hosts
 
 options:
-  -h, --help                       show this help`
+  -h, --help                       show this help
+
+shorthand:
+  ctx host <hostname>              same as 'ctx host add <hostname>'`
 
 const completionUsageText = `usage: ctx completion <zsh|bash> [options]
 
@@ -324,14 +333,22 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 }
 
 func runService(args []string, stdout io.Writer) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
-		_, err := fmt.Fprintln(stdout, serviceUsageText)
-		return err
-	}
 	if len(args) > 1 && isHelpArg(args[1]) {
 		_, err := fmt.Fprintln(stdout, serviceUsageText)
 		return err
 	}
+
+	var err error
+	var showHelp bool
+	args, showHelp, err = resolveResourceCommand("service", args, []string{"ls"}, "", "ls")
+	if err != nil {
+		return err
+	}
+	if showHelp {
+		_, err := fmt.Fprintln(stdout, serviceUsageText)
+		return err
+	}
+
 	if args[0] != "ls" {
 		return fmt.Errorf("unknown ctx service command: %s", args[0])
 	}
@@ -563,11 +580,18 @@ func runNote(args []string, stdout io.Writer) error {
 }
 
 func runWorkspace(args []string, stdout io.Writer) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) > 1 && isHelpArg(args[1]) {
 		_, err := fmt.Fprintln(stdout, workspaceUsageText)
 		return err
 	}
-	if len(args) > 1 && isHelpArg(args[1]) {
+
+	var err error
+	var showHelp bool
+	args, showHelp, err = resolveResourceCommand("workspace", args, []string{"init", "ls", "rm"}, "", "init")
+	if err != nil {
+		return err
+	}
+	if showHelp {
 		_, err := fmt.Fprintln(stdout, workspaceUsageText)
 		return err
 	}
@@ -648,11 +672,18 @@ func runWorkspace(args []string, stdout io.Writer) error {
 }
 
 func runProject(args []string, stdout io.Writer) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) > 1 && isHelpArg(args[1]) {
 		_, err := fmt.Fprintln(stdout, projectUsageText)
 		return err
 	}
-	if len(args) > 1 && isHelpArg(args[1]) {
+
+	var err error
+	var showHelp bool
+	args, showHelp, err = resolveResourceCommand("project", args, []string{"root", "new", "ls", "rm"}, "new", "ls")
+	if err != nil {
+		return err
+	}
+	if showHelp {
 		_, err := fmt.Fprintln(stdout, projectUsageText)
 		return err
 	}
@@ -923,12 +954,78 @@ func parseLogArgs(args []string) (string, logDisplayMode, error) {
 	return id, mode, nil
 }
 
+func resolveResourceCommand(resource string, args []string, subcommands []string, defaultAction, defaultView string) ([]string, bool, error) {
+	if len(args) == 0 {
+		if defaultView == "" || defaultView == "help" {
+			return nil, true, nil
+		}
+		resolved, err := resolveConfiguredResourceAction(resource, subcommands, defaultView)
+		return resolved, false, err
+	}
+	if isHelpArg(args[0]) {
+		return nil, true, nil
+	}
+
+	resolved, err := resolveResourceAction(resource, args, subcommands, defaultAction)
+	return resolved, false, err
+}
+
+func resolveResourceAction(resource string, args []string, subcommands []string, defaultAction string) ([]string, error) {
+	known := make(map[string]struct{}, len(subcommands))
+	for _, subcommand := range subcommands {
+		known[subcommand] = struct{}{}
+	}
+	if _, ok := known[args[0]]; ok {
+		return args, nil
+	}
+	if defaultAction == "" {
+		return nil, fmt.Errorf("unknown ctx %s command: %s", resource, args[0])
+	}
+	if isDestructiveDefaultAction(defaultAction) {
+		return nil, fmt.Errorf("invalid default action for ctx %s: %s", resource, defaultAction)
+	}
+	if _, ok := known[defaultAction]; !ok {
+		return nil, fmt.Errorf("invalid default action for ctx %s: %s", resource, defaultAction)
+	}
+
+	resolved := make([]string, 0, len(args)+1)
+	resolved = append(resolved, defaultAction)
+	resolved = append(resolved, args...)
+	return resolved, nil
+}
+
+func resolveConfiguredResourceAction(resource string, subcommands []string, action string) ([]string, error) {
+	if isDestructiveDefaultAction(action) {
+		return nil, fmt.Errorf("invalid default view for ctx %s: %s", resource, action)
+	}
+	for _, subcommand := range subcommands {
+		if action == subcommand {
+			return []string{action}, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid default view for ctx %s: %s", resource, action)
+}
+
+func isDestructiveDefaultAction(action string) bool {
+	switch action {
+	case "rm", "remove", "delete", "reset", "clean", "overwrite", "purge", "drop":
+		return true
+	default:
+		return false
+	}
+}
+
 func runTarget(args []string, stdout io.Writer) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) > 1 && isHelpArg(args[1]) {
 		_, err := fmt.Fprintln(stdout, targetUsageText)
 		return err
 	}
-	if len(args) > 1 && isHelpArg(args[1]) {
+
+	args, showHelp, err := resolveResourceCommand("target", args, []string{"set", "add", "update", "use", "rm", "ls"}, "set", "ls")
+	if err != nil {
+		return err
+	}
+	if showHelp {
 		_, err := fmt.Fprintln(stdout, targetUsageText)
 		return err
 	}
@@ -1042,11 +1139,16 @@ func runIP(args []string, stdout io.Writer) error {
 }
 
 func runHost(args []string, stdout io.Writer) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) > 1 && isHelpArg(args[1]) {
 		_, err := fmt.Fprintln(stdout, hostUsageText)
 		return err
 	}
-	if len(args) > 1 && isHelpArg(args[1]) {
+
+	args, showHelp, err := resolveResourceCommand("host", args, []string{"add", "rm", "ls"}, "add", "ls")
+	if err != nil {
+		return err
+	}
+	if showHelp {
 		_, err := fmt.Fprintln(stdout, hostUsageText)
 		return err
 	}
@@ -1101,11 +1203,18 @@ func runHost(args []string, stdout io.Writer) error {
 }
 
 func runHosts(args []string, stdout io.Writer) error {
-	if len(args) == 0 || isHelpArg(args[0]) {
+	if len(args) > 1 && isHelpArg(args[1]) {
 		_, err := fmt.Fprintln(stdout, hostsUsageText)
 		return err
 	}
-	if len(args) > 1 && isHelpArg(args[1]) {
+
+	var err error
+	var showHelp bool
+	args, showHelp, err = resolveResourceCommand("hosts", args, []string{"show", "sync", "clean"}, "", "show")
+	if err != nil {
+		return err
+	}
+	if showHelp {
 		_, err := fmt.Fprintln(stdout, hostsUsageText)
 		return err
 	}

@@ -388,7 +388,7 @@ _ctx() {
     host)
       if [[ ${subcommand} == rm ]] && (( CURRENT == command_position + 2 )); then
         _ctx_dynamic_descriptions host
-      elif [[ ${subcommand} == add && ${previous} == --target ]]; then
+      elif [[ ${previous} == --target ]]; then
         _ctx_dynamic_descriptions target
       else
         _message 'argument'
@@ -424,13 +424,13 @@ xinit() { ctx workspace init "$@" }
 xstatus() { ctx status "$@" }
 xworkspace() { ctx workspace "$@" }
 xproject() {
-  if [[ $1 == new ]]; then
-    local project_path
-    project_path=$(ctx project "$@") || return
-    [[ -n ${project_path} ]] && cd "${project_path}"
+  if [[ $# == 0 || $1 == root || $1 == ls || $1 == rm || $1 == -h || $1 == --help ]]; then
+    ctx project "$@"
     return
   fi
-  ctx project "$@"
+  local project_path
+  project_path=$(ctx project "$@") || return
+  [[ -n ${project_path} ]] && cd "${project_path}"
 }
 xnew() {
   local project_path
@@ -490,7 +490,7 @@ _ctx_completion() {
     _ctx_complete_values host "${cur}"
     return
   fi
-  if [[ ${command} == host && ${subcommand} == add && ${prev} == --target ]]; then
+  if [[ ${command} == host && ${prev} == --target ]]; then
     _ctx_complete_values target "${cur}"
     return
   fi
@@ -584,13 +584,13 @@ xinit() { ctx workspace init "$@"; }
 xstatus() { ctx status "$@"; }
 xworkspace() { ctx workspace "$@"; }
 xproject() {
-  if [[ $1 == new ]]; then
-    local project_path
-    project_path=$(ctx project "$@") || return
-    [[ -n ${project_path} ]] && cd "${project_path}"
+  if [[ $# == 0 || $1 == root || $1 == ls || $1 == rm || $1 == -h || $1 == --help ]]; then
+    ctx project "$@"
     return
   fi
-  ctx project "$@"
+  local project_path
+  project_path=$(ctx project "$@") || return
+  [[ -n ${project_path} ]] && cd "${project_path}"
 }
 xnew() {
   local project_path

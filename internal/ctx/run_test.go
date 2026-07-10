@@ -109,6 +109,58 @@ func TestRunDoesNotSupportTopLevelInit(t *testing.T) {
 	}
 }
 
+func TestResourceWithoutDefaultActionReportsUnknownCommand(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	err := Run([]string{"ctx", "workspace", "hoge"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "unknown ctx workspace command: hoge") {
+		t.Fatalf("Run(ctx workspace hoge) error = %v, want unknown workspace command", err)
+	}
+}
+
+func TestResolveResourceActionRejectsDestructiveDefaultAction(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolveResourceAction("example", []string{"value"}, []string{"rm"}, "rm")
+	if err == nil || !strings.Contains(err.Error(), "invalid default action") {
+		t.Fatalf("resolveResourceAction() error = %v, want invalid default action", err)
+	}
+}
+
+func TestResolveResourceCommandUsesDefaultView(t *testing.T) {
+	t.Parallel()
+
+	args, showHelp, err := resolveResourceCommand("example", nil, []string{"ls"}, "", "ls")
+	if err != nil {
+		t.Fatalf("resolveResourceCommand() error = %v", err)
+	}
+	if showHelp || len(args) != 1 || args[0] != "ls" {
+		t.Fatalf("resolveResourceCommand() = %v, %v, want ls without help", args, showHelp)
+	}
+}
+
+func TestResolveResourceCommandDefaultsToHelpView(t *testing.T) {
+	t.Parallel()
+
+	args, showHelp, err := resolveResourceCommand("example", nil, []string{"ls"}, "", "help")
+	if err != nil {
+		t.Fatalf("resolveResourceCommand() error = %v", err)
+	}
+	if !showHelp || args != nil {
+		t.Fatalf("resolveResourceCommand() = %v, %v, want help", args, showHelp)
+	}
+}
+
+func TestResolveResourceCommandRejectsDestructiveDefaultView(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := resolveResourceCommand("example", nil, []string{"rm"}, "", "rm")
+	if err == nil || !strings.Contains(err.Error(), "invalid default view") {
+		t.Fatalf("resolveResourceCommand() error = %v, want invalid default view", err)
+	}
+}
+
 func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 	t.Parallel()
 
@@ -120,13 +172,13 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "workspace", "-h"}, "usage: ctx workspace <command> [options]"},
 		{[]string{"ctx", "workspace", "init", "--help"}, "usage: ctx workspace <command> [options]"},
 		{[]string{"ctx", "workspace", "rm", "--help"}, "usage: ctx workspace <command> [options]"},
-		{[]string{"ctx", "project", "-h"}, "usage: ctx project <command> [options]"},
-		{[]string{"ctx", "project", "new", "--help"}, "usage: ctx project <command> [options]"},
-		{[]string{"ctx", "target", "-h"}, "usage: ctx target <command> [options]"},
-		{[]string{"ctx", "target", "add", "--help"}, "usage: ctx target <command> [options]"},
+		{[]string{"ctx", "project", "-h"}, "usage: ctx project [<name> | <command>] [options]"},
+		{[]string{"ctx", "project", "new", "--help"}, "usage: ctx project [<name> | <command>] [options]"},
+		{[]string{"ctx", "target", "-h"}, "usage: ctx target [<ip> | <command>] [options]"},
+		{[]string{"ctx", "target", "add", "--help"}, "usage: ctx target [<ip> | <command>] [options]"},
 		{[]string{"ctx", "ip", "-h"}, "usage: ctx ip [ip] [options]"},
-		{[]string{"ctx", "host", "--help"}, "usage: ctx host <command> [options]"},
-		{[]string{"ctx", "host", "add", "-h"}, "usage: ctx host <command> [options]"},
+		{[]string{"ctx", "host", "--help"}, "usage: ctx host [<hostname> | <command>] [options]"},
+		{[]string{"ctx", "host", "add", "-h"}, "usage: ctx host [<hostname> | <command>] [options]"},
 		{[]string{"ctx", "hosts", "-h"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "hosts", "sync", "--help"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "scan", "--help"}, "usage: ctx scan [ip] [options]"},
@@ -161,6 +213,28 @@ func TestRunLogHelpListsDisplayModes(t *testing.T) {
 	for _, option := range []string{"-p, --plain", "-v, --verbose", "-i, --interactive"} {
 		if !strings.Contains(out.String(), option) {
 			t.Fatalf("log help = %q, want %s", out.String(), option)
+		}
+	}
+}
+
+func TestRunResourceHelpListsDefaultActionShorthand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"ctx", "target", "--help"}, "ctx target <ip>          same as 'ctx target set <ip>'"},
+		{[]string{"ctx", "host", "--help"}, "ctx host <hostname>              same as 'ctx host add <hostname>'"},
+		{[]string{"ctx", "project", "--help"}, "ctx project <name>           same as 'ctx project new <name>'"},
+	}
+	for _, tt := range tests {
+		var out bytes.Buffer
+		if err := Run(tt.args, &out); err != nil {
+			t.Fatalf("Run(%v) error = %v", tt.args, err)
+		}
+		if got := out.String(); !strings.Contains(got, "shorthand:") || !strings.Contains(got, tt.want) {
+			t.Fatalf("Run(%v) output = %q, want shorthand %q", tt.args, got, tt.want)
 		}
 	}
 }

@@ -98,6 +98,30 @@ func TestProjectNewCreatesDirectoryAndInitializesWorkspace(t *testing.T) {
 	}
 }
 
+func TestProjectShorthandCreatesDirectoryAndInitializesWorkspace(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	if _, err := SetProjectRoot(root); err != nil {
+		t.Fatalf("SetProjectRoot() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "project", "alpha"}, &out); err != nil {
+		t.Fatalf("Run(ctx project alpha) error = %v", err)
+	}
+
+	projectPath := filepath.Join(root, "alpha")
+	if got := strings.TrimSpace(out.String()); got != projectPath {
+		t.Fatalf("output = %q, want %q", got, projectPath)
+	}
+	if _, err := os.Stat(filepath.Join(projectPath, MarkerFile)); err != nil {
+		t.Fatalf("project workspace marker missing: %v", err)
+	}
+	if _, err := FindWorkspace(projectPath); err != nil {
+		t.Fatalf("FindWorkspace(projectPath) error = %v", err)
+	}
+}
+
 func TestProjectListShowsOnlyCtxProjectDirectories(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
@@ -120,6 +144,25 @@ func TestProjectListShowsOnlyCtxProjectDirectories(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "plain") {
 		t.Fatalf("output = %q, should not include non-ctx directory", out.String())
+	}
+}
+
+func TestProjectDefaultViewListsProjects(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	if _, err := SetProjectRoot(root); err != nil {
+		t.Fatalf("SetProjectRoot() error = %v", err)
+	}
+	if _, err := CreateProject("alpha"); err != nil {
+		t.Fatalf("CreateProject(alpha) error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "project"}, &out); err != nil {
+		t.Fatalf("Run(ctx project) error = %v", err)
+	}
+	if got, want := out.String(), filepath.Join(root, "alpha")+"\n"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
 

@@ -122,6 +122,23 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDefaultViewInitializesCurrentWorkspace(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	chdirForTest(t, root)
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "workspace"}, &out); err != nil {
+		t.Fatalf("Run(ctx workspace) error = %v", err)
+	}
+	if !strings.Contains(out.String(), "initialized ctx workspace") {
+		t.Fatalf("output = %q, want initialized workspace", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, MarkerFile)); err != nil {
+		t.Fatalf("workspace marker missing: %v", err)
+	}
+}
+
 func TestWorkspaceRemoveUsesCurrentWorkspace(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))

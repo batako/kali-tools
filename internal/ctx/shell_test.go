@@ -57,7 +57,7 @@ func TestCompletionScriptsIncludeProjectHelpers(t *testing.T) {
 		}
 		for _, want := range []string{
 			`xproject() {`,
-			`if [[ $1 == new ]]; then`,
+			`if [[ $# == 0 || $1 == root || $1 == ls || $1 == rm || $1 == -h || $1 == --help ]]; then`,
 			`project_path=$(ctx project "$@") || return`,
 			`xnew() {`,
 			`project_path=$(ctx project new "$@") || return`,
@@ -123,6 +123,7 @@ func TestZshCompletionIncludesDescribedSubcommandsAndXCommandRouting(t *testing.
 		"_describe 'log option' _ctx_log_options",
 		"_describe 'prompt option' _ctx_prompt_options",
 		"_ctx_dynamic_descriptions target",
+		"elif [[ ${previous} == --target ]]",
 		"ctx completion descriptions \"${kind}\"",
 	} {
 		if !strings.Contains(script, want) {
@@ -144,6 +145,7 @@ func TestBashCompletionIncludesDynamicWorkspaceValues(t *testing.T) {
 		"_ctx_complete_values log",
 		`ctx completion values "${kind}"`,
 		"${subcommand} == use",
+		"${command} == host && ${prev} == --target",
 		"${prev} == --target",
 	} {
 		if !strings.Contains(script, want) {

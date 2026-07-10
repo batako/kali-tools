@@ -39,6 +39,24 @@ func TestRunServiceListsPrimaryTargetScanResults(t *testing.T) {
 			t.Fatalf("output = %q, want %q", got, want)
 		}
 	}
+
+	output.Reset()
+	if err := Run([]string{"ctx", "service"}, &output); err != nil {
+		t.Fatalf("Run(ctx service) error = %v", err)
+	}
+	got = output.String()
+	for _, want := range []string{
+		"Target: default (10.10.10.10)",
+		"PORT",
+		"22/tcp",
+		"OpenSSH",
+		"443/tcp",
+		"nginx",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("default view output = %q, want %q", got, want)
+		}
+	}
 }
 
 func TestRunServiceListsSelectedTarget(t *testing.T) {
