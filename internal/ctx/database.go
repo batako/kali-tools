@@ -45,7 +45,7 @@ func GetWorkspaceRecord(workspace *Workspace) (*WorkspaceRecord, error) {
 	var record WorkspaceRecord
 	err = db.QueryRow(`
 		SELECT id, root_path, created_at, updated_at
-		FROM workspace
+		FROM workspaces
 		WHERE id = ?
 	`, workspace.ID).Scan(&record.ID, &record.RootPath, &record.CreatedAt, &record.UpdatedAt)
 	if err != nil {
@@ -70,7 +70,7 @@ func WorkspaceRecordExists(workspace *Workspace) (bool, error) {
 	var tableExists int
 	if err := db.QueryRow(`
 		SELECT EXISTS(
-			SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace'
+			SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspaces'
 		)
 	`).Scan(&tableExists); err != nil {
 		return false, fmt.Errorf("failed to inspect workspace table: %w", err)
@@ -80,7 +80,7 @@ func WorkspaceRecordExists(workspace *Workspace) (bool, error) {
 	}
 
 	var recordExists int
-	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM workspace WHERE id = ?)`, workspace.ID).Scan(&recordExists); err != nil {
+	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM workspaces WHERE id = ?)`, workspace.ID).Scan(&recordExists); err != nil {
 		return false, fmt.Errorf("failed to inspect workspace record: %w", err)
 	}
 	return recordExists == 1, nil
@@ -96,13 +96,13 @@ func ListWorkspaceRecords() ([]WorkspaceRecord, error) {
 	if err := createSchema(db); err != nil {
 		return nil, err
 	}
-	if err := migrateWorkspaceRoots(db, nil); err != nil {
+	if err := reconcileWorkspaceRecord(db, nil); err != nil {
 		return nil, err
 	}
 
 	rows, err := db.Query(`
 		SELECT id, root_path, created_at, updated_at
-		FROM workspace
+		FROM workspaces
 		ORDER BY root_path ASC, id ASC
 	`)
 	if err != nil {
@@ -143,11 +143,11 @@ func RemoveWorkspace(record WorkspaceRecord) error {
 	if err := createSchema(db); err != nil {
 		return err
 	}
-	if err := migrateWorkspaceRoots(db, nil); err != nil {
+	if err := reconcileWorkspaceRecord(db, nil); err != nil {
 		return err
 	}
 
-	result, err := db.Exec(`DELETE FROM workspace WHERE id = ?`, record.ID)
+	result, err := db.Exec(`DELETE FROM workspaces WHERE id = ?`, record.ID)
 	if err != nil {
 		return fmt.Errorf("failed to remove workspace from database: %w", err)
 	}
@@ -177,6 +177,7 @@ func openDatabase(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database %s: %w", path, err)
 	}
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
@@ -186,14 +187,24 @@ func openDatabase(path string) (*sql.DB, error) {
 }
 
 func createSchema(db *sql.DB) error {
-	statements := []string{
-		`CREATE TABLE IF NOT EXISTS workspace (
+	for _, statement := range schemaStatements() {
+		if _, err := db.Exec(statement); err != nil {
+			return fmt.Errorf("failed to create database schema: %w", err)
+		}
+	}
+	return nil
+}
+
+func schemaStatements() []string {
+	return []string{
+		`CREATE TABLE IF NOT EXISTS workspaces (
 			id TEXT PRIMARY KEY,
 			root_path TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE (root_path)
 		)`,
-		`CREATE TABLE IF NOT EXISTS target (
+		`CREATE TABLE IF NOT EXISTS targets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
@@ -201,29 +212,41 @@ func createSchema(db *sql.DB) error {
 			os_name TEXT,
 			os_accuracy INTEGER,
 			os_source TEXT,
-			is_primary INTEGER NOT NULL DEFAULT 0,
+			is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
 			UNIQUE (workspace_id, name)
 		)`,
-		`CREATE TABLE IF NOT EXISTS host (
+		`CREATE TABLE IF NOT EXISTS command_logs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			workspace_id TEXT NOT NULL,
-			target_id INTEGER,
+			command TEXT NOT NULL,
+			expanded_command TEXT NOT NULL,
+			status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed', 'interrupted')),
+			exit_code INTEGER,
+			stdout TEXT,
+			stderr TEXT,
+			started_at TEXT NOT NULL,
+			ended_at TEXT,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS hosts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			target_id INTEGER NOT NULL,
 			hostname TEXT NOT NULL,
 			source TEXT,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
-			FOREIGN KEY (target_id) REFERENCES target(id) ON DELETE SET NULL,
-			UNIQUE (workspace_id, hostname)
+			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
+			UNIQUE (target_id, hostname)
 		)`,
-		`CREATE TABLE IF NOT EXISTS service (
+		`CREATE TABLE IF NOT EXISTS services (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			workspace_id TEXT NOT NULL,
-			target_id INTEGER,
-			port INTEGER NOT NULL,
+			target_id INTEGER NOT NULL,
+			port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
 			protocol TEXT NOT NULL,
 			state TEXT,
 			reason TEXT,
@@ -232,93 +255,55 @@ func createSchema(db *sql.DB) error {
 			version TEXT,
 			extrainfo TEXT,
 			tunnel TEXT,
-			hostname TEXT,
 			cpe TEXT,
-			scripts_json TEXT,
 			last_seen TEXT,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
-			FOREIGN KEY (target_id) REFERENCES target(id) ON DELETE SET NULL
+			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
+			UNIQUE (target_id, port, protocol)
 		)`,
-		`CREATE TABLE IF NOT EXISTS credential (
+		`CREATE TABLE IF NOT EXISTS credentials (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			workspace_id TEXT NOT NULL,
-			target_id INTEGER,
-			service_id INTEGER,
-			username TEXT,
+			target_id INTEGER NOT NULL,
+			username TEXT NOT NULL,
 			password TEXT,
-			hash TEXT,
-			source TEXT,
-			verified INTEGER NOT NULL DEFAULT 0,
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
-			FOREIGN KEY (target_id) REFERENCES target(id) ON DELETE SET NULL,
-			FOREIGN KEY (service_id) REFERENCES service(id) ON DELETE SET NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS finding (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			workspace_id TEXT NOT NULL,
-			target_id INTEGER,
-			service_id INTEGER,
-			title TEXT NOT NULL,
-			severity TEXT,
-			description TEXT,
-			source TEXT,
+			verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
 			evidence_log_id INTEGER,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
-			FOREIGN KEY (target_id) REFERENCES target(id) ON DELETE SET NULL,
-			FOREIGN KEY (service_id) REFERENCES service(id) ON DELETE SET NULL,
-			FOREIGN KEY (evidence_log_id) REFERENCES command_log(id) ON DELETE SET NULL
+			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
+			FOREIGN KEY (evidence_log_id) REFERENCES command_logs(id) ON DELETE SET NULL,
+			UNIQUE (target_id, username)
 		)`,
-		`CREATE TABLE IF NOT EXISTS command_log (
+		`CREATE TABLE IF NOT EXISTS scan_runs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			workspace_id TEXT NOT NULL,
-			command TEXT NOT NULL,
-			expanded_command TEXT NOT NULL,
-			status TEXT NOT NULL,
-			exit_code INTEGER,
-			stdout TEXT,
-			stderr TEXT,
-			started_at TEXT NOT NULL,
-			ended_at TEXT NOT NULL,
-			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE
-		)`,
-		`CREATE TABLE IF NOT EXISTS scan_run (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			workspace_id TEXT NOT NULL,
 			target_id INTEGER NOT NULL,
 			target_ip TEXT NOT NULL,
 			ports TEXT NOT NULL,
 			command_log_id INTEGER NOT NULL,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
-			FOREIGN KEY (target_id) REFERENCES target(id) ON DELETE CASCADE,
-			FOREIGN KEY (command_log_id) REFERENCES command_log(id) ON DELETE CASCADE,
-			UNIQUE (workspace_id, target_id, target_ip, ports)
+			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
+			FOREIGN KEY (command_log_id) REFERENCES command_logs(id) ON DELETE CASCADE,
+			UNIQUE (target_id, target_ip, ports)
 		)`,
-		`CREATE TABLE IF NOT EXISTS note (
+		`CREATE TABLE IF NOT EXISTS notes (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			workspace_id TEXT NOT NULL,
-			command_log_id INTEGER,
 			body TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspace(id) ON DELETE CASCADE,
-			FOREIGN KEY (command_log_id) REFERENCES command_log(id) ON DELETE SET NULL
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_targets_one_primary ON targets(workspace_id) WHERE is_primary = 1`,
+		`CREATE INDEX IF NOT EXISTS idx_targets_workspace_id ON targets(workspace_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_hosts_target_id ON hosts(target_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_services_target_id ON services(target_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_credentials_target_id ON credentials(target_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_command_logs_workspace_started_at ON command_logs(workspace_id, started_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_scan_runs_target_id ON scan_runs(target_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_notes_workspace_created_at ON notes(workspace_id, created_at DESC)`,
 	}
-
-	for _, statement := range statements {
-		if _, err := db.Exec(statement); err != nil {
-			return fmt.Errorf("failed to create database schema: %w", err)
-		}
-	}
-
-	return nil
 }
 
 type workspaceExecer interface {
@@ -327,7 +312,7 @@ type workspaceExecer interface {
 
 func upsertWorkspace(db workspaceExecer, workspace *Workspace) error {
 	_, err := db.Exec(`
-		INSERT INTO workspace (id, root_path, created_at, updated_at)
+		INSERT INTO workspaces (id, root_path, created_at, updated_at)
 		VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT(id) DO UPDATE SET
 			root_path = excluded.root_path,
@@ -344,100 +329,28 @@ func ensureWorkspaceDatabase(db *sql.DB, workspace *Workspace) error {
 	if err := createSchema(db); err != nil {
 		return err
 	}
-	return migrateWorkspaceRoots(db, workspace)
+	return reconcileWorkspaceRecord(db, workspace)
 }
 
-func migrateWorkspaceRoots(db *sql.DB, preferred *Workspace) error {
+func reconcileWorkspaceRecord(db *sql.DB, preferred *Workspace) error {
 	tx, err := db.Begin()
 	if err != nil {
-		return fmt.Errorf("failed to start workspace migration: %w", err)
+		return fmt.Errorf("failed to start workspace record update: %w", err)
 	}
 	defer tx.Rollback()
 
-	if err := dropWorkspaceNameColumn(tx); err != nil {
-		return err
-	}
-
-	rows, err := tx.Query(`
-		SELECT id, root_path
-		FROM workspace
-		ORDER BY updated_at DESC, created_at DESC, id DESC
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to inspect workspace roots: %w", err)
-	}
-
-	type workspaceRootRecord struct {
-		id   string
-		root string
-	}
-	var records []workspaceRootRecord
-	for rows.Next() {
-		var record workspaceRootRecord
-		if err := rows.Scan(&record.id, &record.root); err != nil {
-			rows.Close()
-			return fmt.Errorf("failed to read workspace root: %w", err)
-		}
-		records = append(records, record)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("failed to close workspace roots: %w", err)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("failed to list workspace roots: %w", err)
-	}
-
-	groups := make(map[string][]string)
-	var rootOrder []string
-	for _, record := range records {
-		if _, exists := groups[record.root]; !exists {
-			rootOrder = append(rootOrder, record.root)
-		}
-		groups[record.root] = append(groups[record.root], record.id)
-	}
-
-	for _, root := range rootOrder {
-		ids := groups[root]
-		keepID := ids[0]
-		if preferred != nil && preferred.RootPath == root {
-			keepID = preferred.ID
-		} else if markerID, err := readWorkspaceID(filepath.Join(root, MarkerFile)); err == nil && containsWorkspaceID(ids, markerID) {
-			keepID = markerID
-		}
-		for _, id := range ids {
-			if id == keepID {
-				continue
-			}
-			if _, err := tx.Exec(`DELETE FROM workspace WHERE id = ?`, id); err != nil {
-				return fmt.Errorf("failed to remove duplicate workspace %s: %w", id, err)
-			}
-		}
-	}
-
 	if preferred != nil {
-		if _, err := tx.Exec(`DELETE FROM workspace WHERE root_path = ? AND id <> ?`, preferred.RootPath, preferred.ID); err != nil {
+		if _, err := tx.Exec(`DELETE FROM workspaces WHERE root_path = ? AND id <> ?`, preferred.RootPath, preferred.ID); err != nil {
 			return fmt.Errorf("failed to reconcile workspace root %s: %w", preferred.RootPath, err)
 		}
 		if err := upsertWorkspace(tx, preferred); err != nil {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_root_path ON workspace(root_path)`); err != nil {
-		return fmt.Errorf("failed to enforce unique workspace root paths: %w", err)
-	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit workspace migration: %w", err)
+		return fmt.Errorf("failed to commit workspace record update: %w", err)
 	}
 	return nil
-}
-
-func containsWorkspaceID(ids []string, want string) bool {
-	for _, id := range ids {
-		if id == want {
-			return true
-		}
-	}
-	return false
 }
 
 func GetWorkspaceRecordByRoot(rootPath string) (*WorkspaceRecord, error) {
@@ -456,14 +369,14 @@ func GetWorkspaceRecordByRoot(rootPath string) (*WorkspaceRecord, error) {
 	if err := createSchema(db); err != nil {
 		return nil, err
 	}
-	if err := migrateWorkspaceRoots(db, nil); err != nil {
+	if err := reconcileWorkspaceRecord(db, nil); err != nil {
 		return nil, err
 	}
 
 	var record WorkspaceRecord
 	err = db.QueryRow(`
 		SELECT id, root_path, created_at, updated_at
-		FROM workspace
+		FROM workspaces
 		WHERE root_path = ?
 	`, rootPath).Scan(&record.ID, &record.RootPath, &record.CreatedAt, &record.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -491,7 +404,7 @@ func WorkspaceDatabaseReady(workspace *Workspace) (bool, error) {
 	var tableExists int
 	if err := db.QueryRow(`
 		SELECT EXISTS(
-			SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace'
+			SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspaces'
 		)
 	`).Scan(&tableExists); err != nil {
 		return false, fmt.Errorf("failed to inspect workspace table: %w", err)
@@ -500,7 +413,7 @@ func WorkspaceDatabaseReady(workspace *Workspace) (bool, error) {
 		return false, nil
 	}
 
-	columns, err := db.Query(`PRAGMA table_info(workspace)`)
+	columns, err := db.Query(`PRAGMA table_info(workspaces)`)
 	if err != nil {
 		return false, fmt.Errorf("failed to inspect workspace columns: %w", err)
 	}
@@ -524,53 +437,13 @@ func WorkspaceDatabaseReady(workspace *Workspace) (bool, error) {
 
 	var matchingRecords int
 	if err := db.QueryRow(`
-		SELECT COUNT(*) FROM workspace WHERE id = ? AND root_path = ?
+		SELECT COUNT(*) FROM workspaces WHERE id = ? AND root_path = ?
 	`, workspace.ID, workspace.RootPath).Scan(&matchingRecords); err != nil {
 		return false, fmt.Errorf("failed to inspect workspace record: %w", err)
 	}
 	var rootRecords int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM workspace WHERE root_path = ?`, workspace.RootPath).Scan(&rootRecords); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM workspaces WHERE root_path = ?`, workspace.RootPath).Scan(&rootRecords); err != nil {
 		return false, fmt.Errorf("failed to inspect workspace root records: %w", err)
 	}
-	var uniqueIndex int
-	if err := db.QueryRow(`
-		SELECT EXISTS(
-			SELECT 1 FROM sqlite_master
-			WHERE type = 'index' AND name = 'idx_workspace_root_path'
-		)
-	`).Scan(&uniqueIndex); err != nil {
-		return false, fmt.Errorf("failed to inspect workspace root index: %w", err)
-	}
-	return matchingRecords == 1 && rootRecords == 1 && uniqueIndex == 1, nil
-}
-
-func dropWorkspaceNameColumn(tx *sql.Tx) error {
-	rows, err := tx.Query(`PRAGMA table_info(workspace)`)
-	if err != nil {
-		return fmt.Errorf("failed to inspect workspace columns: %w", err)
-	}
-	hasName := false
-	for rows.Next() {
-		var cid int
-		var name, columnType string
-		var notNull, primaryKey int
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-			rows.Close()
-			return fmt.Errorf("failed to read workspace column: %w", err)
-		}
-		if name == "name" {
-			hasName = true
-		}
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("failed to close workspace columns: %w", err)
-	}
-	if !hasName {
-		return nil
-	}
-	if _, err := tx.Exec(`ALTER TABLE workspace DROP COLUMN name`); err != nil {
-		return fmt.Errorf("failed to remove workspace name column: %w", err)
-	}
-	return nil
+	return matchingRecords == 1 && rootRecords == 1, nil
 }

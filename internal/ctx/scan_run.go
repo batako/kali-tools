@@ -15,9 +15,9 @@ func findScanRun(workspace *Workspace, target *Target, targetIP, ports string) (
 	var logID int64
 	err = db.QueryRow(`
 		SELECT command_log_id
-		FROM scan_run
-		WHERE workspace_id = ? AND target_id = ? AND target_ip = ? AND ports = ?
-	`, workspace.ID, target.ID, targetIP, ports).Scan(&logID)
+		FROM scan_runs
+		WHERE target_id = ? AND target_ip = ? AND ports = ?
+	`, target.ID, targetIP, ports).Scan(&logID)
 	switch err {
 	case nil:
 		return logID, true, nil
@@ -36,15 +36,15 @@ func saveScanRun(workspace *Workspace, target *Target, targetIP, ports string, l
 	defer db.Close()
 
 	_, err = db.Exec(`
-		INSERT INTO scan_run (
-			workspace_id, target_id, target_ip, ports, command_log_id,
+		INSERT INTO scan_runs (
+			target_id, target_ip, ports, command_log_id,
 			created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-		ON CONFLICT(workspace_id, target_id, target_ip, ports) DO UPDATE SET
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT(target_id, target_ip, ports) DO UPDATE SET
 			command_log_id = excluded.command_log_id,
 			updated_at = CURRENT_TIMESTAMP
-	`, workspace.ID, target.ID, targetIP, ports, logID)
+	`, target.ID, targetIP, ports, logID)
 	if err != nil {
 		return fmt.Errorf("failed to save scan history: %w", err)
 	}

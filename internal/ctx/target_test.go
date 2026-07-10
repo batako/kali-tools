@@ -44,12 +44,8 @@ func TestTargetLifecycle(t *testing.T) {
 	if err := RemoveTarget(workspace, "target2"); err != nil {
 		t.Fatalf("RemoveTarget() error = %v", err)
 	}
-	fallback, err := GetPrimaryTarget(workspace)
-	if err != nil {
-		t.Fatalf("GetPrimaryTarget() error = %v", err)
-	}
-	if fallback.Name != "default" {
-		t.Fatalf("fallback primary = %+v, want default", fallback)
+	if _, err := GetPrimaryTarget(workspace); err == nil || !strings.Contains(err.Error(), "primary target not set") {
+		t.Fatalf("GetPrimaryTarget() error = %v, want primary target not set", err)
 	}
 }
 

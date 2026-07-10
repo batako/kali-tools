@@ -48,6 +48,15 @@ func RunX(args []string, stdout, stderr io.Writer) int {
 	startedAt := time.Now().UTC()
 	var stdoutBuffer bytes.Buffer
 	var stderrBuffer bytes.Buffer
+	logID, saveErr := StartCommandLog(workspace, CommandLog{
+		Command:         commandString(originalArgs),
+		ExpandedCommand: commandString(expandedArgs),
+		StartedAt:       startedAt.Format(time.RFC3339Nano),
+	})
+	if saveErr != nil {
+		fmt.Fprintln(stderr, saveErr)
+		return 1
+	}
 
 	exitCode := 0
 	cmd := exec.Command(expandedArgs[0], expandedArgs[1:]...)
@@ -66,23 +75,15 @@ func RunX(args []string, stdout, stderr io.Writer) int {
 	}
 	endedAt := time.Now().UTC()
 
-	status := "success"
-	if exitCode != 0 {
-		status = "failed"
-	}
-
-	_, saveErr := SaveCommandLog(workspace, CommandLog{
-		Command:         commandString(originalArgs),
-		ExpandedCommand: commandString(expandedArgs),
-		Status:          status,
-		ExitCode:        exitCode,
-		Stdout:          stdoutBuffer.String(),
-		Stderr:          stderrBuffer.String(),
-		StartedAt:       startedAt.Format(time.RFC3339Nano),
-		EndedAt:         endedAt.Format(time.RFC3339Nano),
-	})
-	if saveErr != nil {
-		fmt.Fprintln(stderr, saveErr)
+	status, storedExitCode := commandLogStatus(exitCode)
+	if err := FinishCommandLog(workspace, logID, CommandLog{
+		Status:   status,
+		ExitCode: storedExitCode,
+		Stdout:   stdoutBuffer.String(),
+		Stderr:   stderrBuffer.String(),
+		EndedAt:  endedAt.Format(time.RFC3339Nano),
+	}); err != nil {
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 

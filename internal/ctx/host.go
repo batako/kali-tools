@@ -35,13 +35,12 @@ func AddHost(workspace *Workspace, hostname, targetName string) (*Host, error) {
 	}
 
 	_, err = db.Exec(`
-		INSERT INTO host (workspace_id, target_id, hostname, source, created_at, updated_at)
-		VALUES (?, ?, ?, 'manual', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-		ON CONFLICT(workspace_id, hostname) DO UPDATE SET
-			target_id = excluded.target_id,
+		INSERT INTO hosts (target_id, hostname, source, created_at, updated_at)
+		VALUES (?, ?, 'manual', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT(target_id, hostname) DO UPDATE SET
 			source = excluded.source,
 			updated_at = CURRENT_TIMESTAMP
-	`, workspace.ID, target.ID, hostname)
+	`, target.ID, hostname)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add host: %w", err)
 	}
@@ -61,7 +60,15 @@ func RemoveHost(workspace *Workspace, hostname string) error {
 	}
 	defer db.Close()
 
-	result, err := db.Exec(`DELETE FROM host WHERE workspace_id = ? AND hostname = ?`, workspace.ID, hostname)
+	result, err := db.Exec(`
+		DELETE FROM hosts
+		WHERE id IN (
+			SELECT h.id
+			FROM hosts h
+			JOIN targets t ON t.id = h.target_id
+			WHERE t.workspace_id = ? AND h.hostname = ?
+		)
+	`, workspace.ID, hostname)
 	if err != nil {
 		return fmt.Errorf("failed to remove host: %w", err)
 	}
@@ -85,9 +92,9 @@ func ListHosts(workspace *Workspace) ([]Host, error) {
 
 	rows, err := db.Query(`
 		SELECT h.id, h.hostname, t.name, t.ip, COALESCE(h.source, '')
-		FROM host h
-		LEFT JOIN target t ON t.id = h.target_id
-		WHERE h.workspace_id = ?
+		FROM hosts h
+		JOIN targets t ON t.id = h.target_id
+		WHERE t.workspace_id = ?
 		ORDER BY h.hostname
 	`, workspace.ID)
 	if err != nil {
@@ -125,9 +132,11 @@ func GetHost(workspace *Workspace, hostname string) (*Host, error) {
 	var host Host
 	err = db.QueryRow(`
 		SELECT h.id, h.hostname, t.name, t.ip, COALESCE(h.source, '')
-		FROM host h
-		LEFT JOIN target t ON t.id = h.target_id
-		WHERE h.workspace_id = ? AND h.hostname = ?
+		FROM hosts h
+		JOIN targets t ON t.id = h.target_id
+		WHERE t.workspace_id = ? AND h.hostname = ?
+		ORDER BY t.is_primary DESC, h.id ASC
+		LIMIT 1
 	`, workspace.ID, hostname).Scan(&host.ID, &host.Hostname, &host.TargetName, &host.TargetIP, &host.Source)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("host not found: %s", hostname)
@@ -147,7 +156,7 @@ func hostTarget(db *sql.DB, workspaceID, targetName string) (*Target, error) {
 	if targetName == "" {
 		err = db.QueryRow(`
 			SELECT id, name, ip, is_primary
-			FROM target
+			FROM targets
 			WHERE workspace_id = ? AND is_primary = 1
 			ORDER BY id
 			LIMIT 1
@@ -155,7 +164,7 @@ func hostTarget(db *sql.DB, workspaceID, targetName string) (*Target, error) {
 	} else {
 		err = db.QueryRow(`
 			SELECT id, name, ip, is_primary
-			FROM target
+			FROM targets
 			WHERE workspace_id = ? AND name = ?
 		`, workspaceID, targetName).Scan(&target.ID, &target.Name, &target.IP, &isPrimary)
 	}
@@ -218,11 +227,11 @@ func RenderHostsBlock(workspace *Workspace) (string, error) {
 
 	rows, err := db.Query(`
 		SELECT t.id, t.ip, h.hostname
-		FROM target t
-		JOIN host h ON h.target_id = t.id
-		WHERE t.workspace_id = ? AND h.workspace_id = ?
+		FROM targets t
+		JOIN hosts h ON h.target_id = t.id
+		WHERE t.workspace_id = ?
 		ORDER BY t.id, h.hostname
-	`, workspace.ID, workspace.ID)
+	`, workspace.ID)
 	if err != nil {
 		return "", fmt.Errorf("failed to list host mappings: %w", err)
 	}

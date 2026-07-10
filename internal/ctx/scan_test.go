@@ -42,8 +42,8 @@ func TestRunScanStoresServicesAndArtifacts(t *testing.T) {
 	if services[0].Port != 22 || services[0].ServiceName != "ssh" || services[0].State != "open" {
 		t.Fatalf("first service = %+v, want ssh open port 22", services[0])
 	}
-	if !strings.Contains(services[1].ScriptsJSON, "http-title") {
-		t.Fatalf("second service scripts = %q, want http-title", services[1].ScriptsJSON)
+	if services[1].ScriptsJSON != "" || services[1].Hostname != "" {
+		t.Fatalf("second service removed fields = scripts %q hostname %q, want empty", services[1].ScriptsJSON, services[1].Hostname)
 	}
 
 	logs, err := ListCommandLogs(workspace)

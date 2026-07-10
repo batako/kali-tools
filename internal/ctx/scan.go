@@ -111,6 +111,16 @@ func RunScan(args []string, stdout, stderr io.Writer) int {
 
 	var stdoutBuffer bytes.Buffer
 	var stderrBuffer bytes.Buffer
+	logID, saveErr := StartCommandLog(workspace, CommandLog{
+		Command:         scanInvocationCommand(args),
+		ExpandedCommand: commandString(commandArgs),
+		StartedAt:       startedAt.Format(time.RFC3339Nano),
+	})
+	if saveErr != nil {
+		fmt.Fprintln(stderr, saveErr)
+		return 1
+	}
+
 	cmd := exec.Command(commandArgs[0], commandArgs[1:]...)
 	cmd.Stdout = io.MultiWriter(stdout, &stdoutBuffer)
 	cmd.Stderr = io.MultiWriter(stderr, &stderrBuffer)
@@ -127,22 +137,15 @@ func RunScan(args []string, stdout, stderr io.Writer) int {
 	}
 	endedAt := time.Now().UTC()
 
-	status := "success"
-	if exitCode != 0 {
-		status = "failed"
-	}
-	logID, saveErr := SaveCommandLog(workspace, CommandLog{
-		Command:         scanInvocationCommand(args),
-		ExpandedCommand: commandString(commandArgs),
-		Status:          status,
-		ExitCode:        exitCode,
-		Stdout:          stdoutBuffer.String(),
-		Stderr:          stderrBuffer.String(),
-		StartedAt:       startedAt.Format(time.RFC3339Nano),
-		EndedAt:         endedAt.Format(time.RFC3339Nano),
-	})
-	if saveErr != nil {
-		fmt.Fprintln(stderr, saveErr)
+	status, storedExitCode := commandLogStatus(exitCode)
+	if err := FinishCommandLog(workspace, logID, CommandLog{
+		Status:   status,
+		ExitCode: storedExitCode,
+		Stdout:   stdoutBuffer.String(),
+		Stderr:   stderrBuffer.String(),
+		EndedAt:  endedAt.Format(time.RFC3339Nano),
+	}); err != nil {
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if exitCode != 0 {
@@ -255,10 +258,6 @@ func parseNmapXMLFile(path string, finishedAt time.Time) ([]Service, error) {
 	services := make([]Service, 0)
 	for _, host := range report.Hosts {
 		for _, port := range host.Ports.Ports {
-			scriptsJSON, err := marshalServiceScripts(port.Scripts)
-			if err != nil {
-				return nil, err
-			}
 			services = append(services, Service{
 				Port:        port.PortID,
 				Protocol:    port.Protocol,
@@ -269,9 +268,7 @@ func parseNmapXMLFile(path string, finishedAt time.Time) ([]Service, error) {
 				Version:     port.Service.Version,
 				ExtraInfo:   port.Service.ExtraInfo,
 				Tunnel:      port.Service.Tunnel,
-				Hostname:    port.Service.Hostname,
 				CPE:         strings.Join(port.Service.CPE, "\n"),
-				ScriptsJSON: scriptsJSON,
 				LastSeen:    lastSeen,
 			})
 		}

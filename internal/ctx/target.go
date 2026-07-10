@@ -70,7 +70,7 @@ func AddTarget(workspace *Workspace, ip, name string) (*Target, error) {
 		}
 	} else {
 		_, err = db.Exec(`
-			INSERT INTO target (workspace_id, name, ip, is_primary, created_at, updated_at)
+			INSERT INTO targets (workspace_id, name, ip, is_primary, created_at, updated_at)
 			VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		`, workspace.ID, name, ip)
 		if err != nil {
@@ -98,10 +98,10 @@ func UseTarget(workspace *Workspace, name string) (*Target, error) {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`UPDATE target SET is_primary = 0, updated_at = CURRENT_TIMESTAMP WHERE workspace_id = ?`, workspace.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE targets SET is_primary = 0, updated_at = CURRENT_TIMESTAMP WHERE workspace_id = ?`, workspace.ID); err != nil {
 		return nil, fmt.Errorf("failed to update targets: %w", err)
 	}
-	result, err := tx.Exec(`UPDATE target SET is_primary = 1, updated_at = CURRENT_TIMESTAMP WHERE workspace_id = ? AND name = ?`, workspace.ID, name)
+	result, err := tx.Exec(`UPDATE targets SET is_primary = 1, updated_at = CURRENT_TIMESTAMP WHERE workspace_id = ? AND name = ?`, workspace.ID, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to use target: %w", err)
 	}
@@ -130,8 +130,8 @@ func RemoveTarget(workspace *Workspace, name string) error {
 	}
 	defer db.Close()
 
-	var wasPrimary int
-	err = db.QueryRow(`SELECT is_primary FROM target WHERE workspace_id = ? AND name = ?`, workspace.ID, name).Scan(&wasPrimary)
+	var exists int
+	err = db.QueryRow(`SELECT 1 FROM targets WHERE workspace_id = ? AND name = ?`, workspace.ID, name).Scan(&exists)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("target not found: %s", name)
 	}
@@ -139,7 +139,7 @@ func RemoveTarget(workspace *Workspace, name string) error {
 		return fmt.Errorf("failed to load target: %w", err)
 	}
 
-	result, err := db.Exec(`DELETE FROM target WHERE workspace_id = ? AND name = ?`, workspace.ID, name)
+	result, err := db.Exec(`DELETE FROM targets WHERE workspace_id = ? AND name = ?`, workspace.ID, name)
 	if err != nil {
 		return fmt.Errorf("failed to remove target: %w", err)
 	}
@@ -149,19 +149,6 @@ func RemoveTarget(workspace *Workspace, name string) error {
 	}
 	if rows == 0 {
 		return fmt.Errorf("target not found: %s", name)
-	}
-
-	if wasPrimary == 1 {
-		_, err = db.Exec(`
-			UPDATE target
-			SET is_primary = 1, updated_at = CURRENT_TIMESTAMP
-			WHERE id = (
-				SELECT id FROM target WHERE workspace_id = ? ORDER BY id LIMIT 1
-			)
-		`, workspace.ID)
-		if err != nil {
-			return fmt.Errorf("failed to select next primary target: %w", err)
-		}
 	}
 
 	return nil
@@ -176,7 +163,7 @@ func ListTargets(workspace *Workspace) ([]Target, error) {
 
 	rows, err := db.Query(`
 		SELECT id, name, ip, is_primary
-		FROM target
+		FROM targets
 		WHERE workspace_id = ?
 		ORDER BY id
 	`, workspace.ID)
@@ -213,7 +200,7 @@ func GetPrimaryTarget(workspace *Workspace) (*Target, error) {
 	var isPrimary int
 	err = db.QueryRow(`
 		SELECT id, name, ip, is_primary
-		FROM target
+		FROM targets
 		WHERE workspace_id = ? AND is_primary = 1
 		ORDER BY id
 		LIMIT 1
@@ -240,7 +227,7 @@ func GetTargetByName(workspace *Workspace, name string) (*Target, error) {
 	var isPrimary int
 	err = db.QueryRow(`
 		SELECT id, name, ip, is_primary
-		FROM target
+		FROM targets
 		WHERE workspace_id = ? AND name = ?
 	`, workspace.ID, name).Scan(&target.ID, &target.Name, &target.IP, &isPrimary)
 	if err == sql.ErrNoRows {
@@ -265,7 +252,7 @@ func GetTargetByIP(workspace *Workspace, ip string) (*Target, error) {
 	var isPrimary int
 	err = db.QueryRow(`
 		SELECT id, name, ip, is_primary
-		FROM target
+		FROM targets
 		WHERE workspace_id = ? AND ip = ?
 		ORDER BY is_primary DESC, id ASC
 		LIMIT 1
@@ -299,11 +286,11 @@ func setTargetPrimaryIP(db *sql.DB, workspaceID, name, ip string) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`UPDATE target SET is_primary = 0, updated_at = CURRENT_TIMESTAMP WHERE workspace_id = ?`, workspaceID); err != nil {
+	if _, err := tx.Exec(`UPDATE targets SET is_primary = 0, updated_at = CURRENT_TIMESTAMP WHERE workspace_id = ?`, workspaceID); err != nil {
 		return fmt.Errorf("failed to update targets: %w", err)
 	}
 	_, err = tx.Exec(`
-		INSERT INTO target (workspace_id, name, ip, is_primary, created_at, updated_at)
+		INSERT INTO targets (workspace_id, name, ip, is_primary, created_at, updated_at)
 		VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT(workspace_id, name) DO UPDATE SET
 			ip = excluded.ip,
@@ -322,7 +309,7 @@ func setTargetPrimaryIP(db *sql.DB, workspaceID, name, ip string) error {
 
 func primaryTargetName(db *sql.DB, workspaceID string) (string, error) {
 	var name string
-	err := db.QueryRow(`SELECT name FROM target WHERE workspace_id = ? AND is_primary = 1 ORDER BY id LIMIT 1`, workspaceID).Scan(&name)
+	err := db.QueryRow(`SELECT name FROM targets WHERE workspace_id = ? AND is_primary = 1 ORDER BY id LIMIT 1`, workspaceID).Scan(&name)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -334,7 +321,7 @@ func primaryTargetName(db *sql.DB, workspaceID string) (string, error) {
 
 func nextTargetName(db *sql.DB, workspaceID string) (string, error) {
 	existing := map[string]struct{}{}
-	rows, err := db.Query(`SELECT name FROM target WHERE workspace_id = ?`, workspaceID)
+	rows, err := db.Query(`SELECT name FROM targets WHERE workspace_id = ?`, workspaceID)
 	if err != nil {
 		return "", fmt.Errorf("failed to load target names: %w", err)
 	}
@@ -364,7 +351,7 @@ func nextTargetName(db *sql.DB, workspaceID string) (string, error) {
 
 func targetCount(db *sql.DB, workspaceID string) (int, error) {
 	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM target WHERE workspace_id = ?`, workspaceID).Scan(&count); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM targets WHERE workspace_id = ?`, workspaceID).Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to count targets: %w", err)
 	}
 	return count, nil

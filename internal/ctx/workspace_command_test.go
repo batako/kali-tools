@@ -50,7 +50,7 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openDatabase() error = %v", err)
 	}
-	if _, err := db.Exec(`DELETE FROM workspace WHERE id = ?`, workspace.ID); err != nil {
+	if _, err := db.Exec(`DELETE FROM workspaces WHERE id = ?`, workspace.ID); err != nil {
 		db.Close()
 		t.Fatalf("delete workspace record error = %v", err)
 	}

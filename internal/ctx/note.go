@@ -32,9 +32,9 @@ func SaveNote(workspace *Workspace, body string) (*Note, error) {
 
 	createdAt := time.Now().UTC().Format(time.RFC3339Nano)
 	result, err := db.Exec(`
-		INSERT INTO note (workspace_id, body, created_at)
-		VALUES (?, ?, ?)
-	`, workspace.ID, body, createdAt)
+		INSERT INTO notes (workspace_id, body, created_at, updated_at)
+		VALUES (?, ?, ?, ?)
+	`, workspace.ID, body, createdAt, createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save note: %w", err)
 	}
@@ -54,7 +54,7 @@ func ListNotes(workspace *Workspace) ([]Note, error) {
 
 	rows, err := db.Query(`
 		SELECT id, workspace_id, body, created_at
-		FROM note
+		FROM notes
 		WHERE workspace_id = ?
 		ORDER BY created_at ASC, id ASC
 	`, workspace.ID)

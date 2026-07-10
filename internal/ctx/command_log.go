@@ -27,12 +27,12 @@ func SaveCommandLog(workspace *Workspace, log CommandLog) (int64, error) {
 	defer db.Close()
 
 	result, err := db.Exec(`
-		INSERT INTO command_log (
+		INSERT INTO command_logs (
 			workspace_id, command, expanded_command, status, exit_code,
 			stdout, stderr, started_at, ended_at
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, workspace.ID, log.Command, log.ExpandedCommand, log.Status, log.ExitCode, log.Stdout, log.Stderr, log.StartedAt, log.EndedAt)
+	`, workspace.ID, log.Command, log.ExpandedCommand, log.Status, nullableExitCode(log.Status, log.ExitCode), log.Stdout, log.Stderr, log.StartedAt, nullableEndedAt(log.EndedAt))
 	if err != nil {
 		return 0, fmt.Errorf("failed to save command log: %w", err)
 	}
@@ -44,6 +44,41 @@ func SaveCommandLog(workspace *Workspace, log CommandLog) (int64, error) {
 	return id, nil
 }
 
+func StartCommandLog(workspace *Workspace, log CommandLog) (int64, error) {
+	log.Status = "running"
+	return SaveCommandLog(workspace, log)
+}
+
+func FinishCommandLog(workspace *Workspace, id int64, log CommandLog) error {
+	db, err := openWorkspaceDatabase(workspace)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	result, err := db.Exec(`
+		UPDATE command_logs
+		SET status = ?,
+		    exit_code = ?,
+		    stdout = ?,
+		    stderr = ?,
+		    ended_at = ?,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = ? AND id = ?
+	`, log.Status, nullableExitCode(log.Status, log.ExitCode), log.Stdout, log.Stderr, nullableEndedAt(log.EndedAt), workspace.ID, id)
+	if err != nil {
+		return fmt.Errorf("failed to update command log: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to inspect command log update: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("log not found: %d", id)
+	}
+	return nil
+}
+
 func ListCommandLogs(workspace *Workspace) ([]CommandLog, error) {
 	db, err := openWorkspaceDatabase(workspace)
 	if err != nil {
@@ -53,8 +88,8 @@ func ListCommandLogs(workspace *Workspace) ([]CommandLog, error) {
 
 	rows, err := db.Query(`
 		SELECT id, workspace_id, command, expanded_command, status, COALESCE(exit_code, 0),
-			COALESCE(stdout, ''), COALESCE(stderr, ''), started_at, ended_at
-		FROM command_log
+			COALESCE(stdout, ''), COALESCE(stderr, ''), started_at, COALESCE(ended_at, '')
+		FROM command_logs
 		WHERE workspace_id = ?
 		ORDER BY started_at ASC, id ASC
 	`, workspace.ID)
@@ -93,8 +128,8 @@ func GetCommandLog(workspace *Workspace, rawID string) (*CommandLog, error) {
 	var log CommandLog
 	err = db.QueryRow(`
 		SELECT id, workspace_id, command, expanded_command, status, COALESCE(exit_code, 0),
-			COALESCE(stdout, ''), COALESCE(stderr, ''), started_at, ended_at
-		FROM command_log
+			COALESCE(stdout, ''), COALESCE(stderr, ''), started_at, COALESCE(ended_at, '')
+		FROM command_logs
 		WHERE workspace_id = ? AND id = ?
 	`, workspace.ID, id).Scan(&log.ID, &log.WorkspaceID, &log.Command, &log.ExpandedCommand, &log.Status, &log.ExitCode, &log.Stdout, &log.Stderr, &log.StartedAt, &log.EndedAt)
 	if err == sql.ErrNoRows {
@@ -105,4 +140,29 @@ func GetCommandLog(workspace *Workspace, rawID string) (*CommandLog, error) {
 	}
 
 	return &log, nil
+}
+
+func commandLogStatus(exitCode int) (string, int) {
+	switch {
+	case exitCode == 0:
+		return "success", 0
+	case exitCode < 0:
+		return "interrupted", exitCode
+	default:
+		return "failed", exitCode
+	}
+}
+
+func nullableExitCode(status string, exitCode int) any {
+	if status == "running" || status == "interrupted" && exitCode < 0 {
+		return nil
+	}
+	return exitCode
+}
+
+func nullableEndedAt(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
