@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 func CtxHostsWorkspaceIDs(hostsPath string) ([]string, error) {
@@ -139,21 +138,7 @@ func removeCtxHomeData() error {
 	if root == filepath.Clean(string(filepath.Separator)) || (home != "" && root == filepath.Clean(home)) {
 		return fmt.Errorf("refusing to remove unsafe ctx home: %s", root)
 	}
-	for _, name := range []string{
-		"workspaces",
-		"db.sqlite",
-		"db.sqlite-shm",
-		"db.sqlite-wal",
-		"db.sqlite-journal",
-	} {
-		path := filepath.Join(root, name)
-		if err := os.RemoveAll(path); err != nil {
-			return fmt.Errorf("failed to remove ctx data %s: %w", path, err)
-		}
-	}
-	if err := os.Remove(root); err != nil &&
-		!errors.Is(err, os.ErrNotExist) &&
-		!errors.Is(err, syscall.ENOTEMPTY) {
+	if err := os.RemoveAll(root); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to remove ctx home %s: %w", root, err)
 	}
 	return nil

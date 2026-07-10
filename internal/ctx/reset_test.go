@@ -106,7 +106,6 @@ func TestResetCtxDataRemovesCtxTracesAndPreservesUserData(t *testing.T) {
 		filepath.Join(home, ".zshrc"):  "export KEEP_ZSH=1",
 		filepath.Join(home, ".bashrc"): "export KEEP_BASH=1",
 		historyPath:                    "ctx workspace init",
-		unrelatedCtxHomeFile:           "keep",
 	} {
 		content, err := os.ReadFile(path)
 		if err != nil {
@@ -120,8 +119,10 @@ func TestResetCtxDataRemovesCtxTracesAndPreservesUserData(t *testing.T) {
 		}
 	}
 	for _, path := range []string{
+		ctxHome,
 		filepath.Join(ctxHome, "db.sqlite"),
 		filepath.Join(ctxHome, "workspaces"),
+		unrelatedCtxHomeFile,
 	} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("ctx data %s still exists: %v", path, err)
