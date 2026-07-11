@@ -59,7 +59,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 				t.Fatalf("help output = %q, want shortcut %s for %s", got, shortcut, command)
 			}
 		}
-		for _, detail := range []string{"extra shortcuts (requires ctx init-shell --extra-shortcuts):", "pj           ctx project", "ta           ctx target"} {
+		for _, detail := range []string{"extra shortcuts (requires ctx init-shell --extra-shortcuts):", "pj           ctx project", "ta           ctx target", "cr           ctx credential"} {
 			if !strings.Contains(got, detail) {
 				t.Fatalf("help output = %q, want %q", got, detail)
 			}
@@ -187,6 +187,7 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "hosts", "-h"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "hosts", "sync", "--help"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "scan", "--help"}, "usage: ctx scan [ip] [options]"},
+		{[]string{"ctx", "credential", "--help"}, "usage: ctx credential [<scope> <username> [password] | <command>] [options]"},
 		{[]string{"ctx", "note", "--help"}, "usage: ctx note <text> [options]"},
 		{[]string{"ctx", "log", "--help"}, "usage: ctx log [id] [options]"},
 		{[]string{"ctx", "prompt", "--help"}, "usage: ctx prompt [options]"},

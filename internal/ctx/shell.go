@@ -225,6 +225,9 @@ func enableExtraShortcutsInZshCompletionScript(script string) (string, error) {
   elif [[ ${invocation} == ta ]]; then
     command=target
     command_position=1
+  elif [[ ${invocation} == cr ]]; then
+    command=credential
+    command_position=1
   else
     command=${invocation#x}
     command_position=1
@@ -234,14 +237,16 @@ func enableExtraShortcutsInZshCompletionScript(script string) (string, error) {
 			old: `xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `,
 			new: `xreset() { ctx reset "$@" }
 pj() { xproject "$@" }
 ta() { xtarget "$@" }
+unalias cr 2>/dev/null
+cr() { xcredential "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta
+compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta cr
 `,
 		},
 	})
@@ -263,6 +268,9 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
     subcommand="${COMP_WORDS[1]}"
   elif [[ ${invocation} == ta ]]; then
     command=target
+    subcommand="${COMP_WORDS[1]}"
+  elif [[ ${invocation} == cr ]]; then
+    command=credential
     subcommand="${COMP_WORDS[1]}"
   else
     command="${invocation#x}"
@@ -290,17 +298,31 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
 `,
 		},
 		{
+			old: `    credential|xcredential)
+      COMPREPLY=($(compgen -W "ls set add update rm -h --help" -- "${cur}"))
+      return
+      ;;
+`,
+			new: `    credential|xcredential|cr)
+      COMPREPLY=($(compgen -W "ls set add update rm -h --help" -- "${cur}"))
+      return
+      ;;
+`,
+		},
+		{
 			old: `xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `,
 			new: `xreset() { ctx reset "$@"; }
 pj() { xproject "$@"; }
 ta() { xtarget "$@"; }
+unalias cr 2>/dev/null
+cr() { xcredential "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta
+complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta cr
 `,
 		},
 	})
@@ -351,7 +373,7 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 
 _ctx_commands=(
   'status:show the current workspace'
@@ -363,6 +385,7 @@ _ctx_commands=(
   'hosts:show, sync, or clean /etc/hosts entries'
   'scan:run nmap and save structured service results'
   'service:show saved port scan results'
+  'credential:manage credentials'
   'note:add a note to the workspace timeline'
   'log:show the workspace timeline'
   'prompt:print data for shell prompts'
@@ -428,19 +451,34 @@ _ctx_service_options=(
   '--help:show help'
 )
 
+_ctx_credential_commands=(
+  'ls:list credentials'
+  'set:create or update a credential'
+  'add:add a credential'
+  'update:update an existing credential'
+  'rm:remove a credential'
+)
+
+_ctx_credential_options=(
+  '-y:skip confirmation'
+  '--yes:skip confirmation'
+  '-h:show help'
+  '--help:show help'
+)
+
 _ctx_completion_shells=(
   'zsh:print zsh completion script'
   'bash:print bash completion script'
 )
 
 _ctx_completion_options=(
-  '--extra-shortcuts:include pj and ta shortcuts'
+  '--extra-shortcuts:include pj, ta, and cr shortcuts'
   '-h:show help'
   '--help:show help'
 )
 
 _ctx_init_shell_options=(
-  '--extra-shortcuts:include pj and ta shortcuts'
+  '--extra-shortcuts:include pj, ta, and cr shortcuts'
   '--remove:remove ctx shell integration'
   '-h:show help'
   '--help:show help'
@@ -521,6 +559,7 @@ _ctx() {
       completion) _describe 'shell' _ctx_completion_shells ;;
       scan) _describe 'scan option' _ctx_scan_options ;;
       service) _describe 'service command' _ctx_service_commands ;;
+      credential) _describe 'credential command' _ctx_credential_commands ;;
       log)
         _ctx_dynamic_descriptions log
         _describe 'log option' _ctx_log_options
@@ -586,6 +625,13 @@ _ctx() {
         _describe 'service option' _ctx_service_options
       fi
       ;;
+    credential)
+      if [[ ${subcommand} == rm ]]; then
+        _describe 'credential option' _ctx_credential_options
+      else
+        _message 'argument'
+      fi
+      ;;
     prompt)
       case ${words[CURRENT-1]} in
         --format) _describe 'format' _ctx_prompt_formats ;;
@@ -621,6 +667,7 @@ xhost() { ctx host "$@" }
 xhosts() { ctx hosts "$@" }
 xscan() { CTX_INVOKED_AS=xscan ctx scan "$@" }
 xservice() { ctx service "$@" }
+xcredential() { ctx credential "$@" }
 xnote() { ctx note "$@" }
 xlog() { ctx log "$@" }
 xprompt() { ctx prompt "$@" }
@@ -631,7 +678,7 @@ xinit-shell() { ctx init-shell "$@" }
 xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `
 
 const bashCompletionScript = `_ctx_complete_values() {
@@ -687,7 +734,7 @@ _ctx_completion() {
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status workspace project target ip host hosts scan service note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status workspace project target ip host hosts scan service credential note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)
@@ -716,6 +763,10 @@ _ctx_completion() {
       ;;
     service|xservice)
       COMPREPLY=($(compgen -W "ls -h --help" -- "${cur}"))
+      return
+      ;;
+    credential|xcredential)
+      COMPREPLY=($(compgen -W "ls set add update rm -h --help" -- "${cur}"))
       return
       ;;
     ls)
@@ -789,6 +840,7 @@ xhost() { ctx host "$@"; }
 xhosts() { ctx hosts "$@"; }
 xscan() { CTX_INVOKED_AS=xscan ctx scan "$@"; }
 xservice() { ctx service "$@"; }
+xcredential() { ctx credential "$@"; }
 xnote() { ctx note "$@"; }
 xlog() { ctx log "$@"; }
 xprompt() { ctx prompt "$@"; }
@@ -799,5 +851,5 @@ xinit-shell() { ctx init-shell "$@"; }
 xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
 `

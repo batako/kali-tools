@@ -61,8 +61,17 @@ func TestDatabaseSchemaConstraints(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO command_logs (id, workspace_id, command, expanded_command, status, started_at) VALUES (1, 'workspace-1', 'hydra', 'hydra', 'success', '2026-07-09T00:00:00Z')`); err != nil {
 		t.Fatalf("insert command log error = %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO credentials (target_id, username, password, evidence_log_id) VALUES (1, 'admin', NULL, 1)`); err != nil {
+	if !columnExists(t, db, "credentials", "scope") {
+		t.Fatal("credentials.scope missing")
+	}
+	if _, err := db.Exec(`INSERT INTO credentials (target_id, scope, username, password, evidence_log_id) VALUES (1, 'ssh', 'admin', NULL, 1)`); err != nil {
 		t.Fatalf("insert username-only credential error = %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO credentials (target_id, scope, username, password) VALUES (1, 'ssh', 'admin', 'secret')`); err == nil {
+		t.Fatal("duplicate credential insert succeeded, want unique constraint error")
+	}
+	if _, err := db.Exec(`INSERT INTO credentials (target_id, scope, username, password) VALUES (1, 'wordpress', 'admin', 'secret')`); err != nil {
+		t.Fatalf("insert same username in different scope error = %v", err)
 	}
 	if _, err := db.Exec(`INSERT INTO scan_runs (target_id, target_ip, ports, command_log_id) VALUES (1, '10.10.10.10', '80', 1)`); err != nil {
 		t.Fatalf("insert scan run error = %v", err)
@@ -71,7 +80,7 @@ func TestDatabaseSchemaConstraints(t *testing.T) {
 		t.Fatalf("delete command log error = %v", err)
 	}
 	var evidenceLogID sql.NullInt64
-	if err := db.QueryRow(`SELECT evidence_log_id FROM credentials WHERE target_id = 1 AND username = 'admin'`).Scan(&evidenceLogID); err != nil {
+	if err := db.QueryRow(`SELECT evidence_log_id FROM credentials WHERE target_id = 1 AND scope = 'ssh' AND username = 'admin'`).Scan(&evidenceLogID); err != nil {
 		t.Fatalf("load credential evidence error = %v", err)
 	}
 	if evidenceLogID.Valid {

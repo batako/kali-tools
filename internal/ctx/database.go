@@ -192,6 +192,9 @@ func createSchema(db *sql.DB) error {
 			return fmt.Errorf("failed to create database schema: %w", err)
 		}
 	}
+	if err := migrateCredentialsSchema(db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -265,6 +268,7 @@ func schemaStatements() []string {
 		`CREATE TABLE IF NOT EXISTS credentials (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			target_id INTEGER NOT NULL,
+			scope TEXT NOT NULL,
 			username TEXT NOT NULL,
 			password TEXT,
 			verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
@@ -273,7 +277,7 @@ func schemaStatements() []string {
 			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
 			FOREIGN KEY (evidence_log_id) REFERENCES command_logs(id) ON DELETE SET NULL,
-			UNIQUE (target_id, username)
+			UNIQUE (target_id, scope, username)
 		)`,
 		`CREATE TABLE IF NOT EXISTS scan_runs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -304,6 +308,108 @@ func schemaStatements() []string {
 		`CREATE INDEX IF NOT EXISTS idx_scan_runs_target_id ON scan_runs(target_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_notes_workspace_created_at ON notes(workspace_id, created_at DESC)`,
 	}
+}
+
+func migrateCredentialsSchema(db *sql.DB) error {
+	exists, err := tableExists(db, "credentials")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	hasScope, err := tableColumnExists(db, "credentials", "scope")
+	if err != nil {
+		return err
+	}
+	if hasScope {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to start credentials migration: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		CREATE TABLE credentials_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			target_id INTEGER NOT NULL,
+			scope TEXT NOT NULL,
+			username TEXT NOT NULL,
+			password TEXT,
+			verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
+			evidence_log_id INTEGER,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
+			FOREIGN KEY (evidence_log_id) REFERENCES command_logs(id) ON DELETE SET NULL,
+			UNIQUE (target_id, scope, username)
+		)
+	`); err != nil {
+		return fmt.Errorf("failed to create migrated credentials table: %w", err)
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO credentials_new (
+			id, target_id, scope, username, password, verified,
+			evidence_log_id, created_at, updated_at
+		)
+		SELECT id, target_id, '', username, password, verified,
+		       evidence_log_id, created_at, updated_at
+		FROM credentials
+	`); err != nil {
+		return fmt.Errorf("failed to copy credentials: %w", err)
+	}
+	if _, err := tx.Exec(`DROP TABLE credentials`); err != nil {
+		return fmt.Errorf("failed to replace old credentials table: %w", err)
+	}
+	if _, err := tx.Exec(`ALTER TABLE credentials_new RENAME TO credentials`); err != nil {
+		return fmt.Errorf("failed to rename migrated credentials table: %w", err)
+	}
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_credentials_target_id ON credentials(target_id)`); err != nil {
+		return fmt.Errorf("failed to create credentials index: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit credentials migration: %w", err)
+	}
+	return nil
+}
+
+func tableExists(db *sql.DB, table string) (bool, error) {
+	var exists int
+	if err := db.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?
+		)
+	`, table).Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to inspect table %s: %w", table, err)
+	}
+	return exists == 1, nil
+}
+
+func tableColumnExists(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect %s columns: %w", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, fmt.Errorf("failed to read %s column: %w", table, err)
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("failed to inspect %s columns: %w", table, err)
+	}
+	return false, nil
 }
 
 type workspaceExecer interface {

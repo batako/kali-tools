@@ -79,17 +79,21 @@ func TestCompletionScriptsIncludeExtraShortcutsWhenRequested(t *testing.T) {
 		wants := []string{
 			"pj() { xproject \"$@\"",
 			"ta() { xtarget \"$@\"",
+			"unalias cr 2>/dev/null",
+			"cr() { xcredential \"$@\"",
 		}
 		if shell == "zsh" {
 			wants = append(wants,
 				"elif [[ ${invocation} == pj ]]",
 				"elif [[ ${invocation} == ta ]]",
-				"compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta",
+				"elif [[ ${invocation} == cr ]]",
+				"compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta cr",
 			)
 		} else {
 			wants = append(wants,
 				"project|xproject|pj",
 				"target|xtarget|ta",
+				"credential|xcredential|cr",
 			)
 		}
 		for _, want := range wants {
@@ -109,9 +113,12 @@ func TestCompletionScriptsDoNotIncludeExtraShortcutsByDefault(t *testing.T) {
 		for _, unwanted := range []string{
 			"pj() { xproject",
 			"ta() { xtarget",
+			"cr() { xcredential",
 			"elif [[ ${invocation} == pj ]]",
+			"elif [[ ${invocation} == cr ]]",
 			"project|xproject|pj",
-			"pj ta",
+			"credential|xcredential|cr",
+			"pj ta cr",
 		} {
 			if strings.Contains(script, unwanted) {
 				t.Fatalf("CompletionScript(%s) unexpectedly contains %q", shell, unwanted)
@@ -306,7 +313,7 @@ func TestRunCompletionAndInitShell(t *testing.T) {
 	if got := out.String(); !strings.Contains(got, "complete -F _ctx_completion ctx") || !strings.Contains(got, "xinit()") || !strings.Contains(got, "x() { ctx x") {
 		t.Fatalf("completion output = %q", got)
 	}
-	if strings.Contains(out.String(), "pj()") || strings.Contains(out.String(), "ta()") {
+	if strings.Contains(out.String(), "pj()") || strings.Contains(out.String(), "ta()") || strings.Contains(out.String(), "cr()") {
 		t.Fatalf("completion output unexpectedly contains extra shortcuts: %q", out.String())
 	}
 
@@ -314,7 +321,7 @@ func TestRunCompletionAndInitShell(t *testing.T) {
 	if err := Run([]string{"ctx", "completion", "bash", "--extra-shortcuts"}, &out); err != nil {
 		t.Fatalf("Run(completion bash --extra-shortcuts) error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "pj() { xproject \"$@\"") || !strings.Contains(got, "ta() { xtarget \"$@\"") {
+	if got := out.String(); !strings.Contains(got, "pj() { xproject \"$@\"") || !strings.Contains(got, "ta() { xtarget \"$@\"") || !strings.Contains(got, "cr() { xcredential \"$@\"") {
 		t.Fatalf("completion output with extra shortcuts = %q", got)
 	}
 

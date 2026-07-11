@@ -42,6 +42,7 @@ commands:
   hosts    show, sync, or clean /etc/hosts entries
   scan     run nmap and save structured service results
   service  show saved port scan results
+  credential  manage credentials
   note     add a note to the workspace timeline
   log      show the workspace timeline
   prompt   print data for shell prompts
@@ -67,6 +68,7 @@ shortcuts (requires ctx init-shell):
   xhosts       ctx hosts
   xscan        ctx scan
   xservice     ctx service
+  xcredential  ctx credential
   xnote        ctx note
   xlog         ctx log
   xprompt      ctx prompt
@@ -79,6 +81,7 @@ shortcuts (requires ctx init-shell):
 extra shortcuts (requires ctx init-shell --extra-shortcuts):
   pj           ctx project
   ta           ctx target
+  cr           ctx credential
 
 Run ctx <command> -h for command-specific help.`
 
@@ -160,7 +163,7 @@ const completionUsageText = `usage: ctx completion <zsh|bash> [options]
 Print shell completion script to stdout.
 
 options:
-  --extra-shortcuts  include pj and ta shortcuts
+  --extra-shortcuts  include pj, ta, and cr shortcuts
   -h, --help         show this help`
 
 const initShellUsageText = `usage: ctx init-shell [--remove|--extra-shortcuts] [options]
@@ -168,7 +171,7 @@ const initShellUsageText = `usage: ctx init-shell [--remove|--extra-shortcuts] [
 Configure ctx shell integration for the current shell.
 
 options:
-  --extra-shortcuts  include pj and ta shortcuts
+  --extra-shortcuts  include pj, ta, and cr shortcuts
   --remove           remove ctx shell integration
   -h, --help         show this help`
 
@@ -209,6 +212,26 @@ commands:
 options:
   --target <name>  select a target by name
   -h, --help       show this help`
+
+const credentialUsageText = `usage: ctx credential [<scope> <username> [password] | <command>] [options]
+
+Manage credentials for the current workspace.
+
+commands:
+  ls [scope]                         list credentials
+  set <scope> <username> [password]  create or update a credential
+  add <scope> <username> [password]  add a credential
+  update <scope> <username> [password] update an existing credential
+  rm <id> [-y|--yes]                 remove a credential by ID
+  rm <scope> <username> [-y|--yes]   remove a credential by scope and username
+  rm <username> [-y|--yes]           remove a credential by username
+
+options:
+  -y, --yes                          skip removal confirmation
+  -h, --help                         show this help
+
+shorthand:
+  ctx credential <scope> <username> [password] same as 'ctx credential set <scope> <username> [password]'`
 
 const logUsageText = `usage: ctx log [id] [options]
 
@@ -303,6 +326,8 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 		return nil
 	case "service":
 		return runService(args[2:], stdout)
+	case "credential":
+		return runCredential(args[2:], stdout)
 	case "note":
 		return runNote(args[2:], stdout)
 	case "log":
@@ -411,6 +436,101 @@ func runService(args []string, stdout io.Writer) error {
 		}
 	}
 	return table.Flush()
+}
+
+func runCredential(args []string, stdout io.Writer) error {
+	if len(args) > 1 && isHelpArg(args[1]) {
+		_, err := fmt.Fprintln(stdout, credentialUsageText)
+		return err
+	}
+
+	var err error
+	var showHelp bool
+	args, showHelp, err = resolveResourceCommand("credential", args, []string{"ls", "set", "add", "update", "rm"}, "set", "ls")
+	if err != nil {
+		return err
+	}
+	if showHelp {
+		_, err := fmt.Fprintln(stdout, credentialUsageText)
+		return err
+	}
+
+	workspace, err := currentWorkspace()
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "ls":
+		scope, err := parseCredentialListArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		credentials, err := ListCredentials(workspace, scope)
+		if err != nil {
+			return err
+		}
+		if len(credentials) == 0 {
+			_, err = fmt.Fprintln(stdout, "no credentials")
+			return err
+		}
+		return writeCredentialTable(stdout, credentials)
+	case "set":
+		scope, username, password, err := parseCredentialSaveArgs(args[1:], "set")
+		if err != nil {
+			return err
+		}
+		credential, err := SetCredential(workspace, scope, username, password)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "credential: [%d] %s %s %s\n", credential.ID, credential.Scope, credential.Username, credential.Password)
+		return err
+	case "add":
+		scope, username, password, err := parseCredentialSaveArgs(args[1:], "add")
+		if err != nil {
+			return err
+		}
+		credential, err := AddCredential(workspace, scope, username, password)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "credential: [%d] %s %s %s\n", credential.ID, credential.Scope, credential.Username, credential.Password)
+		return err
+	case "update":
+		scope, username, password, err := parseCredentialSaveArgs(args[1:], "update")
+		if err != nil {
+			return err
+		}
+		credential, err := UpdateCredential(workspace, scope, username, password)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "credential: [%d] %s %s %s\n", credential.ID, credential.Scope, credential.Username, credential.Password)
+		return err
+	case "rm":
+		selector, yes, err := parseCredentialRemoveArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		scanner := bufio.NewScanner(workspaceStdin)
+		credential, err := selectCredentialForRemoval(workspace, selector, scanner, stdout)
+		if err != nil {
+			return err
+		}
+		if !yes {
+			ok, err := confirmCredentialRemoval(stdout, scanner, credential)
+			if err != nil || !ok {
+				return err
+			}
+		}
+		if err := RemoveCredential(workspace, credential.ID); err != nil {
+			return err
+		}
+		return writeRemovedCredential(stdout, credential)
+	default:
+		return fmt.Errorf("unknown ctx credential command: %s", args[0])
+	}
 }
 
 func runReset(args []string, stdout io.Writer) error {
@@ -1621,6 +1741,192 @@ func parseHostAddArgs(args []string) (string, string, error) {
 	}
 
 	return hostname, targetName, nil
+}
+
+func parseCredentialListArgs(args []string) (string, error) {
+	switch len(args) {
+	case 0:
+		return "", nil
+	case 1:
+		if strings.HasPrefix(args[0], "-") {
+			return "", errors.New("usage: ctx credential ls [scope]")
+		}
+		return args[0], nil
+	default:
+		return "", errors.New("usage: ctx credential ls [scope]")
+	}
+}
+
+func parseCredentialSaveArgs(args []string, action string) (string, string, string, error) {
+	if len(args) < 2 || len(args) > 3 {
+		return "", "", "", fmt.Errorf("usage: ctx credential %s <scope> <username> [password]", action)
+	}
+	if strings.HasPrefix(args[0], "-") || strings.HasPrefix(args[1], "-") {
+		return "", "", "", fmt.Errorf("usage: ctx credential %s <scope> <username> [password]", action)
+	}
+	password := ""
+	if len(args) == 3 {
+		password = args[2]
+	}
+	return args[0], args[1], password, nil
+}
+
+type credentialRemoveSelector struct {
+	HasID    bool
+	ID       int64
+	Scope    string
+	Username string
+}
+
+func parseCredentialRemoveArgs(args []string) (credentialRemoveSelector, bool, error) {
+	var values []string
+	var yes bool
+	for _, arg := range args {
+		switch arg {
+		case "-y", "--yes":
+			if yes {
+				return credentialRemoveSelector{}, false, errors.New("usage: ctx credential rm <id|username|scope username> [-y|--yes]")
+			}
+			yes = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return credentialRemoveSelector{}, false, errors.New("usage: ctx credential rm <id|username|scope username> [-y|--yes]")
+			}
+			values = append(values, arg)
+		}
+	}
+	switch len(values) {
+	case 1:
+		if id, err := strconv.ParseInt(values[0], 10, 64); err == nil {
+			return credentialRemoveSelector{HasID: true, ID: id}, yes, nil
+		}
+		return credentialRemoveSelector{Username: values[0]}, yes, nil
+	case 2:
+		return credentialRemoveSelector{Scope: values[0], Username: values[1]}, yes, nil
+	default:
+		return credentialRemoveSelector{}, false, errors.New("usage: ctx credential rm <id|username|scope username> [-y|--yes]")
+	}
+}
+
+func selectCredentialForRemoval(workspace *Workspace, selector credentialRemoveSelector, scanner *bufio.Scanner, stdout io.Writer) (*Credential, error) {
+	if selector.HasID {
+		return GetCredentialByID(workspace, selector.ID)
+	}
+
+	var credentials []Credential
+	var err error
+	if selector.Scope != "" {
+		credentials, err = FindCredentialsByScopeUsername(workspace, selector.Scope, selector.Username)
+	} else {
+		credentials, err = FindCredentialsByUsername(workspace, selector.Username)
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch len(credentials) {
+	case 0:
+		if selector.Scope != "" {
+			return nil, fmt.Errorf("credential not found: %s %s", selector.Scope, selector.Username)
+		}
+		return nil, fmt.Errorf("credential not found: %s", selector.Username)
+	case 1:
+		return &credentials[0], nil
+	}
+
+	if err := writeCredentialCandidates(stdout, credentials); err != nil {
+		return nil, err
+	}
+	if _, err := fmt.Fprintf(stdout, "Select credential to remove [1-%d]: ", len(credentials)); err != nil {
+		return nil, err
+	}
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return nil, fmt.Errorf("failed to read credential selection: %w", err)
+		}
+		return nil, errors.New("credential selection required")
+	}
+	selectionText := strings.TrimSpace(scanner.Text())
+	selection, err := strconv.Atoi(selectionText)
+	if err != nil || selection < 1 || selection > len(credentials) {
+		return nil, fmt.Errorf("invalid credential selection: %s", selectionText)
+	}
+	return &credentials[selection-1], nil
+}
+
+func confirmCredentialRemoval(stdout io.Writer, scanner *bufio.Scanner, credential *Credential) (bool, error) {
+	if _, err := fmt.Fprintln(stdout, "Remove credential?"); err != nil {
+		return false, err
+	}
+	if _, err := fmt.Fprintln(stdout); err != nil {
+		return false, err
+	}
+	if err := writeCredentialDetails(stdout, credential, true); err != nil {
+		return false, err
+	}
+	if _, err := fmt.Fprint(stdout, "\n[y/N]: "); err != nil {
+		return false, err
+	}
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return false, fmt.Errorf("failed to read credential removal confirmation: %w", err)
+		}
+		_, err := fmt.Fprintln(stdout, "\ncancelled")
+		return false, err
+	}
+	answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+	if answer != "y" && answer != "yes" {
+		_, err := fmt.Fprintln(stdout, "cancelled")
+		return false, err
+	}
+	return true, nil
+}
+
+func writeCredentialTable(stdout io.Writer, credentials []Credential) error {
+	table := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(table, "ID\tScope\tUsername\tPassword"); err != nil {
+		return err
+	}
+	for _, credential := range credentials {
+		if _, err := fmt.Fprintf(table, "%d\t%s\t%s\t%s\n", credential.ID, credential.Scope, credential.Username, credential.Password); err != nil {
+			return err
+		}
+	}
+	return table.Flush()
+}
+
+func writeCredentialCandidates(stdout io.Writer, credentials []Credential) error {
+	for i, credential := range credentials {
+		if _, err := fmt.Fprintf(stdout, "%d) [%d] %s\t%s\t%s\n", i+1, credential.ID, credential.Scope, credential.Username, credential.Password); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeCredentialDetails(stdout io.Writer, credential *Credential, includeID bool) error {
+	if includeID {
+		if _, err := fmt.Fprintf(stdout, "  ID:       %d\n", credential.ID); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(stdout, "  Scope:    %s\n", credential.Scope); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "  Username: %s\n", credential.Username); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(stdout, "  Password: %s\n", credential.Password)
+	return err
+}
+
+func writeRemovedCredential(stdout io.Writer, credential *Credential) error {
+	if _, err := fmt.Fprintln(stdout, "Removed credential:"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(stdout); err != nil {
+		return err
+	}
+	return writeCredentialDetails(stdout, credential, false)
 }
 
 func parseHostsSyncArgs(args []string) (bool, error) {
