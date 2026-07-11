@@ -248,7 +248,7 @@ sudo apt install ctx
 バージョンを指定してインストールする場合:
 
 ```sh
-sudo apt install ctx=0.1.0
+sudo apt install ctx=1.0.0
 sudo apt install req=0.2.3
 ```
 

@@ -248,7 +248,7 @@ sudo apt install ctx
 Install a specific version:
 
 ```sh
-sudo apt install ctx=0.1.0
+sudo apt install ctx=1.0.0
 sudo apt install req=0.2.3
 ```
 

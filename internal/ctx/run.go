@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	Version = "0.1.0"
+	Version = "1.0.0"
 
 	hostsFilePath                = "/etc/hosts"
 	syncHostsFileFunc            = SyncHostsFile
