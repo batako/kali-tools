@@ -237,7 +237,7 @@ func enableExtraShortcutsInZshCompletionScript(script string) (string, error) {
 			old: `xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `,
 			new: `xreset() { ctx reset "$@" }
 pj() { xproject "$@" }
@@ -246,7 +246,7 @@ unalias cr 2>/dev/null
 cr() { xcredential "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta cr
+compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
 `,
 		},
 	})
@@ -313,7 +313,7 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
 			old: `xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `,
 			new: `xreset() { ctx reset "$@"; }
 pj() { xproject "$@"; }
@@ -322,7 +322,7 @@ unalias cr 2>/dev/null
 cr() { xcredential "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta cr
+complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
 `,
 		},
 	})
@@ -373,7 +373,7 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 
 _ctx_commands=(
   'status:show the current workspace'
@@ -383,12 +383,13 @@ _ctx_commands=(
   'ip:show or update the primary target IP'
   'host:manage hostnames'
   'hosts:show, sync, or clean /etc/hosts entries'
-  'scan:run nmap and save structured service results'
-  'service:show saved port scan results'
-  'credential:manage credentials'
+  'scan:run nmap and save service information'
+  'service:show saved service information'
+  'credential:manage stored credentials'
   'note:add a note to the workspace timeline'
   'log:show the workspace timeline'
-  'prompt:print data for shell prompts'
+  'prompt:print shell prompt data'
+  'formats:list supported JSON outputs and format versions'
   'x:run a command and save execution logs'
   'completion:print shell completion script'
   'init-shell:configure shell integration'
@@ -447,6 +448,8 @@ _ctx_service_commands=(
 
 _ctx_service_options=(
   '--target:select a target by name'
+  '--format:select shell or json output'
+  '--format-version:select JSON format version'
   '-h:show help'
   '--help:show help'
 )
@@ -460,6 +463,8 @@ _ctx_credential_commands=(
 )
 
 _ctx_credential_options=(
+  '--format:select shell or json output'
+  '--format-version:select JSON format version'
   '-y:skip confirmation'
   '--yes:skip confirmation'
   '-h:show help'
@@ -497,6 +502,7 @@ _ctx_log_options=(
 
 _ctx_prompt_options=(
   '--format:select shell or json output'
+  '--format-version:select JSON format version'
   '--field:print one prompt field'
   '-h:show help'
   '--help:show help'
@@ -504,6 +510,7 @@ _ctx_prompt_options=(
 
 _ctx_prompt_formats=(shell json)
 _ctx_prompt_fields=(active workspace-id workspace-name workspace-path local-ip local-interface target-name target-ip)
+_ctx_format_versions=(1 1.0)
 
 _ctx_reset_options=(
   '-y:skip confirmation'
@@ -565,6 +572,7 @@ _ctx() {
         _describe 'log option' _ctx_log_options
         ;;
       prompt) _describe 'prompt option' _ctx_prompt_options ;;
+      formats) _describe 'formats option' _ctx_prompt_options ;;
       reset) _describe 'reset option' _ctx_reset_options ;;
       init-shell) _describe 'init-shell option' _ctx_init_shell_options ;;
       x) _command_names -e ;;
@@ -621,12 +629,20 @@ _ctx() {
     service)
       if [[ ${subcommand} == ls && ${previous} == --target ]]; then
         _ctx_dynamic_descriptions target
+      elif [[ ${previous} == --format ]]; then
+        _describe 'format' _ctx_prompt_formats
+      elif [[ ${previous} == --format-version ]]; then
+        _describe 'format version' _ctx_format_versions
       else
         _describe 'service option' _ctx_service_options
       fi
       ;;
     credential)
-      if [[ ${subcommand} == rm ]]; then
+      if [[ ${previous} == --format ]]; then
+        _describe 'format' _ctx_prompt_formats
+      elif [[ ${previous} == --format-version ]]; then
+        _describe 'format version' _ctx_format_versions
+      elif [[ ${subcommand} == rm || ${subcommand} == ls ]]; then
         _describe 'credential option' _ctx_credential_options
       else
         _message 'argument'
@@ -635,8 +651,16 @@ _ctx() {
     prompt)
       case ${words[CURRENT-1]} in
         --format) _describe 'format' _ctx_prompt_formats ;;
+        --format-version) _describe 'format version' _ctx_format_versions ;;
         --field) _describe 'field' _ctx_prompt_fields ;;
         *) _describe 'prompt option' _ctx_prompt_options ;;
+      esac
+      ;;
+    formats)
+      case ${words[CURRENT-1]} in
+        --format) _describe 'format' _ctx_prompt_formats ;;
+        --format-version) _describe 'format version' _ctx_format_versions ;;
+        *) _describe 'formats option' _ctx_prompt_options ;;
       esac
       ;;
     *) _describe 'option' _ctx_options ;;
@@ -671,6 +695,7 @@ xcredential() { ctx credential "$@" }
 xnote() { ctx note "$@" }
 xlog() { ctx log "$@" }
 xprompt() { ctx prompt "$@" }
+xformats() { ctx formats "$@" }
 x() { ctx x "$@" }
 xcompletion() { ctx completion "$@" }
 xdoctor() { ctx doctor "$@" }
@@ -678,7 +703,7 @@ xinit-shell() { ctx init-shell "$@" }
 xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `
 
 const bashCompletionScript = `_ctx_complete_values() {
@@ -734,7 +759,7 @@ _ctx_completion() {
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status workspace project target ip host hosts scan service credential note log prompt x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status workspace project target ip host hosts scan service credential note log prompt formats x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)
@@ -771,7 +796,11 @@ _ctx_completion() {
       ;;
     ls)
       if [[ ${command} == service ]]; then
-        COMPREPLY=($(compgen -W "--target -h --help" -- "${cur}"))
+        COMPREPLY=($(compgen -W "--target --format --format-version -h --help" -- "${cur}"))
+        return
+      fi
+      if [[ ${command} == credential ]]; then
+        COMPREPLY=($(compgen -W "--format --format-version -h --help" -- "${cur}"))
         return
       fi
       ;;
@@ -783,7 +812,11 @@ _ctx_completion() {
       return
       ;;
     prompt|xprompt)
-      COMPREPLY=($(compgen -W "--format --field -h --help" -- "${cur}"))
+      COMPREPLY=($(compgen -W "--format --format-version --field -h --help" -- "${cur}"))
+      return
+      ;;
+    formats|xformats)
+      COMPREPLY=($(compgen -W "--format --format-version -h --help" -- "${cur}"))
       return
       ;;
     reset|xreset)
@@ -796,6 +829,10 @@ _ctx_completion() {
       ;;
     --format)
       COMPREPLY=($(compgen -W "shell json" -- "${cur}"))
+      return
+      ;;
+    --format-version)
+      COMPREPLY=($(compgen -W "1 1.0" -- "${cur}"))
       return
       ;;
     --field)
@@ -844,6 +881,7 @@ xcredential() { ctx credential "$@"; }
 xnote() { ctx note "$@"; }
 xlog() { ctx log "$@"; }
 xprompt() { ctx prompt "$@"; }
+xformats() { ctx formats "$@"; }
 x() { ctx x "$@"; }
 xcompletion() { ctx completion "$@"; }
 xdoctor() { ctx doctor "$@"; }
@@ -851,5 +889,5 @@ xinit-shell() { ctx init-shell "$@"; }
 xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `

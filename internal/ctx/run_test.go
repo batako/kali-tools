@@ -64,6 +64,17 @@ func TestRunTopLevelHelp(t *testing.T) {
 				t.Fatalf("help output = %q, want %q", got, detail)
 			}
 		}
+		for _, detail := range []string{
+			"scan     run nmap and save service information",
+			"service  show saved service information",
+			"credential  manage stored credentials",
+			"prompt   print shell prompt data",
+			"formats  list supported JSON outputs and format versions",
+		} {
+			if !strings.Contains(got, detail) {
+				t.Fatalf("help output = %q, want %q", got, detail)
+			}
+		}
 		for _, detail := range []string{"target set <ip>", "host add <hostname>", "hosts sync"} {
 			if strings.Contains(got, detail) {
 				t.Fatalf("help output = %q, should not include detailed command %q", got, detail)
@@ -191,6 +202,7 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "note", "--help"}, "usage: ctx note <text> [options]"},
 		{[]string{"ctx", "log", "--help"}, "usage: ctx log [id] [options]"},
 		{[]string{"ctx", "prompt", "--help"}, "usage: ctx prompt [options]"},
+		{[]string{"ctx", "formats", "--help"}, "usage: ctx formats [options]"},
 		{[]string{"ctx", "x", "--help"}, "usage: ctx x <command> [args...]"},
 		{[]string{"ctx", "completion", "-h"}, "usage: ctx completion <zsh|bash> [options]"},
 		{[]string{"ctx", "init-shell", "--help"}, "usage: ctx init-shell [--remove|--extra-shortcuts] [options]"},
@@ -220,6 +232,49 @@ func TestRunLogHelpListsDisplayModes(t *testing.T) {
 		if !strings.Contains(out.String(), option) {
 			t.Fatalf("log help = %q, want %s", out.String(), option)
 		}
+	}
+}
+
+func TestRunFormatsListsSupportedOutputsAndVersions(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "formats"}, &out); err != nil {
+		t.Fatalf("Run(ctx formats) error = %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("formats output = %q, want 5 lines", out.String())
+	}
+
+	header := strings.Fields(lines[0])
+	if len(header) != 2 || header[0] != "OUTPUT" || header[1] != "VERSIONS" {
+		t.Fatalf("formats header = %q, want OUTPUT VERSIONS", lines[0])
+	}
+
+	wantRows := map[string]string{
+		"credential": "1.0",
+		"formats":    "1.0",
+		"prompt":     "1.0",
+		"service":    "1.0",
+	}
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			t.Fatalf("formats row = %q, want 2 columns", line)
+		}
+		wantVersion, ok := wantRows[fields[0]]
+		if !ok {
+			t.Fatalf("formats row = %q, unexpected output name", line)
+		}
+		if fields[1] != wantVersion {
+			t.Fatalf("formats row = %q, want version %s", line, wantVersion)
+		}
+		delete(wantRows, fields[0])
+	}
+	if len(wantRows) != 0 {
+		t.Fatalf("formats output missing rows: %#v", wantRows)
 	}
 }
 

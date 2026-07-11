@@ -87,7 +87,7 @@ func TestCompletionScriptsIncludeExtraShortcutsWhenRequested(t *testing.T) {
 				"elif [[ ${invocation} == pj ]]",
 				"elif [[ ${invocation} == ta ]]",
 				"elif [[ ${invocation} == cr ]]",
-				"compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt x xcompletion xdoctor xinit-shell xreset pj ta cr",
+				"compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr",
 			)
 		} else {
 			wants = append(wants,

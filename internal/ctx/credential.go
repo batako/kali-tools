@@ -8,11 +8,12 @@ import (
 )
 
 type Credential struct {
-	ID       int64
-	TargetID int64
-	Scope    string
-	Username string
-	Password string
+	ID            int64
+	TargetID      int64
+	Scope         string
+	Username      string
+	Password      string
+	PasswordValid bool
 }
 
 func SetCredential(workspace *Workspace, scope, username, password string) (*Credential, error) {
@@ -125,7 +126,7 @@ func ListCredentials(workspace *Workspace, scope string) ([]Credential, error) {
 		query += ` AND c.scope = ?`
 		args = append(args, scope)
 	}
-	query += ` ORDER BY c.id ASC`
+	query += ` ORDER BY c.scope ASC, c.username ASC, c.id ASC`
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -315,6 +316,7 @@ func scanCredential(scanner credentialScanner) (*Credential, error) {
 	}
 	if password.Valid {
 		credential.Password = password.String
+		credential.PasswordValid = true
 	}
 	return &credential, nil
 }

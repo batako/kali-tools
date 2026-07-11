@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -40,12 +41,13 @@ commands:
   ip       show or update the primary target IP
   host     manage hostnames
   hosts    show, sync, or clean /etc/hosts entries
-  scan     run nmap and save structured service results
-  service  show saved port scan results
-  credential  manage credentials
+  scan     run nmap and save service information
+  service  show saved service information
+  credential  manage stored credentials
   note     add a note to the workspace timeline
   log      show the workspace timeline
-  prompt   print data for shell prompts
+  prompt   print shell prompt data
+  formats  list supported JSON outputs and format versions
   x        run a command and save execution logs
   completion  print shell completion script
   init-shell  configure shell integration
@@ -72,6 +74,7 @@ shortcuts (requires ctx init-shell):
   xnote        ctx note
   xlog         ctx log
   xprompt      ctx prompt
+  xformats     ctx formats
   x            ctx x
   xcompletion  ctx completion
   xdoctor      ctx doctor
@@ -194,7 +197,7 @@ options:
 
 const scanUsageText = `usage: ctx scan [ip] [options]
 
-Run nmap for the current ctx workspace and save structured service results.
+Run nmap for the current ctx workspace and save service information.
 
 options:
   -p, --ports <ports>  pass an explicit port list/range to nmap
@@ -204,14 +207,16 @@ options:
 
 const serviceUsageText = `usage: ctx service ls [--target <name>] [options]
 
-Show saved port scan results for the primary or selected target.
+Show saved service information for the primary or selected target.
 
 commands:
   ls  list saved ports and services
 
 options:
-  --target <name>  select a target by name
-  -h, --help       show this help`
+  --target <name>           select a target by name
+  --format <shell|json>     select output format
+  --format-version <version> select JSON format version
+  -h, --help                show this help`
 
 const credentialUsageText = `usage: ctx credential [<scope> <username> [password] | <command>] [options]
 
@@ -227,6 +232,8 @@ commands:
   rm <username> [-y|--yes]           remove a credential by username
 
 options:
+  --format <shell|json>              select output format for ls
+  --format-version <version>         select JSON format version for ls
   -y, --yes                          skip removal confirmation
   -h, --help                         show this help
 
@@ -255,13 +262,23 @@ const promptUsageText = `usage: ctx prompt [options]
 Print workspace, local IP, and target data for shell prompts.
 
 options:
-  --format <shell|json>  select output format (default: shell)
-  --field <name>         print one field
-  -h, --help             show this help
+  --format <shell|json>       select output format (default: shell)
+  --format-version <version>  select JSON format version
+  --field <name>              print one field
+  -h, --help                  show this help
 
 fields:
   active, workspace-id, workspace-name, workspace-path
   local-ip, local-interface, target-name, target-ip`
+
+const formatsUsageText = `usage: ctx formats [options]
+
+List supported JSON outputs and format versions.
+
+options:
+  --format <shell|json>       select output format (default: shell)
+  --format-version <version>  select JSON format version
+  -h, --help                  show this help`
 
 const resetUsageText = `usage: ctx reset [-y|--yes] [options]
 
@@ -334,6 +351,8 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 		return runLog(args[2:], stdout)
 	case "prompt":
 		return runPrompt(args[2:], stdout)
+	case "formats":
+		return runFormats(args[2:], stdout)
 	case "x":
 		if len(args) == 3 && isHelpArg(args[2]) {
 			_, err := fmt.Fprintln(stdout, xUsageText)
@@ -385,17 +404,43 @@ func runService(args []string, stdout io.Writer) error {
 	}
 
 	targetName := ""
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
+	remaining, output, err := parseOutputOptions(args[1:], apiFormatShell)
+	if err != nil {
+		return err
+	}
+	if output.Format != apiFormatShell && output.Format != apiFormatJSON {
+		return fmt.Errorf("unsupported service format: %s", output.Format)
+	}
+	if output.Format == apiFormatShell && output.FormatVersion != "" {
+		return errors.New("--format-version can only be used with --format json")
+	}
+	for i := 0; i < len(remaining); i++ {
+		switch remaining[i] {
 		case "--target":
-			if i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
-				return errors.New("usage: ctx service ls [--target <name>]")
+			if i+1 >= len(remaining) || strings.TrimSpace(remaining[i+1]) == "" {
+				if output.Format == apiFormatJSON {
+					return runJSONEndpoint(stdout, "service", output.FormatVersion, func(version string) (any, error) {
+						return nil, apiRequestError{Code: "INVALID_REQUEST", Message: "invalid request", Details: map[string]any{}, Invalid: true}
+					})
+				}
+				return errors.New("usage: ctx service ls [--target <name>] [--format <shell|json>] [--format-version <version>]")
 			}
 			i++
-			targetName = args[i]
+			targetName = remaining[i]
 		default:
-			return errors.New("usage: ctx service ls [--target <name>]")
+			if output.Format == apiFormatJSON {
+				return runJSONEndpoint(stdout, "service", output.FormatVersion, func(version string) (any, error) {
+					return nil, apiRequestError{Code: "INVALID_REQUEST", Message: "invalid request", Details: map[string]any{}, Invalid: true}
+				})
+			}
+			return errors.New("usage: ctx service ls [--target <name>] [--format <shell|json>] [--format-version <version>]")
 		}
+	}
+
+	if output.Format == apiFormatJSON {
+		return runJSONEndpoint(stdout, "service", output.FormatVersion, func(version string) (any, error) {
+			return serviceAPIData(version, targetName)
+		})
 	}
 
 	workspace, err := currentWorkspace()
@@ -438,6 +483,53 @@ func runService(args []string, stdout io.Writer) error {
 	return table.Flush()
 }
 
+func serviceAPIData(version, targetName string) (any, error) {
+	switch version {
+	case "1.0":
+		return serviceAPIDataV1_0(targetName)
+	default:
+		return nil, fmt.Errorf("unsupported service format version after resolution: %s", version)
+	}
+}
+
+func serviceAPIDataV1_0(targetName string) (any, error) {
+	workspace, err := currentWorkspace()
+	if err != nil {
+		return nil, err
+	}
+	var target *Target
+	if targetName == "" {
+		target, err = GetPrimaryTarget(workspace)
+	} else {
+		target, err = GetTargetByName(workspace, targetName)
+	}
+	if err != nil {
+		return nil, err
+	}
+	services, err := ListServices(workspace, target)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]map[string]any, 0, len(services))
+	for _, service := range services {
+		items = append(items, map[string]any{
+			"id":           service.ID,
+			"port":         service.Port,
+			"protocol":     service.Protocol,
+			"state":        apiOptionalString(service.State, service.StateValid),
+			"reason":       apiOptionalString(service.Reason, service.ReasonValid),
+			"service_name": apiOptionalString(service.ServiceName, service.ServiceNameValid),
+			"product":      apiOptionalString(service.Product, service.ProductValid),
+			"version":      apiOptionalString(service.Version, service.VersionValid),
+			"extrainfo":    apiOptionalString(service.ExtraInfo, service.ExtraInfoValid),
+			"tunnel":       apiOptionalString(service.Tunnel, service.TunnelValid),
+			"cpe":          apiOptionalString(service.CPE, service.CPEValid),
+			"last_seen":    apiOptionalString(service.LastSeen, service.LastSeenValid),
+		})
+	}
+	return map[string]any{"services": items}, nil
+}
+
 func runCredential(args []string, stdout io.Writer) error {
 	if len(args) > 1 && isHelpArg(args[1]) {
 		_, err := fmt.Fprintln(stdout, credentialUsageText)
@@ -455,14 +547,33 @@ func runCredential(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	workspace, err := currentWorkspace()
-	if err != nil {
-		return err
-	}
-
 	switch args[0] {
 	case "ls":
-		scope, err := parseCredentialListArgs(args[1:])
+		remaining, output, err := parseOutputOptions(args[1:], apiFormatShell)
+		if err != nil {
+			return err
+		}
+		if output.Format != apiFormatShell && output.Format != apiFormatJSON {
+			return fmt.Errorf("unsupported credential format: %s", output.Format)
+		}
+		if output.Format == apiFormatShell && output.FormatVersion != "" {
+			return errors.New("--format-version can only be used with --format json")
+		}
+		scope, err := parseCredentialListArgs(remaining)
+		if err != nil {
+			if output.Format == apiFormatJSON {
+				return runJSONEndpoint(stdout, "credential", output.FormatVersion, func(version string) (any, error) {
+					return nil, apiRequestError{Code: "INVALID_REQUEST", Message: "invalid request", Details: map[string]any{}, Invalid: true}
+				})
+			}
+			return err
+		}
+		if output.Format == apiFormatJSON {
+			return runJSONEndpoint(stdout, "credential", output.FormatVersion, func(version string) (any, error) {
+				return credentialAPIData(version, scope)
+			})
+		}
+		workspace, err := currentWorkspace()
 		if err != nil {
 			return err
 		}
@@ -476,6 +587,10 @@ func runCredential(args []string, stdout io.Writer) error {
 		}
 		return writeCredentialTable(stdout, credentials)
 	case "set":
+		workspace, err := currentWorkspace()
+		if err != nil {
+			return err
+		}
 		scope, username, password, err := parseCredentialSaveArgs(args[1:], "set")
 		if err != nil {
 			return err
@@ -487,6 +602,10 @@ func runCredential(args []string, stdout io.Writer) error {
 		_, err = fmt.Fprintf(stdout, "credential: [%d] %s %s %s\n", credential.ID, credential.Scope, credential.Username, credential.Password)
 		return err
 	case "add":
+		workspace, err := currentWorkspace()
+		if err != nil {
+			return err
+		}
 		scope, username, password, err := parseCredentialSaveArgs(args[1:], "add")
 		if err != nil {
 			return err
@@ -498,6 +617,10 @@ func runCredential(args []string, stdout io.Writer) error {
 		_, err = fmt.Fprintf(stdout, "credential: [%d] %s %s %s\n", credential.ID, credential.Scope, credential.Username, credential.Password)
 		return err
 	case "update":
+		workspace, err := currentWorkspace()
+		if err != nil {
+			return err
+		}
 		scope, username, password, err := parseCredentialSaveArgs(args[1:], "update")
 		if err != nil {
 			return err
@@ -509,6 +632,10 @@ func runCredential(args []string, stdout io.Writer) error {
 		_, err = fmt.Fprintf(stdout, "credential: [%d] %s %s %s\n", credential.ID, credential.Scope, credential.Username, credential.Password)
 		return err
 	case "rm":
+		workspace, err := currentWorkspace()
+		if err != nil {
+			return err
+		}
 		selector, yes, err := parseCredentialRemoveArgs(args[1:])
 		if err != nil {
 			return err
@@ -531,6 +658,36 @@ func runCredential(args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown ctx credential command: %s", args[0])
 	}
+}
+
+func credentialAPIData(version, scope string) (any, error) {
+	switch version {
+	case "1.0":
+		return credentialAPIDataV1_0(scope)
+	default:
+		return nil, fmt.Errorf("unsupported credential format version after resolution: %s", version)
+	}
+}
+
+func credentialAPIDataV1_0(scope string) (any, error) {
+	workspace, err := currentWorkspace()
+	if err != nil {
+		return nil, err
+	}
+	credentials, err := ListCredentials(workspace, scope)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]map[string]any, 0, len(credentials))
+	for _, credential := range credentials {
+		items = append(items, map[string]any{
+			"id":       credential.ID,
+			"scope":    credential.Scope,
+			"username": credential.Username,
+			"password": apiOptionalString(credential.Password, credential.PasswordValid),
+		})
+	}
+	return map[string]any{"credentials": items}, nil
 }
 
 func runReset(args []string, stdout io.Writer) error {
@@ -637,47 +794,128 @@ func runPrompt(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	format, field, err := parsePromptArgs(args)
+	output, field, err := parsePromptArgs(args)
 	if err != nil {
 		return err
+	}
+	if output.Format == apiFormatJSON {
+		return runJSONEndpoint(stdout, "prompt", output.FormatVersion, func(version string) (any, error) {
+			if field != "" {
+				return nil, apiRequestError{Code: "INVALID_REQUEST", Message: "invalid request", Details: map[string]any{}, Invalid: true}
+			}
+			data, err := currentPromptData()
+			if err != nil {
+				return nil, err
+			}
+			return promptAPIData(version, data)
+		})
 	}
 	data, err := currentPromptData()
 	if err != nil {
 		return err
 	}
-	return WritePromptData(stdout, data, format, field)
+	return WritePromptData(stdout, data, output.Format, field)
 }
 
-func parsePromptArgs(args []string) (string, string, error) {
-	format := "shell"
+func parsePromptArgs(args []string) (outputOptions, string, error) {
+	output := outputOptions{Format: apiFormatShell}
 	var field string
-	var formatSet bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--format":
-			if formatSet || i+1 >= len(args) {
-				return "", "", errors.New("usage: ctx prompt [--format <shell|json>] [--field <name>]")
+			if i+1 >= len(args) {
+				return outputOptions{}, "", errors.New("usage: ctx prompt [--format <shell|json>] [--format-version <version>] [--field <name>]")
 			}
 			i++
-			format = args[i]
-			formatSet = true
+			output.Format = args[i]
+		case "--format-version":
+			if i+1 >= len(args) {
+				return outputOptions{}, "", errors.New("usage: ctx prompt [--format <shell|json>] [--format-version <version>] [--field <name>]")
+			}
+			i++
+			output.FormatVersion = args[i]
 		case "--field":
 			if field != "" || i+1 >= len(args) {
-				return "", "", errors.New("usage: ctx prompt [--format <shell|json>] [--field <name>]")
+				return outputOptions{}, "", errors.New("usage: ctx prompt [--format <shell|json>] [--format-version <version>] [--field <name>]")
 			}
 			i++
 			field = args[i]
 		default:
-			return "", "", fmt.Errorf("unknown ctx prompt option: %s", args[i])
+			return outputOptions{}, "", fmt.Errorf("unknown ctx prompt option: %s", args[i])
 		}
 	}
-	if field != "" && formatSet {
-		return "", "", errors.New("--field and --format cannot be used together")
+	if output.Format != apiFormatShell && output.Format != apiFormatJSON {
+		return outputOptions{}, "", fmt.Errorf("unsupported prompt format: %s", output.Format)
 	}
-	if format != "shell" && format != "json" {
-		return "", "", fmt.Errorf("unsupported prompt format: %s", format)
+	if output.Format == apiFormatShell && output.FormatVersion != "" {
+		return outputOptions{}, "", errors.New("--format-version can only be used with --format json")
 	}
-	return format, field, nil
+	return output, field, nil
+}
+
+func promptAPIData(version string, data PromptData) (any, error) {
+	switch version {
+	case "1.0":
+		return promptAPIDataV1_0(data), nil
+	default:
+		return nil, fmt.Errorf("unsupported prompt format version after resolution: %s", version)
+	}
+}
+
+func promptAPIDataV1_0(data PromptData) map[string]any {
+	return map[string]any{
+		"active":          data.Active,
+		"workspace_id":    apiStringOrNull(data.WorkspaceID),
+		"workspace_name":  apiStringOrNull(data.WorkspaceName),
+		"workspace_path":  apiStringOrNull(data.WorkspacePath),
+		"local_ip":        apiStringOrNull(data.LocalIP),
+		"local_interface": apiStringOrNull(data.LocalInterface),
+		"target_name":     apiStringOrNull(data.TargetName),
+		"target_ip":       apiStringOrNull(data.TargetIP),
+	}
+}
+
+func runFormats(args []string, stdout io.Writer) error {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, formatsUsageText)
+		return err
+	}
+	remaining, output, err := parseOutputOptions(args, apiFormatShell)
+	if err != nil {
+		return err
+	}
+	if len(remaining) != 0 {
+		if output.Format == apiFormatJSON {
+			return runJSONEndpoint(stdout, "formats", output.FormatVersion, func(version string) (any, error) {
+				return nil, apiRequestError{Code: "INVALID_REQUEST", Message: "invalid request", Details: map[string]any{}, Invalid: true}
+			})
+		}
+		return errors.New("usage: ctx formats [--format <shell|json>] [--format-version <version>]")
+	}
+	switch output.Format {
+	case apiFormatShell:
+		if output.FormatVersion != "" {
+			return errors.New("--format-version can only be used with --format json")
+		}
+		table := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+		if _, err := fmt.Fprintln(table, "OUTPUT\tVERSIONS"); err != nil {
+			return err
+		}
+		for _, endpoint := range []string{"credential", "formats", "prompt", "service"} {
+			versions := append([]string(nil), apiSupportedVersions[endpoint]...)
+			sort.Slice(versions, func(i, j int) bool { return compareAPIVersion(versions[i], versions[j]) < 0 })
+			if _, err := fmt.Fprintf(table, "%s\t%s\n", endpoint, strings.Join(versions, ",")); err != nil {
+				return err
+			}
+		}
+		return table.Flush()
+	case apiFormatJSON:
+		return runJSONEndpoint(stdout, "formats", output.FormatVersion, func(version string) (any, error) {
+			return formatsAPIData(version)
+		})
+	default:
+		return fmt.Errorf("unsupported formats format: %s", output.Format)
+	}
 }
 
 func runNote(args []string, stdout io.Writer) error {

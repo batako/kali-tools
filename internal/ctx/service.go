@@ -1,26 +1,36 @@
 package ctx
 
 import (
+	"database/sql"
 	"fmt"
 )
 
 type Service struct {
-	ID          int64
-	WorkspaceID string
-	TargetID    int64
-	Port        int
-	Protocol    string
-	State       string
-	Reason      string
-	ServiceName string
-	Product     string
-	Version     string
-	ExtraInfo   string
-	Tunnel      string
-	Hostname    string
-	CPE         string
-	ScriptsJSON string
-	LastSeen    string
+	ID               int64
+	WorkspaceID      string
+	TargetID         int64
+	Port             int
+	Protocol         string
+	State            string
+	StateValid       bool
+	Reason           string
+	ReasonValid      bool
+	ServiceName      string
+	ServiceNameValid bool
+	Product          string
+	ProductValid     bool
+	Version          string
+	VersionValid     bool
+	ExtraInfo        string
+	ExtraInfoValid   bool
+	Tunnel           string
+	TunnelValid      bool
+	Hostname         string
+	CPE              string
+	CPEValid         bool
+	ScriptsJSON      string
+	LastSeen         string
+	LastSeenValid    bool
 }
 
 func UpsertService(workspace *Workspace, target *Target, service Service) (int64, error) {
@@ -67,13 +77,12 @@ func ListServices(workspace *Workspace, target *Target) ([]Service, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT id, target_id, port, protocol, COALESCE(state, ''), COALESCE(reason, ''),
-		       COALESCE(service_name, ''), COALESCE(product, ''), COALESCE(version, ''),
-		       COALESCE(extrainfo, ''), COALESCE(tunnel, ''), COALESCE(cpe, ''),
-		       COALESCE(last_seen, '')
+		SELECT id, target_id, port, protocol, state, reason,
+		       service_name, product, version, extrainfo, tunnel, cpe,
+		       last_seen
 		FROM services
 		WHERE target_id = ?
-		ORDER BY port ASC, protocol ASC, id ASC
+		ORDER BY protocol ASC, port ASC, id ASC
 	`, target.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list services: %w", err)
@@ -83,28 +92,46 @@ func ListServices(workspace *Workspace, target *Target) ([]Service, error) {
 	var services []Service
 	for rows.Next() {
 		var service Service
+		var state, reason, serviceName, product, version sql.NullString
+		var extraInfo, tunnel, cpe, lastSeen sql.NullString
 		if err := rows.Scan(
 			&service.ID,
 			&service.TargetID,
 			&service.Port,
 			&service.Protocol,
-			&service.State,
-			&service.Reason,
-			&service.ServiceName,
-			&service.Product,
-			&service.Version,
-			&service.ExtraInfo,
-			&service.Tunnel,
-			&service.CPE,
-			&service.LastSeen,
+			&state,
+			&reason,
+			&serviceName,
+			&product,
+			&version,
+			&extraInfo,
+			&tunnel,
+			&cpe,
+			&lastSeen,
 		); err != nil {
 			return nil, fmt.Errorf("failed to read service: %w", err)
 		}
 		service.WorkspaceID = workspace.ID
+		service.State, service.StateValid = nullableStringValue(state)
+		service.Reason, service.ReasonValid = nullableStringValue(reason)
+		service.ServiceName, service.ServiceNameValid = nullableStringValue(serviceName)
+		service.Product, service.ProductValid = nullableStringValue(product)
+		service.Version, service.VersionValid = nullableStringValue(version)
+		service.ExtraInfo, service.ExtraInfoValid = nullableStringValue(extraInfo)
+		service.Tunnel, service.TunnelValid = nullableStringValue(tunnel)
+		service.CPE, service.CPEValid = nullableStringValue(cpe)
+		service.LastSeen, service.LastSeenValid = nullableStringValue(lastSeen)
 		services = append(services, service)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to list services: %w", err)
 	}
 	return services, nil
+}
+
+func nullableStringValue(value sql.NullString) (string, bool) {
+	if !value.Valid {
+		return "", false
+	}
+	return value.String, true
 }
