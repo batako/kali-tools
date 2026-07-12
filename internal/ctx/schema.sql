@@ -1,14 +1,15 @@
 CREATE TABLE workspaces (
-	id TEXT PRIMARY KEY,
-	root_path TEXT NOT NULL,
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL UNIQUE,
+	path TEXT NOT NULL,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	UNIQUE (root_path)
+	UNIQUE (path)
 );
 
 CREATE TABLE targets (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	workspace_id TEXT NOT NULL,
+	workspace_id INTEGER NOT NULL,
 	name TEXT NOT NULL,
 	ip TEXT NOT NULL,
 	os_name TEXT,
@@ -23,7 +24,7 @@ CREATE TABLE targets (
 
 CREATE TABLE command_logs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	workspace_id TEXT NOT NULL,
+	workspace_id INTEGER NOT NULL,
 	command TEXT NOT NULL,
 	expanded_command TEXT NOT NULL,
 	status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed', 'interrupted')),
@@ -98,7 +99,7 @@ CREATE TABLE scan_runs (
 
 CREATE TABLE notes (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	workspace_id TEXT NOT NULL,
+	workspace_id INTEGER NOT NULL,
 	body TEXT NOT NULL,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

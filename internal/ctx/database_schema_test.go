@@ -37,16 +37,16 @@ func TestDatabaseSchemaConstraints(t *testing.T) {
 		}
 	}
 
-	if _, err := db.Exec(`INSERT INTO workspaces (id, root_path) VALUES ('workspace-1', '/tmp/workspace-1')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO workspaces (id, name, path) VALUES (1, 'workspace-1', '/tmp/workspace-1')`); err != nil {
 		t.Fatalf("insert workspace error = %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO workspaces (id, root_path) VALUES ('workspace-2', '/tmp/workspace-1')`); err == nil {
+	if _, err := db.Exec(`INSERT INTO workspaces (id, name, path) VALUES (2, 'workspace-2', '/tmp/workspace-1')`); err == nil {
 		t.Fatal("duplicate workspace root insert succeeded, want unique constraint error")
 	}
-	if _, err := db.Exec(`INSERT INTO targets (id, workspace_id, name, ip, is_primary) VALUES (1, 'workspace-1', 'default', '10.10.10.10', 1)`); err != nil {
+	if _, err := db.Exec(`INSERT INTO targets (id, workspace_id, name, ip, is_primary) VALUES (1, 1, 'default', '10.10.10.10', 1)`); err != nil {
 		t.Fatalf("insert primary target error = %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO targets (workspace_id, name, ip, is_primary) VALUES ('workspace-1', 'target2', '10.10.10.20', 1)`); err == nil {
+	if _, err := db.Exec(`INSERT INTO targets (workspace_id, name, ip, is_primary) VALUES (1, 'target2', '10.10.10.20', 1)`); err == nil {
 		t.Fatal("second primary target insert succeeded, want unique constraint error")
 	}
 	if _, err := db.Exec(`INSERT INTO services (target_id, port, protocol) VALUES (1, 0, 'tcp')`); err == nil {
@@ -58,7 +58,7 @@ func TestDatabaseSchemaConstraints(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO services (target_id, port, protocol) VALUES (1, 80, 'tcp')`); err == nil {
 		t.Fatal("duplicate service insert succeeded, want unique constraint error")
 	}
-	if _, err := db.Exec(`INSERT INTO command_logs (id, workspace_id, command, expanded_command, status, started_at) VALUES (1, 'workspace-1', 'hydra', 'hydra', 'success', '2026-07-09T00:00:00Z')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO command_logs (id, workspace_id, command, expanded_command, status, started_at) VALUES (1, 1, 'hydra', 'hydra', 'success', '2026-07-09T00:00:00Z')`); err != nil {
 		t.Fatalf("insert command log error = %v", err)
 	}
 	if !columnExists(t, db, "credentials", "scope") {

@@ -295,10 +295,10 @@ func TestRenderHostsBlockGroupsHostsByTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderHostsBlock() error = %v", err)
 	}
-	want := "# >>> ctx: " + workspace.ID + "\n" +
+	want := "# >>> ctx: " + workspaceIDString(workspace.ID) + "\n" +
 		"10.10.10.10 admin.example.thm example.thm\n" +
 		"10.10.10.20 dc01.example.local\n" +
-		"# <<< ctx: " + workspace.ID + "\n"
+		"# <<< ctx: " + workspaceIDString(workspace.ID) + "\n"
 	if block != want {
 		t.Fatalf("hosts block = %q, want %q", block, want)
 	}
@@ -376,7 +376,7 @@ func TestSyncHostsFileAddsAndReplacesWorkspaceBlock(t *testing.T) {
 	if !strings.Contains(got, "# >>> ctx: ctx-other\n10.10.99.99 other.example\n# <<< ctx: ctx-other") {
 		t.Fatalf("hosts content lost other workspace block: %q", got)
 	}
-	if !strings.Contains(got, "# >>> ctx: "+workspace.ID+"\n10.10.10.10 example.thm\n# <<< ctx: "+workspace.ID) {
+	if !strings.Contains(got, "# >>> ctx: "+workspaceIDString(workspace.ID)+"\n10.10.10.10 example.thm\n# <<< ctx: "+workspaceIDString(workspace.ID)) {
 		t.Fatalf("hosts content missing ctx block: %q", got)
 	}
 
@@ -391,7 +391,7 @@ func TestSyncHostsFileAddsAndReplacesWorkspaceBlock(t *testing.T) {
 		t.Fatalf("ReadFile(hosts replaced) error = %v", err)
 	}
 	got = string(content)
-	if strings.Count(got, "# >>> ctx: "+workspace.ID) != 1 {
+	if strings.Count(got, "# >>> ctx: "+workspaceIDString(workspace.ID)) != 1 {
 		t.Fatalf("hosts content should contain one ctx block, got %q", got)
 	}
 	if !strings.Contains(got, "10.10.10.10 admin.example.thm example.thm") {
@@ -427,7 +427,7 @@ func TestSyncHostsFileRejectsBrokenManagedBlock(t *testing.T) {
 	}
 
 	hostsPath := t.TempDir() + "/hosts"
-	broken := "127.0.0.1 localhost\n# >>> ctx: " + workspace.ID + "\n10.10.10.10 stale.example\n"
+	broken := "127.0.0.1 localhost\n# >>> ctx: " + workspaceIDString(workspace.ID) + "\n10.10.10.10 stale.example\n"
 	if err := os.WriteFile(hostsPath, []byte(broken), 0644); err != nil {
 		t.Fatalf("WriteFile(broken hosts) error = %v", err)
 	}
@@ -665,7 +665,7 @@ func TestCleanHostsFileRemovesOnlyWorkspaceBlock(t *testing.T) {
 		t.Fatalf("ReadFile(hosts) error = %v", err)
 	}
 	got := string(content)
-	if strings.Contains(got, "# >>> ctx: "+workspace.ID) || strings.Contains(got, "example.thm") {
+	if strings.Contains(got, "# >>> ctx: "+workspaceIDString(workspace.ID)) || strings.Contains(got, "example.thm") {
 		t.Fatalf("workspace block remained after clean: %q", got)
 	}
 	if !strings.Contains(got, "127.0.0.1 localhost\n") {

@@ -22,8 +22,9 @@ func TestInitWorkspaceCreatesMarkerAndWorkspaceDirs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(.ctx) error = %v", err)
 	}
-	if strings.TrimSpace(string(marker)) != workspace.ID {
-		t.Fatalf("marker id = %q, want %q", strings.TrimSpace(string(marker)), workspace.ID)
+	markerText := strings.TrimSpace(string(marker))
+	if !strings.Contains(markerText, workspace.UUID) || !strings.Contains(markerText, workspaceIDString(workspace.ID)) {
+		t.Fatalf("marker text = %q, want id and uuid", markerText)
 	}
 
 	for _, dir := range []string{"logs", "files", "scans"} {
@@ -41,7 +42,7 @@ func TestInitWorkspaceCreatesMarkerAndWorkspaceDirs(t *testing.T) {
 		t.Fatalf("GetWorkspaceRecord() error = %v", err)
 	}
 	if record.ID != workspace.ID {
-		t.Fatalf("database workspace id = %q, want %q", record.ID, workspace.ID)
+		t.Fatalf("database workspace id = %d, want %d", record.ID, workspace.ID)
 	}
 	if record.RootPath != root {
 		t.Fatalf("database root path = %q, want %q", record.RootPath, root)
@@ -160,8 +161,8 @@ func TestExistingPrefixedWorkspaceIDRemainsReadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitWorkspace() error = %v", err)
 	}
-	if workspace.ID != existingID {
-		t.Fatalf("workspace id = %q, want existing id %q", workspace.ID, existingID)
+	if workspace.UUID != existingID {
+		t.Fatalf("workspace uuid = %q, want existing id %q", workspace.UUID, existingID)
 	}
 }
 

@@ -45,12 +45,60 @@ func TestCreateSchemaBaselinesCtxV100Database(t *testing.T) {
 	}
 
 	assertSchemaMigrationVersion(t, db, currentSchemaVersion, false)
-	var rootPath string
-	if err := db.QueryRow(`SELECT root_path FROM workspaces WHERE id = 'workspace-1'`).Scan(&rootPath); err != nil {
+	var name, path string
+	if err := db.QueryRow(`SELECT name, path FROM workspaces WHERE name = 'workspace-1'`).Scan(&name, &path); err != nil {
 		t.Fatalf("load v1.0.0 workspace after baseline error = %v", err)
 	}
-	if rootPath != "/tmp/workspace-1" {
-		t.Fatalf("root_path = %q, want /tmp/workspace-1", rootPath)
+	if name != "workspace-1" || path != "/tmp/workspace-1" {
+		t.Fatalf("workspace = %q %q, want workspace-1 /tmp/workspace-1", name, path)
+	}
+}
+
+func TestWorkspaceMigrationFromCtxV100Schema(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	db, err := openDatabase(filepath.Join(dataRoot(), "db.sqlite"))
+	if err != nil {
+		t.Fatalf("openDatabase() error = %v", err)
+	}
+	defer db.Close()
+
+	createCtxV100Schema(t, db)
+	insertCtxV100WorkspaceData(t, db, root)
+
+	if err := createSchema(db); err != nil {
+		t.Fatalf("createSchema() migration error = %v", err)
+	}
+
+	assertSchemaMigrationVersion(t, db, currentSchemaVersion, false)
+	assertColumnExists(t, db, "workspaces", "name", true)
+	assertColumnExists(t, db, "workspaces", "path", true)
+	assertColumnExists(t, db, "workspaces", "root_path", false)
+
+	var workspaceID int64
+	var workspaceName, workspacePath string
+	if err := db.QueryRow(`SELECT id, name, path FROM workspaces`).Scan(&workspaceID, &workspaceName, &workspacePath); err != nil {
+		t.Fatalf("load migrated workspace error = %v", err)
+	}
+	if workspaceID != 1 || workspaceName != "workspace-uuid-1" || workspacePath != root {
+		t.Fatalf("migrated workspace = %d %q %q", workspaceID, workspaceName, workspacePath)
+	}
+
+	assertSingleInt64Value(t, db, `SELECT workspace_id FROM targets WHERE id = 1`, 1)
+	assertSingleInt64Value(t, db, `SELECT workspace_id FROM command_logs WHERE id = 1`, 1)
+	assertSingleInt64Value(t, db, `SELECT workspace_id FROM notes WHERE id = 1`, 1)
+	assertSingleInt64Value(t, db, `SELECT command_log_id FROM scan_runs WHERE id = 1`, 1)
+	assertSingleInt64Value(t, db, `SELECT target_id FROM hosts WHERE id = 1`, 1)
+	assertSingleInt64Value(t, db, `SELECT target_id FROM services WHERE id = 1`, 1)
+	assertSingleInt64Value(t, db, `SELECT target_id FROM credentials WHERE id = 1`, 1)
+	assertForeignKeyCheckClean(t, db)
+
+	record, err := GetWorkspaceRecordByRoot(root)
+	if err != nil {
+		t.Fatalf("GetWorkspaceRecordByRoot() error = %v", err)
+	}
+	if record == nil || record.ID != 1 || record.UUID != "workspace-uuid-1" || record.RootPath != root {
+		t.Fatalf("workspace record = %+v", record)
 	}
 }
 
@@ -91,6 +139,41 @@ func TestCreateSchemaNoopsWhenCurrent(t *testing.T) {
 	assertSchemaMigrationVersion(t, db, currentSchemaVersion, false)
 }
 
+func TestCreateSchemaBaselinesCurrentSchemaWithoutMigrationTable(t *testing.T) {
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	db, err := openDatabase(filepath.Join(dataRoot(), "db.sqlite"))
+	if err != nil {
+		t.Fatalf("openDatabase() error = %v", err)
+	}
+	defer db.Close()
+
+	schema, err := embeddedMigrations.ReadFile(latestSchemaSnapshotPath)
+	if err != nil {
+		t.Fatalf("read schema.sql error = %v", err)
+	}
+	if _, err := db.Exec(string(schema)); err != nil {
+		t.Fatalf("create current schema without migrations error = %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO workspaces (name, path) VALUES ('workspace-1', '/tmp/workspace-1')
+	`); err != nil {
+		t.Fatalf("insert current workspace error = %v", err)
+	}
+
+	if err := createSchema(db); err != nil {
+		t.Fatalf("createSchema() error = %v", err)
+	}
+
+	assertSchemaMigrationVersion(t, db, currentSchemaVersion, false)
+	var workspaceID int64
+	if err := db.QueryRow(`SELECT id FROM workspaces WHERE name = 'workspace-1' AND path = '/tmp/workspace-1'`).Scan(&workspaceID); err != nil {
+		t.Fatalf("load current workspace after baseline error = %v", err)
+	}
+	if workspaceID != 1 {
+		t.Fatalf("workspace id = %d, want 1", workspaceID)
+	}
+}
+
 func TestLatestSchemaSnapshotMatchesMigratedV100Schema(t *testing.T) {
 	snapshotDB := openTestDatabase(t)
 	defer snapshotDB.Close()
@@ -115,34 +198,49 @@ func TestLatestSchemaSnapshotMatchesMigratedV100Schema(t *testing.T) {
 	}
 }
 
-func TestReleasedV100DatabaseMigratesToLatest(t *testing.T) {
-	fixturePath := filepath.Join("testdata", "database", "v1.0.0.sqlite")
+func TestMigrationV120FixtureMigratesToLatest(t *testing.T) {
+	assertMigrationFixtureMigratesToLatest(t, migrationDatabaseFixture{
+		Version:       "v1.2.0",
+		WorkspacePath: "/tmp/ctx-released-v1.0.0-fixture/projects/fixture-project",
+		NoteBody:      "fixture note from ctx v1.0.0",
+	})
+}
+
+type migrationDatabaseFixture struct {
+	Version       string
+	WorkspacePath string
+	NoteBody      string
+}
+
+func assertMigrationFixtureMigratesToLatest(t *testing.T, fixture migrationDatabaseFixture) {
+	t.Helper()
+	fixturePath := filepath.Join("testdata", "database", fixture.Version+".sqlite")
 	fixtureBefore, err := os.ReadFile(fixturePath)
 	if err != nil {
-		t.Fatalf("read released v1.0.0 fixture error = %v", err)
+		t.Fatalf("read migration %s fixture error = %v", fixture.Version, err)
 	}
 
-	dbPath := filepath.Join(t.TempDir(), "v1.0.0.sqlite")
+	dbPath := filepath.Join(t.TempDir(), fixture.Version+".sqlite")
 	if err := os.WriteFile(dbPath, fixtureBefore, 0644); err != nil {
-		t.Fatalf("copy released v1.0.0 fixture error = %v", err)
+		t.Fatalf("copy migration %s fixture error = %v", fixture.Version, err)
 	}
 
 	db, err := openDatabase(dbPath)
 	if err != nil {
-		t.Fatalf("open copied released v1.0.0 fixture error = %v", err)
+		t.Fatalf("open copied migration %s fixture error = %v", fixture.Version, err)
 	}
 	defer db.Close()
 
 	if err := createSchema(db); err != nil {
-		t.Fatalf("createSchema() for released v1.0.0 fixture error = %v", err)
+		t.Fatalf("createSchema() for migration %s fixture error = %v", fixture.Version, err)
 	}
 
 	assertSchemaMigrationVersion(t, db, currentSchemaVersion, false)
 	if err := validateIntegrity(db); err != nil {
-		t.Fatalf("integrity_check after released fixture migration error = %v", err)
+		t.Fatalf("integrity_check after migration %s fixture error = %v", fixture.Version, err)
 	}
 	assertForeignKeyCheckClean(t, db)
-	assertReleasedV100FixtureDataRetained(t, db)
+	assertMigrationFixtureDataRetained(t, db, fixture)
 
 	snapshotDB := openTestDatabase(t)
 	defer snapshotDB.Close()
@@ -152,15 +250,15 @@ func TestReleasedV100DatabaseMigratesToLatest(t *testing.T) {
 	snapshotSchema := loadDatabaseSchemaSnapshot(t, snapshotDB)
 	migratedSchema := loadDatabaseSchemaSnapshot(t, db)
 	if !reflect.DeepEqual(snapshotSchema, migratedSchema) {
-		t.Fatalf("schema.sql schema and released v1.0.0 migrated schema differ\nschema.sql: %#v\nmigrated: %#v", snapshotSchema, migratedSchema)
+		t.Fatalf("schema.sql schema and migration %s schema differ\nschema.sql: %#v\nmigrated: %#v", fixture.Version, snapshotSchema, migratedSchema)
 	}
 
 	fixtureAfter, err := os.ReadFile(fixturePath)
 	if err != nil {
-		t.Fatalf("reread released v1.0.0 fixture error = %v", err)
+		t.Fatalf("reread migration %s fixture error = %v", fixture.Version, err)
 	}
 	if !bytes.Equal(fixtureBefore, fixtureAfter) {
-		t.Fatal("released v1.0.0 fixture was modified during migration test")
+		t.Fatalf("migration %s fixture was modified during migration test", fixture.Version)
 	}
 }
 
@@ -175,8 +273,8 @@ func TestApplyPendingMigrationsUpdatesExistingDatabase(t *testing.T) {
 	fsys := fstest.MapFS{
 		"migrations/000001_1.0.0.up.sql":   {Data: []byte(`CREATE TABLE base_table (id INTEGER PRIMARY KEY);`)},
 		"migrations/000001_1.0.0.down.sql": {Data: []byte(`DROP TABLE IF EXISTS base_table;`)},
-		"migrations/000002_1.1.0.up.sql":   {Data: []byte(`CREATE TABLE future_table (id INTEGER PRIMARY KEY);`)},
-		"migrations/000002_1.1.0.down.sql": {Data: []byte(`DROP TABLE IF EXISTS future_table;`)},
+		"migrations/000002_1.2.0.up.sql":   {Data: []byte(`CREATE TABLE future_table (id INTEGER PRIMARY KEY);`)},
+		"migrations/000002_1.2.0.down.sql": {Data: []byte(`DROP TABLE IF EXISTS future_table;`)},
 	}
 
 	if err := createLatestSchema(db, fsys, "migrations/000001_1.0.0.up.sql", 1); err != nil {
@@ -201,8 +299,8 @@ func TestApplyPendingMigrationsRollsBackFailedMigrationBody(t *testing.T) {
 	fsys := fstest.MapFS{
 		"migrations/000001_1.0.0.up.sql":   {Data: []byte(`CREATE TABLE base_table (id INTEGER PRIMARY KEY);`)},
 		"migrations/000001_1.0.0.down.sql": {Data: []byte(`DROP TABLE IF EXISTS base_table;`)},
-		"migrations/000002_1.1.0.up.sql":   {Data: []byte(`CREATE TABLE should_rollback (id INTEGER PRIMARY KEY); CREATE TABLE broken (`)},
-		"migrations/000002_1.1.0.down.sql": {Data: []byte(`DROP TABLE IF EXISTS should_rollback;`)},
+		"migrations/000002_1.2.0.up.sql":   {Data: []byte(`CREATE TABLE should_rollback (id INTEGER PRIMARY KEY); CREATE TABLE broken (`)},
+		"migrations/000002_1.2.0.down.sql": {Data: []byte(`DROP TABLE IF EXISTS should_rollback;`)},
 	}
 
 	if err := createLatestSchema(db, fsys, "migrations/000001_1.0.0.up.sql", 1); err != nil {
@@ -245,6 +343,28 @@ func createCtxV100Schema(t *testing.T, db *sql.DB) {
 	}
 }
 
+func insertCtxV100WorkspaceData(t *testing.T, db *sql.DB, root string) {
+	t.Helper()
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO workspaces (id, root_path, created_at, updated_at) VALUES ('workspace-uuid-1', ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, []any{root}},
+		{`INSERT INTO targets (id, workspace_id, name, ip, is_primary, created_at, updated_at) VALUES (1, 'workspace-uuid-1', 'default', '10.10.10.10', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, nil},
+		{`INSERT INTO command_logs (id, workspace_id, command, expanded_command, status, started_at, created_at, updated_at) VALUES (1, 'workspace-uuid-1', 'nmap', 'nmap', 'success', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, nil},
+		{`INSERT INTO hosts (id, target_id, hostname, source, created_at, updated_at) VALUES (1, 1, 'target.example', 'manual', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, nil},
+		{`INSERT INTO services (id, target_id, port, protocol, state, service_name, created_at, updated_at) VALUES (1, 1, 22, 'tcp', 'open', 'ssh', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, nil},
+		{`INSERT INTO credentials (id, target_id, scope, username, password, verified, evidence_log_id, created_at, updated_at) VALUES (1, 1, 'ssh', 'root', 'toor', 1, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, nil},
+		{`INSERT INTO scan_runs (id, target_id, target_ip, ports, command_log_id, created_at, updated_at) VALUES (1, 1, '10.10.10.10', '22,80', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, nil},
+		{`INSERT INTO notes (id, workspace_id, body, created_at, updated_at) VALUES (1, 'workspace-uuid-1', 'note', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, nil},
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement.query, statement.args...); err != nil {
+			t.Fatalf("insert v1.0.0 data error = %v", err)
+		}
+	}
+}
+
 func fsReadEmbeddedMigration(path string) (string, error) {
 	content, err := embeddedMigrations.ReadFile(path)
 	if err != nil {
@@ -262,6 +382,13 @@ func assertSchemaMigrationVersion(t *testing.T, db *sql.DB, wantVersion uint, wa
 	}
 	if version != wantVersion || dirty != wantDirty {
 		t.Fatalf("schema_migrations = version %d dirty %t, want version %d dirty %t", version, dirty, wantVersion, wantDirty)
+	}
+}
+
+func assertColumnExists(t *testing.T, db *sql.DB, table, column string, want bool) {
+	t.Helper()
+	if got := columnExists(t, db, table, column); got != want {
+		t.Fatalf("%s.%s exists = %t, want %t", table, column, got, want)
 	}
 }
 
@@ -291,13 +418,13 @@ func assertForeignKeyCheckClean(t *testing.T, db *sql.DB) {
 	}
 }
 
-func assertReleasedV100FixtureDataRetained(t *testing.T, db *sql.DB) {
+func assertMigrationFixtureDataRetained(t *testing.T, db *sql.DB, fixture migrationDatabaseFixture) {
 	t.Helper()
-	assertSingleStringValue(t, db, `SELECT root_path FROM workspaces`, "/tmp/ctx-released-v1.0.0-fixture/projects/fixture-project")
+	assertSingleStringValue(t, db, `SELECT path FROM workspaces`, fixture.WorkspacePath)
 	assertSingleStringValue(t, db, `SELECT ip FROM targets WHERE name = 'default' AND is_primary = 1`, "10.10.10.10")
 	assertSingleStringValue(t, db, `SELECT hostname FROM hosts`, "target.example")
 	assertSingleStringValue(t, db, `SELECT password FROM credentials WHERE scope = 'ssh' AND username = 'root'`, "toor")
-	assertSingleStringValue(t, db, `SELECT body FROM notes`, "fixture note from ctx v1.0.0")
+	assertSingleStringValue(t, db, `SELECT body FROM notes`, fixture.NoteBody)
 	assertSingleInt64Value(t, db, `SELECT COUNT(*) FROM services`, 2)
 	assertSingleInt64Value(t, db, `SELECT COUNT(*) FROM scan_runs`, 1)
 	assertSingleInt64Value(t, db, `SELECT COUNT(*) FROM command_logs WHERE command IN ('ctx scan -p 22,80', 'echo fixture-command')`, 2)
@@ -572,5 +699,6 @@ func quoteSQLiteIdentifier(value string) string {
 }
 
 func normalizeSchemaSQL(value string) string {
+	value = strings.ReplaceAll(value, `"`, "")
 	return strings.Join(strings.Fields(value), " ")
 }

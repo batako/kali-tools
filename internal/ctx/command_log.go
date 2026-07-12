@@ -8,7 +8,7 @@ import (
 
 type CommandLog struct {
 	ID              int64
-	WorkspaceID     string
+	WorkspaceID     int64
 	Command         string
 	ExpandedCommand string
 	Status          string

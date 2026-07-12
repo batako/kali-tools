@@ -141,14 +141,14 @@ func collectDoctorChecks() []doctorCheck {
 		case needsUpdate:
 			checks = append(checks, doctorCheck{
 				Name:   "Workspace data",
-				Detail: fmt.Sprintf("data is incomplete for %s", workspace.ID),
+				Detail: fmt.Sprintf("data is incomplete for %d", workspace.ID),
 				Fix:    "ctx workspace init",
 			})
 		default:
 			checks = append(checks, doctorCheck{
 				Name:   "Workspace",
 				OK:     true,
-				Detail: fmt.Sprintf("%s (%s)", workspace.ID, workspace.RootPath),
+				Detail: fmt.Sprintf("%d (%s)", workspace.ID, workspace.RootPath),
 			})
 		}
 	}

@@ -14,7 +14,7 @@ import (
 
 type PromptData struct {
 	Active         bool   `json:"active"`
-	WorkspaceID    string `json:"workspace_id"`
+	WorkspaceID    string `json:"-"`
 	WorkspaceName  string `json:"workspace_name"`
 	WorkspacePath  string `json:"workspace_path"`
 	LocalIP        string `json:"local_ip"`
@@ -40,7 +40,7 @@ func LoadPromptData(startPath string) (PromptData, error) {
 	}
 	data := PromptData{
 		Active:        true,
-		WorkspaceID:   record.ID,
+		WorkspaceID:   fmt.Sprintf("%d", record.ID),
 		WorkspaceName: filepath.Base(record.RootPath),
 		WorkspacePath: record.RootPath,
 	}

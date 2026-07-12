@@ -139,8 +139,14 @@ func TestProjectListShowsOnlyCtxProjectDirectories(t *testing.T) {
 	if err := Run([]string{"ctx", "project", "ls"}, &out); err != nil {
 		t.Fatalf("Run(ctx project ls) error = %v", err)
 	}
-	if got, want := out.String(), filepath.Join(root, "alpha")+"\n"; got != want {
-		t.Fatalf("output = %q, want alpha project", out.String())
+	if got := out.String(); !strings.Contains(got, "ID") ||
+		!strings.Contains(got, "NAME") ||
+		!strings.Contains(got, "1") ||
+		!strings.Contains(got, "alpha") {
+		t.Fatalf("output = %q, want ID and alpha project name", out.String())
+	}
+	if strings.Contains(out.String(), "PATH") || strings.Contains(out.String(), filepath.Join(root, "alpha")) {
+		t.Fatalf("output = %q, should not include project path", out.String())
 	}
 	if strings.Contains(out.String(), "plain") {
 		t.Fatalf("output = %q, should not include non-ctx directory", out.String())
@@ -161,8 +167,13 @@ func TestProjectDefaultViewListsProjects(t *testing.T) {
 	if err := Run([]string{"ctx", "project"}, &out); err != nil {
 		t.Fatalf("Run(ctx project) error = %v", err)
 	}
-	if got, want := out.String(), filepath.Join(root, "alpha")+"\n"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
+	if got := out.String(); !strings.Contains(got, "ID") ||
+		!strings.Contains(got, "NAME") ||
+		!strings.Contains(got, "alpha") {
+		t.Fatalf("output = %q, want ID and alpha project name", got)
+	}
+	if strings.Contains(out.String(), "PATH") || strings.Contains(out.String(), filepath.Join(root, "alpha")) {
+		t.Fatalf("output = %q, should not include project path", out.String())
 	}
 }
 
@@ -232,6 +243,35 @@ func TestProjectRemoveYesSkipsConfirmation(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "[y/N]") {
 		t.Fatalf("output = %q, --yes should skip confirmation", out.String())
+	}
+}
+
+func TestProjectRemoveByID(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	if _, err := SetProjectRoot(root); err != nil {
+		t.Fatalf("SetProjectRoot() error = %v", err)
+	}
+	if _, err := CreateProject("alpha"); err != nil {
+		t.Fatalf("CreateProject(alpha) error = %v", err)
+	}
+	projects, err := ListProjects()
+	if err != nil {
+		t.Fatalf("ListProjects() error = %v", err)
+	}
+	if len(projects) != 1 || projects[0].ID == 0 {
+		t.Fatalf("projects = %+v, want one project with ID", projects)
+	}
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "project", "rm", workspaceIDString(projects[0].ID), "--yes"}, &out); err != nil {
+		t.Fatalf("Run(ctx project rm <id> --yes) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "alpha")); !os.IsNotExist(err) {
+		t.Fatalf("alpha Stat() error = %v, want not exist", err)
+	}
+	if !strings.Contains(out.String(), "removed project: "+filepath.Join(root, "alpha")) {
+		t.Fatalf("output = %q, want removed project path", out.String())
 	}
 }
 

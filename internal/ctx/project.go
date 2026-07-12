@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -26,6 +27,7 @@ to initialize the current directory.`
 var ErrProjectRootUnset = errors.New(projectRootUnsetMessage)
 
 type Project struct {
+	ID   int64
 	Name string
 	Path string
 }
@@ -84,19 +86,37 @@ func ListProjects() ([]Project, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list project root %s: %w", root, err)
 	}
+	records, err := ListWorkspaceRecords()
+	if err != nil {
+		return nil, err
+	}
+	recordsByPath := make(map[string]WorkspaceRecord, len(records))
+	recordsByUUID := make(map[string]WorkspaceRecord, len(records))
+	for _, record := range records {
+		recordsByPath[filepath.Clean(record.RootPath)] = record
+		recordsByUUID[record.UUID] = record
+	}
+
 	projects := make([]Project, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		path := filepath.Join(root, entry.Name())
-		if _, err := os.Stat(filepath.Join(path, MarkerFile)); err != nil {
+		markerID, markerUUID, err := readWorkspaceMarker(filepath.Join(path, MarkerFile))
+		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return nil, fmt.Errorf("failed to inspect project %s: %w", path, err)
 		}
-		projects = append(projects, Project{Name: entry.Name(), Path: path})
+		project := Project{ID: markerID, Name: entry.Name(), Path: path}
+		if record, ok := recordsByPath[filepath.Clean(path)]; ok {
+			project.ID = record.ID
+		} else if record, ok := recordsByUUID[markerUUID]; ok {
+			project.ID = record.ID
+		}
+		projects = append(projects, project)
 	}
 	sort.Slice(projects, func(i, j int) bool {
 		return projects[i].Name < projects[j].Name
@@ -104,33 +124,72 @@ func ListProjects() ([]Project, error) {
 	return projects, nil
 }
 
-func RemoveProject(name string) (string, error) {
+func ResolveProject(identifier string) (Project, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return Project{}, errors.New("project name or ID must not be empty")
+	}
+	if id, err := strconv.ParseInt(identifier, 10, 64); err == nil && id > 0 {
+		projects, err := ListProjects()
+		if err != nil {
+			return Project{}, err
+		}
+		for _, project := range projects {
+			if project.ID == id {
+				return project, nil
+			}
+		}
+	}
+
 	root, err := requiredProjectRoot()
 	if err != nil {
-		return "", err
+		return Project{}, err
 	}
-	projectPath, err := projectPath(root, name)
+	projectPath, err := projectPath(root, identifier)
 	if err != nil {
-		return "", err
+		return Project{}, err
 	}
 	info, err := os.Stat(projectPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("project not found: %s", name)
+		return Project{}, fmt.Errorf("project not found: %s", identifier)
 	}
 	if err != nil {
-		return "", fmt.Errorf("failed to inspect project %s: %w", projectPath, err)
+		return Project{}, fmt.Errorf("failed to inspect project %s: %w", projectPath, err)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("project is not a directory: %s", projectPath)
+		return Project{}, fmt.Errorf("project is not a directory: %s", projectPath)
 	}
 
-	if err := removeProjectWorkspaceData(projectPath); err != nil {
+	project := Project{Name: filepath.Base(projectPath), Path: projectPath}
+	if markerID, _, err := readWorkspaceMarker(filepath.Join(projectPath, MarkerFile)); err == nil {
+		project.ID = markerID
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Project{}, err
+	}
+	if record, err := GetWorkspaceRecordByRoot(projectPath); err == nil && record != nil {
+		project.ID = record.ID
+	} else if err != nil {
+		return Project{}, err
+	}
+	return project, nil
+}
+
+func RemoveProject(identifier string) (string, error) {
+	project, err := ResolveProject(identifier)
+	if err != nil {
 		return "", err
 	}
-	if err := os.RemoveAll(projectPath); err != nil {
-		return "", fmt.Errorf("failed to remove project %s: %w", projectPath, err)
+	return removeResolvedProject(project)
+}
+
+func removeResolvedProject(project Project) (string, error) {
+	if err := removeProjectWorkspaceData(project.Path); err != nil {
+		return "", err
 	}
-	return projectPath, nil
+	if err := os.RemoveAll(project.Path); err != nil {
+		return "", fmt.Errorf("failed to remove project %s: %w", project.Path, err)
+	}
+	return project.Path, nil
 }
 
 func requiredProjectRoot() (string, error) {
@@ -176,7 +235,7 @@ func removeProjectWorkspaceData(projectPath string) error {
 		return err
 	}
 	for _, record := range records {
-		if record.ID == markerID && filepath.Clean(record.RootPath) == filepath.Clean(projectPath) {
+		if record.UUID == markerID && filepath.Clean(record.RootPath) == filepath.Clean(projectPath) {
 			return RemoveWorkspace(record)
 		}
 	}

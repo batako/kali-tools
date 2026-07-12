@@ -279,7 +279,7 @@ func openWorkspaceDatabase(workspace *Workspace) (*sql.DB, error) {
 	return db, nil
 }
 
-func setTargetPrimaryIP(db *sql.DB, workspaceID, name, ip string) error {
+func setTargetPrimaryIP(db *sql.DB, workspaceID int64, name, ip string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to start target update: %w", err)
@@ -307,7 +307,7 @@ func setTargetPrimaryIP(db *sql.DB, workspaceID, name, ip string) error {
 	return nil
 }
 
-func primaryTargetName(db *sql.DB, workspaceID string) (string, error) {
+func primaryTargetName(db *sql.DB, workspaceID int64) (string, error) {
 	var name string
 	err := db.QueryRow(`SELECT name FROM targets WHERE workspace_id = ? AND is_primary = 1 ORDER BY id LIMIT 1`, workspaceID).Scan(&name)
 	if err == sql.ErrNoRows {
@@ -319,7 +319,7 @@ func primaryTargetName(db *sql.DB, workspaceID string) (string, error) {
 	return name, nil
 }
 
-func nextTargetName(db *sql.DB, workspaceID string) (string, error) {
+func nextTargetName(db *sql.DB, workspaceID int64) (string, error) {
 	existing := map[string]struct{}{}
 	rows, err := db.Query(`SELECT name FROM targets WHERE workspace_id = ?`, workspaceID)
 	if err != nil {
@@ -349,7 +349,7 @@ func nextTargetName(db *sql.DB, workspaceID string) (string, error) {
 	}
 }
 
-func targetCount(db *sql.DB, workspaceID string) (int, error) {
+func targetCount(db *sql.DB, workspaceID int64) (int, error) {
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM targets WHERE workspace_id = ?`, workspaceID).Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to count targets: %w", err)

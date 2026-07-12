@@ -118,7 +118,7 @@ func TestCompletionValuesReturnAllWorkspaceIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("completionValues(workspace) error = %v", err)
 	}
-	if len(values) != 2 || !containsString(values, first.ID) || !containsString(values, second.ID) {
+	if len(values) != 2 || !containsString(values, workspaceIDString(first.ID)) || !containsString(values, workspaceIDString(second.ID)) {
 		t.Fatalf("workspace completion values = %v", values)
 	}
 

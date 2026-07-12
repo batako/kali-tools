@@ -7,7 +7,7 @@ import (
 
 type Service struct {
 	ID               int64
-	WorkspaceID      string
+	WorkspaceID      int64
 	TargetID         int64
 	Port             int
 	Protocol         string

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,7 +14,7 @@ import (
 )
 
 var (
-	Version = "1.1.0"
+	Version = "1.2.0"
 
 	hostsFilePath                = "/etc/hosts"
 	syncHostsFileFunc            = SyncHostsFile
@@ -116,7 +115,7 @@ commands:
   root [path]       show or set the projects root
   new <name>        create a project and initialize a workspace
   ls                list ctx projects under the configured root
-  rm <name> [-y|--yes] remove a project directory
+  rm <id|name> [-y|--yes] remove a project directory
 
 options:
   -y, --yes         skip removal confirmation
@@ -315,7 +314,7 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if _, err = fmt.Fprintf(stdout, "workspace: %s\nname: %s\nroot: %s\ndata: %s\ndatabase: %s\n", record.ID, filepath.Base(record.RootPath), record.RootPath, workspace.DataPath, workspace.DatabasePath); err != nil {
+		if _, err = fmt.Fprintf(stdout, "workspace: %d\nuuid: %s\nname: %s\nroot: %s\ndata: %s\ndatabase: %s\n", record.ID, record.UUID, record.Name, record.RootPath, workspace.DataPath, workspace.DatabasePath); err != nil {
 			return err
 		}
 		return writeExecutableInfo(stdout)
@@ -779,11 +778,12 @@ func mergeWorkspaceIDs(ids []string, records []WorkspaceRecord) []string {
 		merged = append(merged, id)
 	}
 	for _, record := range records {
-		if _, exists := seen[record.ID]; exists {
+		recordID := strconv.FormatInt(record.ID, 10)
+		if _, exists := seen[recordID]; exists {
 			continue
 		}
-		seen[record.ID] = struct{}{}
-		merged = append(merged, record.ID)
+		seen[recordID] = struct{}{}
+		merged = append(merged, recordID)
 	}
 	return merged
 }
@@ -975,13 +975,13 @@ func runWorkspace(args []string, stdout io.Writer) error {
 		}
 		switch status {
 		case WorkspaceUpdated:
-			_, err = fmt.Fprintf(stdout, "updated ctx workspace %s\n", workspace.ID)
+			_, err = fmt.Fprintf(stdout, "updated ctx workspace %d\n", workspace.ID)
 			return err
 		case WorkspaceUnchanged:
-			_, err = fmt.Fprintf(stdout, "ctx workspace already initialized %s\n", workspace.ID)
+			_, err = fmt.Fprintf(stdout, "ctx workspace already initialized %d\n", workspace.ID)
 			return err
 		}
-		_, err = fmt.Fprintf(stdout, "initialized ctx workspace %s\n", workspace.ID)
+		_, err = fmt.Fprintf(stdout, "initialized ctx workspace %d\n", workspace.ID)
 		return err
 	case "ls":
 		if len(args) != 1 {
@@ -1011,7 +1011,7 @@ func runWorkspace(args []string, stdout io.Writer) error {
 			return err
 		}
 		if !yes {
-			fmt.Fprintf(stdout, "Remove workspace %s (%s) and all ctx data? [y/N] ", record.ID, record.RootPath)
+			fmt.Fprintf(stdout, "Remove workspace %d (%s) and all ctx data? [y/N] ", record.ID, record.RootPath)
 			if !scanner.Scan() {
 				if err := scanner.Err(); err != nil {
 					return fmt.Errorf("failed to read confirmation: %w", err)
@@ -1028,7 +1028,7 @@ func runWorkspace(args []string, stdout io.Writer) error {
 		if err := RemoveWorkspace(record); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintf(stdout, "removed workspace: %s %s\n", record.ID, record.RootPath)
+		_, err = fmt.Fprintf(stdout, "removed workspace: %d %s\n", record.ID, record.RootPath)
 		return err
 	default:
 		return fmt.Errorf("unknown ctx workspace command: %s", args[0])
@@ -1102,32 +1102,32 @@ func runProject(args []string, stdout io.Writer) error {
 			_, err = fmt.Fprintln(stdout, "no projects")
 			return err
 		}
+		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+		if _, err := fmt.Fprintln(tw, "ID\tNAME"); err != nil {
+			return err
+		}
 		for _, project := range projects {
-			if _, err := fmt.Fprintln(stdout, project.Path); err != nil {
+			if _, err := fmt.Fprintf(tw, "%d\t%s\n", project.ID, project.Name); err != nil {
 				return err
 			}
 		}
-		return nil
+		return tw.Flush()
 	case "rm":
-		name, yes, err := parseProjectRemoveArgs(args[1:])
+		identifier, yes, err := parseProjectRemoveArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		root, err := requiredProjectRoot()
-		if err != nil {
-			return err
-		}
-		path, err := projectPath(root, name)
+		project, err := ResolveProject(identifier)
 		if err != nil {
 			return err
 		}
 		if !yes {
-			ok, err := confirmProjectRemoval(stdout, bufio.NewScanner(workspaceStdin), name, path)
+			ok, err := confirmProjectRemoval(stdout, bufio.NewScanner(workspaceStdin), project.Name, project.Path)
 			if err != nil || !ok {
 				return err
 			}
 		}
-		removedPath, err := RemoveProject(name)
+		removedPath, err := removeResolvedProject(project)
 		if err != nil {
 			return err
 		}
@@ -1139,26 +1139,26 @@ func runProject(args []string, stdout io.Writer) error {
 }
 
 func parseProjectRemoveArgs(args []string) (string, bool, error) {
-	var name string
+	var identifier string
 	var yes bool
 	for _, arg := range args {
 		switch arg {
 		case "--yes", "-y":
 			if yes {
-				return "", false, errors.New("usage: ctx project rm <name> [-y|--yes]")
+				return "", false, errors.New("usage: ctx project rm <id|name> [-y|--yes]")
 			}
 			yes = true
 		default:
-			if strings.HasPrefix(arg, "-") || name != "" {
-				return "", false, errors.New("usage: ctx project rm <name> [-y|--yes]")
+			if strings.HasPrefix(arg, "-") || identifier != "" {
+				return "", false, errors.New("usage: ctx project rm <id|name> [-y|--yes]")
 			}
-			name = arg
+			identifier = arg
 		}
 	}
-	if name == "" {
-		return "", false, errors.New("usage: ctx project rm <name> [-y|--yes]")
+	if identifier == "" {
+		return "", false, errors.New("usage: ctx project rm <id|name> [-y|--yes]")
 	}
-	return name, yes, nil
+	return identifier, yes, nil
 }
 
 func parseWorkspaceRemoveArgs(args []string) (string, bool, error) {
@@ -1183,8 +1183,16 @@ func parseWorkspaceRemoveArgs(args []string) (string, bool, error) {
 
 func selectWorkspaceForRemoval(id string, records []WorkspaceRecord, scanner *bufio.Scanner, stdout io.Writer) (WorkspaceRecord, error) {
 	if id != "" {
+		if parsedID, parseErr := strconv.ParseInt(id, 10, 64); parseErr == nil {
+			for _, record := range records {
+				if record.ID == parsedID {
+					return record, nil
+				}
+			}
+			return WorkspaceRecord{}, fmt.Errorf("workspace not found: %s", id)
+		}
 		for _, record := range records {
-			if record.ID == id {
+			if strconv.FormatInt(record.ID, 10) == id {
 				return record, nil
 			}
 		}
@@ -1202,7 +1210,7 @@ func selectWorkspaceForRemoval(id string, records []WorkspaceRecord, scanner *bu
 				return record, nil
 			}
 		}
-		return WorkspaceRecord{}, fmt.Errorf("workspace not found in database: %s", current.ID)
+		return WorkspaceRecord{}, fmt.Errorf("workspace not found in database: %d", current.ID)
 	}
 	if !errors.Is(err, ErrWorkspaceNotFound) {
 		return WorkspaceRecord{}, err
@@ -1230,14 +1238,20 @@ func printWorkspaceRecords(stdout io.Writer, records []WorkspaceRecord, numbered
 		_, err := fmt.Fprintln(stdout, "no workspaces")
 		return err
 	}
-	for i, record := range records {
-		if numbered {
-			if _, err := fmt.Fprintf(stdout, "%d  %s  %s\n", i+1, record.ID, record.RootPath); err != nil {
+	if !numbered {
+		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+		if _, err := fmt.Fprintln(tw, "ID\tNAME\tPATH"); err != nil {
+			return err
+		}
+		for _, record := range records {
+			if _, err := fmt.Fprintf(tw, "%d\t%s\t%s\n", record.ID, record.Name, record.RootPath); err != nil {
 				return err
 			}
-			continue
 		}
-		if _, err := fmt.Fprintf(stdout, "%s  %s\n", record.ID, record.RootPath); err != nil {
+		return tw.Flush()
+	}
+	for i, record := range records {
+		if _, err := fmt.Fprintf(stdout, "%d  %d  %s\n", i+1, record.ID, record.RootPath); err != nil {
 			return err
 		}
 	}
@@ -1698,7 +1712,7 @@ func completionValues(kind string) ([]string, error) {
 		}
 		values := make([]string, 0, len(records))
 		for _, record := range records {
-			values = append(values, record.ID)
+			values = append(values, strconv.FormatInt(record.ID, 10))
 		}
 		return values, nil
 	}
@@ -1769,7 +1783,7 @@ func completionDescriptions(kind string) ([]string, error) {
 		}
 		values := make([]string, 0, len(records))
 		for _, record := range records {
-			values = append(values, zshCompletionSpec(record.ID, record.RootPath))
+			values = append(values, zshCompletionSpec(strconv.FormatInt(record.ID, 10), record.RootPath))
 		}
 		return values, nil
 	}

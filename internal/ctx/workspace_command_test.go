@@ -62,7 +62,7 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace init) repair error = %v", err)
 	}
-	if got, want := out.String(), "updated ctx workspace "+workspace.ID+"\n"; got != want {
+	if got, want := out.String(), "updated ctx workspace "+workspaceIDString(workspace.ID)+"\n"; got != want {
 		t.Fatalf("repair output = %q, want %q", got, want)
 	}
 	exists, err := WorkspaceRecordExists(workspace)
@@ -77,7 +77,7 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace init) after repair error = %v", err)
 	}
-	if got, want := out.String(), "ctx workspace already initialized "+workspace.ID+"\n"; got != want {
+	if got, want := out.String(), "ctx workspace already initialized "+workspaceIDString(workspace.ID)+"\n"; got != want {
 		t.Fatalf("after repair output = %q, want %q", got, want)
 	}
 
@@ -92,7 +92,7 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace init) empty database repair error = %v", err)
 	}
-	if got, want := out.String(), "updated ctx workspace "+workspace.ID+"\n"; got != want {
+	if got, want := out.String(), "updated ctx workspace "+workspaceIDString(workspace.ID)+"\n"; got != want {
 		t.Fatalf("empty database repair output = %q, want %q", got, want)
 	}
 	exists, err = WorkspaceRecordExists(workspace)
@@ -110,15 +110,16 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace init) marker restore error = %v", err)
 	}
-	if got, want := out.String(), "updated ctx workspace "+workspace.ID+"\n"; got != want {
+	if got, want := out.String(), "updated ctx workspace "+workspaceIDString(workspace.ID)+"\n"; got != want {
 		t.Fatalf("marker restore output = %q, want %q", got, want)
 	}
 	marker, err := os.ReadFile(filepath.Join(root, MarkerFile))
 	if err != nil {
 		t.Fatalf("ReadFile(restored .ctx) error = %v", err)
 	}
-	if got := strings.TrimSpace(string(marker)); got != workspace.ID {
-		t.Fatalf("restored marker id = %q, want %q", got, workspace.ID)
+	markerLines := strings.Split(strings.TrimSpace(string(marker)), "\n")
+	if len(markerLines) != 2 || markerLines[0] != workspaceIDString(workspace.ID) || markerLines[1] != workspace.UUID {
+		t.Fatalf("restored marker = %q, want id and uuid", strings.TrimSpace(string(marker)))
 	}
 }
 
@@ -153,7 +154,7 @@ func TestWorkspaceRemoveUsesCurrentWorkspace(t *testing.T) {
 	if err := Run([]string{"ctx", "workspace", "rm"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace rm) error = %v", err)
 	}
-	if !strings.Contains(out.String(), "Remove workspace") || !strings.Contains(out.String(), "removed workspace: "+workspace.ID) {
+	if !strings.Contains(out.String(), "Remove workspace") || !strings.Contains(out.String(), "removed workspace: "+workspaceIDString(workspace.ID)) {
 		t.Fatalf("output = %q, want confirmation and removal", out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, MarkerFile)); !os.IsNotExist(err) {
@@ -189,10 +190,10 @@ func TestWorkspaceRemoveOutsideWorkspaceListsAndSelects(t *testing.T) {
 	}
 	text := out.String()
 	for _, want := range []string{
-		"1  " + alpha.ID + "  " + alphaRoot,
-		"2  " + beta.ID + "  " + betaRoot,
+		"1  " + workspaceIDString(alpha.ID) + "  " + alphaRoot,
+		"2  " + workspaceIDString(beta.ID) + "  " + betaRoot,
 		"Select workspace to remove",
-		"removed workspace: " + beta.ID,
+		"removed workspace: " + workspaceIDString(beta.ID),
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("output = %q, want %q", text, want)
@@ -225,7 +226,7 @@ func TestWorkspaceRemoveByIDWithYes(t *testing.T) {
 	chdirForTest(t, outside)
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "workspace", "rm", workspace.ID, "--yes"}, &out); err != nil {
+	if err := Run([]string{"ctx", "workspace", "rm", workspaceIDString(workspace.ID), "--yes"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace rm <id> --yes) error = %v", err)
 	}
 	if strings.Contains(out.String(), "[y/N]") {
@@ -244,7 +245,7 @@ func TestWorkspaceRemoveByIDWithShortYes(t *testing.T) {
 	chdirForTest(t, outside)
 
 	var out bytes.Buffer
-	if err := Run([]string{"ctx", "workspace", "rm", workspace.ID, "-y"}, &out); err != nil {
+	if err := Run([]string{"ctx", "workspace", "rm", workspaceIDString(workspace.ID), "-y"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace rm <id> -y) error = %v", err)
 	}
 	if strings.Contains(out.String(), "[y/N]") {
@@ -264,8 +265,11 @@ func TestWorkspaceList(t *testing.T) {
 	if err := Run([]string{"ctx", "workspace", "ls"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace ls) error = %v", err)
 	}
-	if got, want := out.String(), workspace.ID+"  "+root+"\n"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
+	text := out.String()
+	for _, want := range []string{"ID", "NAME", "PATH", workspaceIDString(workspace.ID), filepath.Base(root), root} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("output = %q, want %q", text, want)
+		}
 	}
 }
 

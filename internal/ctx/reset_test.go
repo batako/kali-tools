@@ -139,9 +139,9 @@ func TestResetCtxDataRemovesMarkerWhenDatabaseContainsStaleIDs(t *testing.T) {
 		t.Fatalf("InitWorkspace() error = %v", err)
 	}
 	err = ResetCtxData([]WorkspaceRecord{
-		{ID: "stale-id-1", RootPath: root},
-		{ID: "stale-id-2", RootPath: root},
-		{ID: workspace.ID, RootPath: root},
+		{ID: 101, UUID: "stale-uuid-1", RootPath: root},
+		{ID: 102, UUID: "stale-uuid-2", RootPath: root},
+		{ID: workspace.ID, UUID: workspace.UUID, RootPath: root},
 	})
 	if err != nil {
 		t.Fatalf("ResetCtxData() error = %v", err)

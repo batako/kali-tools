@@ -148,7 +148,7 @@ func GetHost(workspace *Workspace, hostname string) (*Host, error) {
 	return &host, nil
 }
 
-func hostTarget(db *sql.DB, workspaceID, targetName string) (*Target, error) {
+func hostTarget(db *sql.DB, workspaceID int64, targetName string) (*Target, error) {
 	var target Target
 	var isPrimary int
 	var err error
@@ -239,7 +239,7 @@ func RenderHostsBlock(workspace *Workspace) (string, error) {
 
 	var b strings.Builder
 	found := false
-	fmt.Fprintf(&b, "# >>> ctx: %s\n", workspace.ID)
+	fmt.Fprintf(&b, "# >>> ctx: %d\n", workspace.ID)
 
 	var currentTargetID int64
 	var currentIP string
@@ -275,7 +275,7 @@ func RenderHostsBlock(workspace *Workspace) (string, error) {
 		return "", nil
 	}
 
-	fmt.Fprintf(&b, "# <<< ctx: %s\n", workspace.ID)
+	fmt.Fprintf(&b, "# <<< ctx: %d\n", workspace.ID)
 	return b.String(), nil
 }
 
@@ -290,7 +290,7 @@ func SyncHostsFile(workspace *Workspace, hostsPath string) error {
 		return fmt.Errorf("failed to read hosts file %s: %w", hostsPath, err)
 	}
 
-	updated, err := replaceHostsBlock(string(content), workspace.ID, block)
+	updated, err := replaceHostsBlock(string(content), fmt.Sprintf("%d", workspace.ID), block)
 	if err != nil {
 		return err
 	}
@@ -376,7 +376,7 @@ func CleanHostsFile(workspace *Workspace, hostsPath string) error {
 		return fmt.Errorf("failed to read hosts file %s: %w", hostsPath, err)
 	}
 
-	updated, err := replaceHostsBlock(string(content), workspace.ID, "")
+	updated, err := replaceHostsBlock(string(content), fmt.Sprintf("%d", workspace.ID), "")
 	if err != nil {
 		return err
 	}
