@@ -40,23 +40,11 @@ func SetProjectRoot(rawPath string) (string, error) {
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return "", fmt.Errorf("failed to create project root %s: %w", root, err)
 	}
-	config, err := LoadConfig()
-	if err != nil {
-		return "", err
-	}
-	config.ProjectRoot = root
-	if err := SaveConfig(config); err != nil {
-		return "", err
-	}
-	return root, nil
+	return SetConfigValue(ConfigKeyProjectRoot, root)
 }
 
 func GetProjectRoot() (string, error) {
-	config, err := LoadConfig()
-	if err != nil {
-		return "", err
-	}
-	return config.ProjectRoot, nil
+	return GetConfigValue(ConfigKeyProjectRoot)
 }
 
 func CreateProject(name string) (string, error) {

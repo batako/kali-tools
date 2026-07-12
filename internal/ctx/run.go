@@ -34,6 +34,7 @@ const usageText = `usage: ctx <command> [options]
 
 commands:
   status   show the current workspace
+  config   get or set ctx configuration
   workspace  initialize, list, or remove workspaces
   project    create and manage projects under the configured root
   target   manage targets
@@ -59,6 +60,7 @@ options:
 
 shortcuts (requires ctx init-shell):
   xinit        ctx workspace init
+  xconfig      ctx config
   xworkspace   ctx workspace
   xstatus      ctx status
   xproject     ctx project
@@ -93,6 +95,21 @@ Show the current ctx workspace.
 
 options:
   -h, --help  show this help`
+
+const configUsageText = `usage: ctx config [<command>] [options]
+
+Manage ctx configuration.
+
+commands:
+  ls                list configuration values
+  get <key>         print a configuration value
+  set <key> <value> set a configuration value
+
+keys:
+  project.root      project root directory
+
+options:
+  -h, --help        show this help`
 
 const workspaceUsageText = `usage: ctx workspace <command> [options]
 
@@ -318,6 +335,8 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		return writeExecutableInfo(stdout)
+	case "config":
+		return runConfig(args[2:], stdout)
 	case "workspace":
 		return runWorkspace(args[2:], stdout)
 	case "project":
@@ -941,6 +960,63 @@ func runNote(args []string, stdout io.Writer) error {
 	}
 	_, err = fmt.Fprintf(stdout, "saved note: note:%d\n", note.ID)
 	return err
+}
+
+func runConfig(args []string, stdout io.Writer) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		_, err := fmt.Fprintln(stdout, configUsageText)
+		return err
+	}
+	if len(args) == 0 {
+		return printConfigValues(stdout)
+	}
+
+	switch args[0] {
+	case "ls":
+		if len(args) != 1 {
+			return errors.New("usage: ctx config ls")
+		}
+		return printConfigValues(stdout)
+	case "get":
+		if len(args) != 2 {
+			return errors.New("usage: ctx config get <key>")
+		}
+		value, err := GetConfigValue(args[1])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, value)
+		return err
+	case "set":
+		if len(args) != 3 {
+			return errors.New("usage: ctx config set <key> <value>")
+		}
+		value, err := SetConfigValue(args[1], args[2])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, value)
+		return err
+	default:
+		return fmt.Errorf("unknown ctx config command: %s", args[0])
+	}
+}
+
+func printConfigValues(stdout io.Writer) error {
+	entries, err := ListConfigValues()
+	if err != nil {
+		return err
+	}
+	table := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(table, "KEY\tVALUE"); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if _, err := fmt.Fprintf(table, "%s\t%s\n", entry.Key, entry.Value); err != nil {
+			return err
+		}
+	}
+	return table.Flush()
 }
 
 func runWorkspace(args []string, stdout io.Writer) error {

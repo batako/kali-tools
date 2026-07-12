@@ -24,7 +24,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 		if !strings.Contains(got, "-V, --version") {
 			t.Fatalf("help output = %q, want -V/--version option", got)
 		}
-		for _, command := range []string{"project", "scan", "completion", "init-shell", "doctor"} {
+		for _, command := range []string{"config", "project", "scan", "completion", "init-shell", "doctor"} {
 			if !strings.Contains(got, command) {
 				t.Fatalf("help output = %q, want command %q", got, command)
 			}
@@ -37,6 +37,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 		}
 		shortcuts := map[string]string{
 			"xinit":       "ctx workspace init",
+			"xconfig":     "ctx config",
 			"xstatus":     "ctx status",
 			"xworkspace":  "ctx workspace",
 			"xproject":    "ctx project",
@@ -185,6 +186,7 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		want string
 	}{
 		{[]string{"ctx", "status", "--help"}, "usage: ctx status [options]"},
+		{[]string{"ctx", "config", "-h"}, "usage: ctx config [<command>] [options]"},
 		{[]string{"ctx", "workspace", "-h"}, "usage: ctx workspace <command> [options]"},
 		{[]string{"ctx", "workspace", "init", "--help"}, "usage: ctx workspace <command> [options]"},
 		{[]string{"ctx", "workspace", "rm", "--help"}, "usage: ctx workspace <command> [options]"},

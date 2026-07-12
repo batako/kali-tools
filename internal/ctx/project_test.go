@@ -26,12 +26,12 @@ func TestProjectRootStoresAbsolutePathAndCreatesDirectory(t *testing.T) {
 		t.Fatalf("project root Stat() = %v, %v, want directory", info, err)
 	}
 
-	config, err := LoadConfig()
+	configRoot, err := GetConfigValue(ConfigKeyProjectRoot)
 	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
+		t.Fatalf("GetConfigValue(project.root) error = %v", err)
 	}
-	if config.ProjectRoot != want {
-		t.Fatalf("config project root = %q, want %q", config.ProjectRoot, want)
+	if configRoot != want {
+		t.Fatalf("config project root = %q, want %q", configRoot, want)
 	}
 }
 

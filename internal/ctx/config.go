@@ -12,6 +12,13 @@ type Config struct {
 	ProjectRoot string
 }
 
+const ConfigKeyProjectRoot = "project.root"
+
+type ConfigEntry struct {
+	Key   string
+	Value string
+}
+
 func configPath() string {
 	return filepath.Join(dataRoot(), "config.toml")
 }
@@ -68,6 +75,50 @@ func SaveConfig(config *Config) error {
 		return fmt.Errorf("failed to write config %s: %w", path, err)
 	}
 	return nil
+}
+
+func GetConfigValue(key string) (string, error) {
+	config, err := LoadConfig()
+	if err != nil {
+		return "", err
+	}
+	switch key {
+	case ConfigKeyProjectRoot:
+		return config.ProjectRoot, nil
+	default:
+		return "", fmt.Errorf("unknown config key: %s", key)
+	}
+}
+
+func SetConfigValue(key, value string) (string, error) {
+	config, err := LoadConfig()
+	if err != nil {
+		return "", err
+	}
+	switch key {
+	case ConfigKeyProjectRoot:
+		root, err := expandPath(value)
+		if err != nil {
+			return "", err
+		}
+		config.ProjectRoot = root
+		if err := SaveConfig(config); err != nil {
+			return "", err
+		}
+		return root, nil
+	default:
+		return "", fmt.Errorf("unknown config key: %s", key)
+	}
+}
+
+func ListConfigValues() ([]ConfigEntry, error) {
+	config, err := LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	return []ConfigEntry{
+		{Key: ConfigKeyProjectRoot, Value: config.ProjectRoot},
+	}, nil
 }
 
 func expandPath(path string) (string, error) {

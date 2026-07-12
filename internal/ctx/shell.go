@@ -237,7 +237,7 @@ func enableExtraShortcutsInZshCompletionScript(script string) (string, error) {
 			old: `xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `,
 			new: `xreset() { ctx reset "$@" }
 pj() { xproject "$@" }
@@ -246,7 +246,7 @@ unalias cr 2>/dev/null
 cr() { xcredential "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
+compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
 `,
 		},
 	})
@@ -313,7 +313,7 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
 			old: `xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `,
 			new: `xreset() { ctx reset "$@"; }
 pj() { xproject "$@"; }
@@ -322,7 +322,7 @@ unalias cr 2>/dev/null
 cr() { xcredential "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
+complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
 `,
 		},
 	})
@@ -373,10 +373,11 @@ func removeMarkedBlock(text string) (string, bool) {
 	return text[:start] + text[end:], true
 }
 
-const zshCompletionScript = `#compdef ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
+const zshCompletionScript = `#compdef ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 
 _ctx_commands=(
   'status:show the current workspace'
+  'config:get or set ctx configuration'
   'workspace:initialize, list, or remove workspaces'
   'project:create and manage projects under the configured root'
   'target:manage targets'
@@ -395,6 +396,16 @@ _ctx_commands=(
   'init-shell:configure shell integration'
   'doctor:check ctx environment'
   'reset:remove all ctx data and configuration'
+)
+
+_ctx_config_commands=(
+  'ls:list configuration values'
+  'get:print a configuration value'
+  'set:set a configuration value'
+)
+
+_ctx_config_keys=(
+  'project.root:project root directory'
 )
 
 _ctx_workspace_commands=(
@@ -558,6 +569,7 @@ _ctx() {
 
   if (( CURRENT == command_position + 1 )); then
     case ${command} in
+      config) _describe 'config command' _ctx_config_commands ;;
       workspace) _describe 'workspace command' _ctx_workspace_commands ;;
       project) _describe 'project command' _ctx_project_commands ;;
       target) _describe 'target command' _ctx_target_commands ;;
@@ -582,6 +594,13 @@ _ctx() {
   fi
 
   case ${command} in
+    config)
+      if [[ ${subcommand} == get || ${subcommand} == set ]] && (( CURRENT == command_position + 2 )); then
+        _describe 'config key' _ctx_config_keys
+      else
+        _message 'argument'
+      fi
+      ;;
     workspace)
       if [[ ${subcommand} == rm ]] && (( CURRENT == command_position + 2 )); then
         _ctx_dynamic_descriptions workspace
@@ -670,6 +689,7 @@ _ctx() {
 _xctx_call() { ctx "${0#x}" "$@" }
 xinit() { ctx workspace init "$@" }
 xstatus() { ctx status "$@" }
+xconfig() { ctx config "$@" }
 xworkspace() { ctx workspace "$@" }
 xproject() {
   if [[ $# == 0 || $1 == root || $1 == ls || $1 == rm || $1 == -h || $1 == --help ]]; then
@@ -703,7 +723,7 @@ xinit-shell() { ctx init-shell "$@" }
 xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `
 
 const bashCompletionScript = `_ctx_complete_values() {
@@ -759,12 +779,22 @@ _ctx_completion() {
 
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status workspace project target ip host hosts scan service credential note log prompt formats x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status config workspace project target ip host hosts scan service credential note log prompt formats x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)
       COMPREPLY=($(compgen -W "init ls rm" -- "${cur}"))
       return
+      ;;
+    config|xconfig)
+      COMPREPLY=($(compgen -W "ls get set -h --help" -- "${cur}"))
+      return
+      ;;
+    get|set)
+      if [[ ${command} == config ]]; then
+        COMPREPLY=($(compgen -W "project.root" -- "${cur}"))
+        return
+      fi
       ;;
     project|xproject)
       COMPREPLY=($(compgen -W "root new ls rm" -- "${cur}"))
@@ -856,6 +886,7 @@ _ctx_completion() {
 
 xinit() { ctx workspace init "$@"; }
 xstatus() { ctx status "$@"; }
+xconfig() { ctx config "$@"; }
 xworkspace() { ctx workspace "$@"; }
 xproject() {
   if [[ $# == 0 || $1 == root || $1 == ls || $1 == rm || $1 == -h || $1 == --help ]]; then
@@ -889,5 +920,5 @@ xinit-shell() { ctx init-shell "$@"; }
 xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `
