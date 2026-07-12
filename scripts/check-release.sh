@@ -203,7 +203,7 @@ check_deb_install() {
   absolute_deb_path="$(cd "$(dirname "${deb_path}")" && pwd)/$(basename "${deb_path}")"
   install_output="${TMP_DIR}/apt-install-output"
 
-  if ! sudo apt-get install --reinstall -y "${absolute_deb_path}" >"${install_output}" 2>&1 ||
+  if ! sudo apt-get install --reinstall --allow-downgrades -y "${absolute_deb_path}" >"${install_output}" 2>&1 ||
     ! test "$(dpkg-query -W -f='${Version}' "${PACKAGE_NAME}")" = "${expected_version}" ||
     ! test "$("${PACKAGE_NAME}" -V)" = "${PACKAGE_NAME} ${expected_version}" ||
     ! "${PACKAGE_NAME}" --help >/dev/null; then
@@ -225,7 +225,7 @@ check_deb_install() {
 
   if ! sudo apt-get remove -y "${PACKAGE_NAME}" >/dev/null ||
     ! test ! -e "/usr/local/bin/${PACKAGE_NAME}" ||
-    ! sudo apt-get install -y "${absolute_deb_path}" >/dev/null; then
+    ! sudo apt-get install --allow-downgrades -y "${absolute_deb_path}" >/dev/null; then
     return 1
   fi
 }
