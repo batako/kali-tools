@@ -1,0 +1,164 @@
+name: publish-release
+
+on:
+  push:
+    tags:
+      - ctx-v*
+      - req-v*
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          path: source
+
+      - name: Checkout apt-repo
+        uses: actions/checkout@v4
+        with:
+          ref: apt-repo
+          fetch-depth: 1
+          path: apt-repo
+
+      - name: Resolve release tag
+        run: |
+          set -eu
+
+          tag="${GITHUB_REF_NAME}"
+          case "${tag}" in
+            ctx-v*) application="ctx"; version="${tag#ctx-v}" ;;
+            req-v*) application="req"; version="${tag#req-v}" ;;
+            *)
+              echo "unsupported release tag: ${tag}" >&2
+              exit 1
+              ;;
+          esac
+
+          case "${version}" in
+            *[!0-9.]* | "" | .* | *.)
+              echo "invalid release tag version: ${version}" >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "APPLICATION=${application}"
+            echo "VERSION=${version}"
+            echo "RELEASE_TAG=${tag}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Validate release notes
+        run: |
+          set -eu
+
+          case "${APPLICATION}" in
+            ctx|req) ;;
+            *)
+              echo "unsupported application: ${APPLICATION}" >&2
+              exit 1
+              ;;
+          esac
+
+          case "${VERSION}" in
+            *[!0-9.]* | "" | .* | *.)
+              echo "invalid version: ${VERSION}" >&2
+              exit 1
+              ;;
+          esac
+
+          release_notes="source/releases/${APPLICATION}/${VERSION}.md"
+          if [ ! -f "${release_notes}" ]; then
+            echo "missing release notes: releases/${APPLICATION}/${VERSION}.md" >&2
+            exit 1
+          fi
+
+      - name: Collect and verify published Debian packages
+        run: |
+          set -eu
+
+          assets_dir="${GITHUB_WORKSPACE}/release-assets"
+          mkdir -p "${assets_dir}"
+
+          package_prefix="$(printf '%s' "${APPLICATION}" | cut -c 1)"
+          package_dir="apt-repo/pool/main/${package_prefix}/${APPLICATION}"
+
+          if [ ! -d "${package_dir}" ]; then
+            echo "missing APT package directory: ${package_dir}" >&2
+            exit 1
+          fi
+
+          found=0
+          for deb_path in "${package_dir}/${APPLICATION}_${VERSION}_"*.deb; do
+            if [ ! -e "${deb_path}" ]; then
+              continue
+            fi
+
+            package="$(dpkg-deb -f "${deb_path}" Package)"
+            version="$(dpkg-deb -f "${deb_path}" Version)"
+            architecture="$(dpkg-deb -f "${deb_path}" Architecture)"
+
+            if [ "${package}" != "${APPLICATION}" ]; then
+              echo "${deb_path}: Package is ${package}, want ${APPLICATION}" >&2
+              exit 1
+            fi
+            if [ "${version}" != "${VERSION}" ]; then
+              echo "${deb_path}: Version is ${version}, want ${VERSION}" >&2
+              exit 1
+            fi
+            if [ -z "${architecture}" ]; then
+              echo "${deb_path}: Architecture is empty" >&2
+              exit 1
+            fi
+
+            cp "${deb_path}" "${assets_dir}/"
+            found=$((found + 1))
+          done
+
+          if [ "${found}" -eq 0 ]; then
+            echo "missing published .deb files for ${APPLICATION} ${VERSION}" >&2
+            exit 1
+          fi
+
+          (
+            cd "${assets_dir}"
+            sha256sum *.deb > checksums.txt
+          )
+
+          echo "Collected ${found} package(s):"
+          ls -1 "${assets_dir}"
+
+      - name: Ensure release does not already exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "GitHub Release already exists: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+
+          title="${APPLICATION} v${VERSION}"
+          notes="${GITHUB_WORKSPACE}/source/releases/${APPLICATION}/${VERSION}.md"
+          assets_dir="${GITHUB_WORKSPACE}/release-assets"
+
+          gh release create "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${title}" \
+            --notes-file "${notes}" \
+            "${assets_dir}"/*.deb \
+            "${assets_dir}/checksums.txt"
