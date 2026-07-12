@@ -2,13 +2,28 @@ package ctx
 
 import (
 	"database/sql"
+	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/golang-migrate/migrate/v4"
+	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "modernc.org/sqlite"
 )
+
+const (
+	currentSchemaVersion     = 1
+	v100SchemaVersion        = 1
+	latestSchemaSnapshotPath = "schema.sql"
+)
+
+//go:embed schema.sql migrations/*.sql
+var embeddedMigrations embed.FS
 
 type WorkspaceRecord struct {
 	ID        string
@@ -187,193 +202,93 @@ func openDatabase(path string) (*sql.DB, error) {
 }
 
 func createSchema(db *sql.DB) error {
-	for _, statement := range schemaStatements() {
-		if _, err := db.Exec(statement); err != nil {
-			return fmt.Errorf("failed to create database schema: %w", err)
-		}
-	}
-	if err := migrateCredentialsSchema(db); err != nil {
-		return err
-	}
-	return nil
-}
-
-func schemaStatements() []string {
-	return []string{
-		`CREATE TABLE IF NOT EXISTS workspaces (
-			id TEXT PRIMARY KEY,
-			root_path TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE (root_path)
-		)`,
-		`CREATE TABLE IF NOT EXISTS targets (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			workspace_id TEXT NOT NULL,
-			name TEXT NOT NULL,
-			ip TEXT NOT NULL,
-			os_name TEXT,
-			os_accuracy INTEGER,
-			os_source TEXT,
-			is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-			UNIQUE (workspace_id, name)
-		)`,
-		`CREATE TABLE IF NOT EXISTS command_logs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			workspace_id TEXT NOT NULL,
-			command TEXT NOT NULL,
-			expanded_command TEXT NOT NULL,
-			status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed', 'interrupted')),
-			exit_code INTEGER,
-			stdout TEXT,
-			stderr TEXT,
-			started_at TEXT NOT NULL,
-			ended_at TEXT,
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
-		)`,
-		`CREATE TABLE IF NOT EXISTS hosts (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			target_id INTEGER NOT NULL,
-			hostname TEXT NOT NULL,
-			source TEXT,
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
-			UNIQUE (target_id, hostname)
-		)`,
-		`CREATE TABLE IF NOT EXISTS services (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			target_id INTEGER NOT NULL,
-			port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
-			protocol TEXT NOT NULL,
-			state TEXT,
-			reason TEXT,
-			service_name TEXT,
-			product TEXT,
-			version TEXT,
-			extrainfo TEXT,
-			tunnel TEXT,
-			cpe TEXT,
-			last_seen TEXT,
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
-			UNIQUE (target_id, port, protocol)
-		)`,
-		`CREATE TABLE IF NOT EXISTS credentials (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			target_id INTEGER NOT NULL,
-			scope TEXT NOT NULL,
-			username TEXT NOT NULL,
-			password TEXT,
-			verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
-			evidence_log_id INTEGER,
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
-			FOREIGN KEY (evidence_log_id) REFERENCES command_logs(id) ON DELETE SET NULL,
-			UNIQUE (target_id, scope, username)
-		)`,
-		`CREATE TABLE IF NOT EXISTS scan_runs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			target_id INTEGER NOT NULL,
-			target_ip TEXT NOT NULL,
-			ports TEXT NOT NULL,
-			command_log_id INTEGER NOT NULL,
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
-			FOREIGN KEY (command_log_id) REFERENCES command_logs(id) ON DELETE CASCADE,
-			UNIQUE (target_id, target_ip, ports)
-		)`,
-		`CREATE TABLE IF NOT EXISTS notes (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			workspace_id TEXT NOT NULL,
-			body TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
-		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_targets_one_primary ON targets(workspace_id) WHERE is_primary = 1`,
-		`CREATE INDEX IF NOT EXISTS idx_targets_workspace_id ON targets(workspace_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_hosts_target_id ON hosts(target_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_services_target_id ON services(target_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_credentials_target_id ON credentials(target_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_command_logs_workspace_started_at ON command_logs(workspace_id, started_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_scan_runs_target_id ON scan_runs(target_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_notes_workspace_created_at ON notes(workspace_id, created_at DESC)`,
-	}
-}
-
-func migrateCredentialsSchema(db *sql.DB) error {
-	exists, err := tableExists(db, "credentials")
+	empty, err := databaseHasNoUserTables(db)
 	if err != nil {
 		return err
 	}
-	if !exists {
-		return nil
-	}
-	hasScope, err := tableColumnExists(db, "credentials", "scope")
-	if err != nil {
-		return err
-	}
-	if hasScope {
-		return nil
+	if empty {
+		return createLatestSchema(db, embeddedMigrations, latestSchemaSnapshotPath, currentSchemaVersion)
 	}
 
+	if err := baselineLegacyDatabase(db, embeddedMigrations, "migrations"); err != nil {
+		return err
+	}
+	return applyPendingMigrations(db, embeddedMigrations, "migrations")
+}
+
+func createLatestSchema(db *sql.DB, fsys fs.FS, schemaPath string, version uint) error {
+	schema, err := fs.ReadFile(fsys, schemaPath)
+	if err != nil {
+		return fmt.Errorf("failed to read embedded schema %s: %w", schemaPath, err)
+	}
 	tx, err := db.Begin()
 	if err != nil {
-		return fmt.Errorf("failed to start credentials migration: %w", err)
+		return fmt.Errorf("failed to start schema creation: %w", err)
 	}
 	defer tx.Rollback()
-
-	if _, err := tx.Exec(`
-		CREATE TABLE credentials_new (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			target_id INTEGER NOT NULL,
-			scope TEXT NOT NULL,
-			username TEXT NOT NULL,
-			password TEXT,
-			verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
-			evidence_log_id INTEGER,
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
-			FOREIGN KEY (evidence_log_id) REFERENCES command_logs(id) ON DELETE SET NULL,
-			UNIQUE (target_id, scope, username)
-		)
-	`); err != nil {
-		return fmt.Errorf("failed to create migrated credentials table: %w", err)
-	}
-	if _, err := tx.Exec(`
-		INSERT INTO credentials_new (
-			id, target_id, scope, username, password, verified,
-			evidence_log_id, created_at, updated_at
-		)
-		SELECT id, target_id, '', username, password, verified,
-		       evidence_log_id, created_at, updated_at
-		FROM credentials
-	`); err != nil {
-		return fmt.Errorf("failed to copy credentials: %w", err)
-	}
-	if _, err := tx.Exec(`DROP TABLE credentials`); err != nil {
-		return fmt.Errorf("failed to replace old credentials table: %w", err)
-	}
-	if _, err := tx.Exec(`ALTER TABLE credentials_new RENAME TO credentials`); err != nil {
-		return fmt.Errorf("failed to rename migrated credentials table: %w", err)
-	}
-	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_credentials_target_id ON credentials(target_id)`); err != nil {
-		return fmt.Errorf("failed to create credentials index: %w", err)
+	if _, err := tx.Exec(string(schema)); err != nil {
+		return fmt.Errorf("failed to create database schema: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit credentials migration: %w", err)
+		return fmt.Errorf("failed to commit schema creation: %w", err)
+	}
+	return forceSchemaVersion(db, fsys, "migrations", version)
+}
+
+func baselineLegacyDatabase(db *sql.DB, fsys fs.FS, migrationsPath string) error {
+	hasMigrations, err := tableExists(db, "schema_migrations")
+	if err != nil {
+		return err
+	}
+	if hasMigrations {
+		return nil
+	}
+
+	if err := validateV100Schema(db); err != nil {
+		return fmt.Errorf("database schema is not managed by migrations and is not a recognized ctx v1.0.0 schema: %w", err)
+	}
+	return forceSchemaVersion(db, fsys, migrationsPath, v100SchemaVersion)
+}
+
+func applyPendingMigrations(db *sql.DB, fsys fs.FS, migrationsPath string) error {
+	migrator, err := newMigrator(db, fsys, migrationsPath)
+	if err != nil {
+		return err
+	}
+	if err := migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("failed to apply database migrations: %w", err)
 	}
 	return nil
+}
+
+func forceSchemaVersion(db *sql.DB, fsys fs.FS, migrationsPath string, version uint) error {
+	migrator, err := newMigrator(db, fsys, migrationsPath)
+	if err != nil {
+		return err
+	}
+	if err := migrator.Force(int(version)); err != nil {
+		return fmt.Errorf("failed to mark database schema version %d: %w", version, err)
+	}
+	return nil
+}
+
+func newMigrator(db *sql.DB, fsys fs.FS, migrationsPath string) (*migrate.Migrate, error) {
+	sourceDriver, err := iofs.New(fsys, migrationsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load embedded migrations: %w", err)
+	}
+	databaseDriver, err := migratesqlite.WithInstance(db, &migratesqlite.Config{
+		DatabaseName: "ctx",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize migration database driver: %w", err)
+	}
+	migrator, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", databaseDriver)
+	if err != nil {
+		_ = sourceDriver.Close()
+		return nil, fmt.Errorf("failed to initialize database migrations: %w", err)
+	}
+	return migrator, nil
 }
 
 func tableExists(db *sql.DB, table string) (bool, error) {
@@ -386,6 +301,304 @@ func tableExists(db *sql.DB, table string) (bool, error) {
 		return false, fmt.Errorf("failed to inspect table %s: %w", table, err)
 	}
 	return exists == 1, nil
+}
+
+func databaseHasNoUserTables(db *sql.DB) (bool, error) {
+	rows, err := db.Query(`
+		SELECT name
+		FROM sqlite_master
+		WHERE type = 'table'
+		  AND name NOT LIKE 'sqlite_%'
+		  AND name <> 'schema_migrations'
+	`)
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect database tables: %w", err)
+	}
+	defer rows.Close()
+	hasTables := rows.Next()
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("failed to inspect database tables: %w", err)
+	}
+	return !hasTables, nil
+}
+
+type schemaColumn struct {
+	Name       string
+	Type       string
+	NotNull    bool
+	PrimaryKey bool
+	Default    string
+}
+
+type schemaTable struct {
+	Name         string
+	Columns      []schemaColumn
+	SQLFragments []string
+}
+
+var v100SchemaTables = []schemaTable{
+	{
+		Name: "workspaces",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "TEXT", PrimaryKey: true},
+			{Name: "root_path", Type: "TEXT", NotNull: true},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{"UNIQUE (root_path)"},
+	},
+	{
+		Name: "targets",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "workspace_id", Type: "TEXT", NotNull: true},
+			{Name: "name", Type: "TEXT", NotNull: true},
+			{Name: "ip", Type: "TEXT", NotNull: true},
+			{Name: "os_name", Type: "TEXT"},
+			{Name: "os_accuracy", Type: "INTEGER"},
+			{Name: "os_source", Type: "TEXT"},
+			{Name: "is_primary", Type: "INTEGER", NotNull: true, Default: "0"},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{"CHECK (is_primary IN (0, 1))", "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE", "UNIQUE (workspace_id, name)"},
+	},
+	{
+		Name: "command_logs",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "workspace_id", Type: "TEXT", NotNull: true},
+			{Name: "command", Type: "TEXT", NotNull: true},
+			{Name: "expanded_command", Type: "TEXT", NotNull: true},
+			{Name: "status", Type: "TEXT", NotNull: true},
+			{Name: "exit_code", Type: "INTEGER"},
+			{Name: "stdout", Type: "TEXT"},
+			{Name: "stderr", Type: "TEXT"},
+			{Name: "started_at", Type: "TEXT", NotNull: true},
+			{Name: "ended_at", Type: "TEXT"},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{"CHECK (status IN ('running', 'success', 'failed', 'interrupted'))", "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"},
+	},
+	{
+		Name: "hosts",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "target_id", Type: "INTEGER", NotNull: true},
+			{Name: "hostname", Type: "TEXT", NotNull: true},
+			{Name: "source", Type: "TEXT"},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{"FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE", "UNIQUE (target_id, hostname)"},
+	},
+	{
+		Name: "services",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "target_id", Type: "INTEGER", NotNull: true},
+			{Name: "port", Type: "INTEGER", NotNull: true},
+			{Name: "protocol", Type: "TEXT", NotNull: true},
+			{Name: "state", Type: "TEXT"},
+			{Name: "reason", Type: "TEXT"},
+			{Name: "service_name", Type: "TEXT"},
+			{Name: "product", Type: "TEXT"},
+			{Name: "version", Type: "TEXT"},
+			{Name: "extrainfo", Type: "TEXT"},
+			{Name: "tunnel", Type: "TEXT"},
+			{Name: "cpe", Type: "TEXT"},
+			{Name: "last_seen", Type: "TEXT"},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{"CHECK (port BETWEEN 1 AND 65535)", "FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE", "UNIQUE (target_id, port, protocol)"},
+	},
+	{
+		Name: "credentials",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "target_id", Type: "INTEGER", NotNull: true},
+			{Name: "scope", Type: "TEXT", NotNull: true},
+			{Name: "username", Type: "TEXT", NotNull: true},
+			{Name: "password", Type: "TEXT"},
+			{Name: "verified", Type: "INTEGER", NotNull: true, Default: "0"},
+			{Name: "evidence_log_id", Type: "INTEGER"},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{"CHECK (verified IN (0, 1))", "FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE", "FOREIGN KEY (evidence_log_id) REFERENCES command_logs(id) ON DELETE SET NULL", "UNIQUE (target_id, scope, username)"},
+	},
+	{
+		Name: "scan_runs",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "target_id", Type: "INTEGER", NotNull: true},
+			{Name: "target_ip", Type: "TEXT", NotNull: true},
+			{Name: "ports", Type: "TEXT", NotNull: true},
+			{Name: "command_log_id", Type: "INTEGER", NotNull: true},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{"FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE", "FOREIGN KEY (command_log_id) REFERENCES command_logs(id) ON DELETE CASCADE", "UNIQUE (target_id, target_ip, ports)"},
+	},
+	{
+		Name: "notes",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "workspace_id", Type: "TEXT", NotNull: true},
+			{Name: "body", Type: "TEXT", NotNull: true},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{"FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"},
+	},
+}
+
+var v100SchemaIndexes = map[string]string{
+	"idx_targets_one_primary":               "targets",
+	"idx_targets_workspace_id":              "targets",
+	"idx_hosts_target_id":                   "hosts",
+	"idx_services_target_id":                "services",
+	"idx_credentials_target_id":             "credentials",
+	"idx_command_logs_workspace_started_at": "command_logs",
+	"idx_scan_runs_target_id":               "scan_runs",
+	"idx_notes_workspace_created_at":        "notes",
+}
+
+func validateV100Schema(db *sql.DB) error {
+	if err := validateIntegrity(db); err != nil {
+		return err
+	}
+	for _, table := range v100SchemaTables {
+		if err := validateSchemaTable(db, table); err != nil {
+			return err
+		}
+	}
+	for index, table := range v100SchemaIndexes {
+		if err := validateSchemaIndex(db, index, table); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateIntegrity(db *sql.DB) error {
+	var result string
+	if err := db.QueryRow(`PRAGMA integrity_check`).Scan(&result); err != nil {
+		return fmt.Errorf("integrity_check failed to run: %w", err)
+	}
+	if result != "ok" {
+		return fmt.Errorf("integrity_check returned %q", result)
+	}
+	return nil
+}
+
+func validateSchemaTable(db *sql.DB, expected schemaTable) error {
+	exists, err := tableExists(db, expected.Name)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("missing required table %s", expected.Name)
+	}
+
+	columns, err := loadTableColumns(db, expected.Name)
+	if err != nil {
+		return err
+	}
+	for _, expectedColumn := range expected.Columns {
+		actual, ok := columns[expectedColumn.Name]
+		if !ok {
+			return fmt.Errorf("%s.%s is missing", expected.Name, expectedColumn.Name)
+		}
+		if actual.Type != expectedColumn.Type {
+			return fmt.Errorf("%s.%s type = %q, want %q", expected.Name, expectedColumn.Name, actual.Type, expectedColumn.Type)
+		}
+		if actual.NotNull != expectedColumn.NotNull {
+			return fmt.Errorf("%s.%s notnull = %t, want %t", expected.Name, expectedColumn.Name, actual.NotNull, expectedColumn.NotNull)
+		}
+		if actual.PrimaryKey != expectedColumn.PrimaryKey {
+			return fmt.Errorf("%s.%s primary key = %t, want %t", expected.Name, expectedColumn.Name, actual.PrimaryKey, expectedColumn.PrimaryKey)
+		}
+		if normalizeDefault(actual.Default) != normalizeDefault(expectedColumn.Default) {
+			return fmt.Errorf("%s.%s default = %q, want %q", expected.Name, expectedColumn.Name, actual.Default, expectedColumn.Default)
+		}
+	}
+
+	sqlText, err := tableSQL(db, expected.Name)
+	if err != nil {
+		return err
+	}
+	normalizedSQL := normalizeSQL(sqlText)
+	for _, fragment := range expected.SQLFragments {
+		if !strings.Contains(normalizedSQL, normalizeSQL(fragment)) {
+			return fmt.Errorf("%s DDL is missing %q", expected.Name, fragment)
+		}
+	}
+	return nil
+}
+
+func loadTableColumns(db *sql.DB, table string) (map[string]schemaColumn, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect %s columns: %w", table, err)
+	}
+	defer rows.Close()
+
+	columns := make(map[string]schemaColumn)
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return nil, fmt.Errorf("failed to read %s column: %w", table, err)
+		}
+		column := schemaColumn{
+			Name:       name,
+			Type:       strings.ToUpper(columnType),
+			NotNull:    notNull == 1,
+			PrimaryKey: primaryKey > 0,
+		}
+		if defaultValue.Valid {
+			column.Default = defaultValue.String
+		}
+		columns[name] = column
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to inspect %s columns: %w", table, err)
+	}
+	return columns, nil
+}
+
+func tableSQL(db *sql.DB, table string) (string, error) {
+	var sqlText string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&sqlText); err != nil {
+		return "", fmt.Errorf("failed to load %s DDL: %w", table, err)
+	}
+	return sqlText, nil
+}
+
+func validateSchemaIndex(db *sql.DB, index, table string) error {
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ? AND tbl_name = ?`, index, table).Scan(&count); err != nil {
+		return fmt.Errorf("failed to inspect index %s: %w", index, err)
+	}
+	if count != 1 {
+		return fmt.Errorf("missing required index %s on %s", index, table)
+	}
+	return nil
+}
+
+func normalizeDefault(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, "()")
+	return strings.ToUpper(strings.TrimSpace(value))
+}
+
+func normalizeSQL(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func tableColumnExists(db *sql.DB, table, column string) (bool, error) {
