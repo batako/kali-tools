@@ -2,12 +2,55 @@ package ctx
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestRunLogLifecycleAPI(t *testing.T) {
+	workspace := initXTestWorkspace(t)
+
+	var startOut, startErr bytes.Buffer
+	startInput := `{"command":"xssh","expanded_command":"ssh -p 22 testuser@172.18.0.5","started_at":"2026-07-13T00:00:00Z"}`
+	if err := RunWithInput([]string{"ctx", "log", "start", "--format", "json", "--format-version", "1"}, strings.NewReader(startInput), &startOut, &startErr); err != nil {
+		t.Fatalf("log start error = %v, stderr = %q", err, startErr.String())
+	}
+	var startResponse struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ID int64 `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(startOut.Bytes(), &startResponse); err != nil {
+		t.Fatalf("decode log start response: %v; output = %q", err, startOut.String())
+	}
+	if !startResponse.Success || startResponse.Data.ID < 1 {
+		t.Fatalf("log start response = %q, want successful ID", startOut.String())
+	}
+
+	var finishOut, finishErr bytes.Buffer
+	finishInput := `{"status":"success","exit_code":0,"stdout":"connected\n","stderr":"","ended_at":"2026-07-13T00:05:00Z"}`
+	finishArgs := []string{"ctx", "log", "finish", strconv.FormatInt(startResponse.Data.ID, 10), "--format", "json", "--format-version", "1"}
+	if err := RunWithInput(finishArgs, strings.NewReader(finishInput), &finishOut, &finishErr); err != nil {
+		t.Fatalf("log finish error = %v, stderr = %q", err, finishErr.String())
+	}
+
+	logs, err := ListCommandLogs(workspace)
+	if err != nil {
+		t.Fatalf("ListCommandLogs() error = %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("logs len = %d, want 1", len(logs))
+	}
+	log := logs[0]
+	if log.Command != "xssh" || log.ExpandedCommand != "ssh -p 22 testuser@172.18.0.5" || log.Status != "success" || log.Stdout != "connected\n" || log.StartedAt != "2026-07-13T00:00:00Z" || log.EndedAt != "2026-07-13T00:05:00Z" {
+		t.Fatalf("log = %+v, want completed xssh log", log)
+	}
+}
 
 func TestRunXStreamsAndSavesCommandLog(t *testing.T) {
 	workspace := initXTestWorkspace(t)

@@ -2,6 +2,7 @@ package ctx
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 )
 
 var (
@@ -260,6 +262,11 @@ const logUsageText = `usage: ctx log [id] [options]
 
 Show the workspace timeline or command log details by ID.
 
+add-on commands:
+  start --format json --format-version 1   start a command log from JSON stdin
+  finish <id> --format json --format-version 1
+                                           finish a command log from JSON stdin
+
 options:
   -p, --plain        print a compact timeline
   -v, --verbose      print IDs, status, and exit codes
@@ -310,6 +317,17 @@ func Run(args []string, stdout io.Writer) error {
 }
 
 func RunWithIO(args []string, stdout, stderr io.Writer) error {
+	return runWithCurrentInput(args, stdout, stderr)
+}
+
+func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	oldStdin := workspaceStdin
+	workspaceStdin = stdin
+	defer func() { workspaceStdin = oldStdin }()
+	return runWithCurrentInput(args, stdout, stderr)
+}
+
+func runWithCurrentInput(args []string, stdout, stderr io.Writer) error {
 	if len(args) < 2 {
 		return errors.New("usage: ctx <command>")
 	}
@@ -366,7 +384,7 @@ func RunWithIO(args []string, stdout, stderr io.Writer) error {
 	case "note":
 		return runNote(args[2:], stdout)
 	case "log":
-		return runLog(args[2:], stdout)
+		return runLogWithInput(args[2:], workspaceStdin, stdout)
 	case "prompt":
 		return runPrompt(args[2:], stdout)
 	case "formats":
@@ -920,7 +938,7 @@ func runFormats(args []string, stdout io.Writer) error {
 		if _, err := fmt.Fprintln(table, "OUTPUT\tVERSIONS"); err != nil {
 			return err
 		}
-		for _, endpoint := range []string{"credential", "formats", "prompt", "service"} {
+		for _, endpoint := range []string{"credential", "formats", "log", "prompt", "service"} {
 			versions := append([]string(nil), apiSupportedVersions[endpoint]...)
 			sort.Slice(versions, func(i, j int) bool { return compareAPIVersion(versions[i], versions[j]) < 0 })
 			if _, err := fmt.Fprintf(table, "%s\t%s\n", endpoint, strings.Join(versions, ",")); err != nil {
@@ -1335,9 +1353,16 @@ func printWorkspaceRecords(stdout io.Writer, records []WorkspaceRecord, numbered
 }
 
 func runLog(args []string, stdout io.Writer) error {
+	return runLogWithInput(args, workspaceStdin, stdout)
+}
+
+func runLogWithInput(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 1 && isHelpArg(args[0]) {
 		_, err := fmt.Fprintln(stdout, logUsageText)
 		return err
+	}
+	if len(args) > 0 && (args[0] == "start" || args[0] == "finish") {
+		return runLogLifecycle(args, stdin, stdout)
 	}
 	id, mode, err := parseLogArgs(args)
 	if err != nil {
@@ -1376,6 +1401,111 @@ func runLog(args []string, stdout io.Writer) error {
 	}
 	_, err = io.WriteString(stdout, commandOutputSections(log.Stdout, log.Stderr))
 	return err
+}
+
+type logStartRequest struct {
+	Command         string `json:"command"`
+	ExpandedCommand string `json:"expanded_command"`
+	StartedAt       string `json:"started_at"`
+}
+
+type logFinishRequest struct {
+	Status   string `json:"status"`
+	ExitCode *int   `json:"exit_code"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	EndedAt  string `json:"ended_at"`
+}
+
+func runLogLifecycle(args []string, stdin io.Reader, stdout io.Writer) error {
+	action := args[0]
+	remaining := args[1:]
+	logID := ""
+	if action == "finish" {
+		if len(remaining) == 0 {
+			return errors.New("usage: ctx log finish <id> --format json [--format-version <version>]")
+		}
+		logID = remaining[0]
+		remaining = remaining[1:]
+	}
+	remaining, output, err := parseOutputOptions(remaining, apiFormatShell)
+	if err != nil {
+		return err
+	}
+	if len(remaining) != 0 || output.Format != apiFormatJSON {
+		return fmt.Errorf("usage: ctx log %s%s --format json [--format-version <version>]", action, func() string {
+			if action == "finish" {
+				return " <id>"
+			}
+			return ""
+		}())
+	}
+
+	return runJSONEndpoint(stdout, "log", output.FormatVersion, func(version string) (any, error) {
+		workspace, err := currentWorkspace()
+		if err != nil {
+			return nil, err
+		}
+		decoder := json.NewDecoder(stdin)
+		if action == "start" {
+			var request logStartRequest
+			if err := decoder.Decode(&request); err != nil {
+				return nil, invalidLogRequest("invalid JSON request")
+			}
+			if strings.TrimSpace(request.Command) == "" {
+				return nil, invalidLogRequest("command is required")
+			}
+			if strings.TrimSpace(request.ExpandedCommand) == "" {
+				request.ExpandedCommand = request.Command
+			}
+			if strings.TrimSpace(request.StartedAt) == "" {
+				request.StartedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			}
+			id, err := StartCommandLog(workspace, CommandLog{
+				Command:         request.Command,
+				ExpandedCommand: request.ExpandedCommand,
+				StartedAt:       request.StartedAt,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"id": id}, nil
+		}
+
+		var request logFinishRequest
+		if err := decoder.Decode(&request); err != nil {
+			return nil, invalidLogRequest("invalid JSON request")
+		}
+		id, err := strconv.ParseInt(logID, 10, 64)
+		if err != nil || id < 1 {
+			return nil, invalidLogRequest("invalid log id")
+		}
+		if request.Status != "success" && request.Status != "failed" && request.Status != "interrupted" {
+			return nil, invalidLogRequest("status must be success, failed, or interrupted")
+		}
+		endedAt := request.EndedAt
+		if strings.TrimSpace(endedAt) == "" {
+			endedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		}
+		exitCode := 0
+		if request.ExitCode != nil {
+			exitCode = *request.ExitCode
+		}
+		if err := FinishCommandLog(workspace, id, CommandLog{
+			Status:   request.Status,
+			ExitCode: exitCode,
+			Stdout:   request.Stdout,
+			Stderr:   request.Stderr,
+			EndedAt:  endedAt,
+		}); err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": id}, nil
+	})
+}
+
+func invalidLogRequest(message string) error {
+	return apiRequestError{Code: "INVALID_REQUEST", Message: message, Details: map[string]any{}, Invalid: true}
 }
 
 func parseLogArgs(args []string) (string, logDisplayMode, error) {

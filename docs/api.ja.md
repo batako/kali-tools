@@ -270,6 +270,35 @@ scope ASC, username ASC, id ASC
 
 パスワードは平文で返されます。外部ツールは、取得したパスワードをログ、標準エラー出力、一時ファイル、プロセス一覧へ不用意に露出させないでください。
 
+## `log`
+
+Add-on は ctx の DB を直接参照せずに、コマンドログを開始・完了できます。リクエストは標準入力から JSON で渡し、レスポンスは標準出力へ JSON で返します。
+
+ログを開始する場合:
+
+```bash
+printf '%s\n' '{"command":"xssh","expanded_command":"ssh -p 22 testuser@172.18.0.5","started_at":"2026-07-13T00:00:00Z"}' | \
+  ctx log start --format json --format-version 1.0
+```
+
+レスポンスには新しいログ ID が含まれます:
+
+```json
+{
+  "success": true,
+  "format_version": "1.0",
+  "data": {"id": 1},
+  "error": null
+}
+```
+
+ログを完了する場合は、結果を JSON で渡します。command や出力へパスワード、`sshpass` の引数を含めないでください。
+
+```bash
+printf '%s\n' '{"status":"success","exit_code":0,"stdout":"connected\n","stderr":"","ended_at":"2026-07-13T00:05:00Z"}' | \
+  ctx log finish 1 --format json --format-version 1.0
+```
+
 ## `service`
 
 保存済みサービス情報を返します。

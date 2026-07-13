@@ -246,8 +246,8 @@ func TestRunFormatsListsSupportedOutputsAndVersions(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 5 {
-		t.Fatalf("formats output = %q, want 5 lines", out.String())
+	if len(lines) != 6 {
+		t.Fatalf("formats output = %q, want 6 lines", out.String())
 	}
 
 	header := strings.Fields(lines[0])
@@ -258,6 +258,7 @@ func TestRunFormatsListsSupportedOutputsAndVersions(t *testing.T) {
 	wantRows := map[string]string{
 		"credential": "1.0",
 		"formats":    "1.0",
+		"log":        "1.0",
 		"prompt":     "1.0",
 		"service":    "1.0",
 	}

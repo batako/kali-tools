@@ -270,6 +270,35 @@ scope ASC, username ASC, id ASC
 
 Passwords are returned in plaintext. External tools must avoid exposing retrieved passwords through logs, standard error, temporary files, or process listings.
 
+## `log`
+
+Add-ons can create and finish command logs without accessing the ctx database directly. Requests are read as JSON from standard input and responses are written as JSON to standard output.
+
+Start a log:
+
+```bash
+printf '%s\n' '{"command":"xssh","expanded_command":"ssh -p 22 testuser@172.18.0.5","started_at":"2026-07-13T00:00:00Z"}' | \
+  ctx log start --format json --format-version 1.0
+```
+
+The response contains the new log ID:
+
+```json
+{
+  "success": true,
+  "format_version": "1.0",
+  "data": {"id": 1},
+  "error": null
+}
+```
+
+Finish a log by sending its result as JSON. Do not include passwords or `sshpass` arguments in the command or output fields.
+
+```bash
+printf '%s\n' '{"status":"success","exit_code":0,"stdout":"connected\n","stderr":"","ended_at":"2026-07-13T00:05:00Z"}' | \
+  ctx log finish 1 --format json --format-version 1.0
+```
+
 ## `service`
 
 Returns stored service information.

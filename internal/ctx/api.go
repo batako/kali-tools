@@ -42,6 +42,7 @@ var apiSupportedVersions = map[string][]string{
 	"formats":    {"1.0"},
 	"prompt":     {"1.0"},
 	"credential": {"1.0"},
+	"log":        {"1.0"},
 	"service":    {"1.0"},
 }
 
