@@ -63,6 +63,14 @@ ctx log
 
 Useful commands include `ctx workspace ls`, `ctx workspace rm`, `ctx note`, `ctx prompt`, `ctx reset`, and `ctx x <command> [args...]`. Run `ctx --help` for the complete command reference.
 
+Configure optional wordlist providers for discovery tools. Supported providers are `seclists` and `wordlists`; the order is the selection priority.
+
+```sh
+ctx config set wordlist.providers seclists wordlists
+```
+
+Discovery integrations select a profile-appropriate file from the configured providers. If no provider is configured, they do not guess a wordlist; tool-specific commands can accept an explicit path directly.
+
 Install shell integration when using the `x` helpers:
 
 ```sh

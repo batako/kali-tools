@@ -63,6 +63,14 @@ ctx log
 
 ほかに `ctx workspace ls`、`ctx workspace rm`、`ctx note`、`ctx prompt`、`ctx reset`、`ctx x <command> [args...]` などがあります。全コマンドは `ctx --help` で確認できます。
 
+探索ツールで使う任意のワードリストProviderを設定できます。正式対応Providerは `seclists` と `wordlists` で、左から優先して選択します。
+
+```sh
+ctx config set wordlist.providers seclists wordlists
+```
+
+探索ツールは設定済みProviderから用途に合うファイルを自動選択します。Provider未設定時はワードリストを推測せず、各ツールの引数で明示的なパスを指定します。
+
 シェル連携と `x` 系ヘルパーを使う場合:
 
 ```sh

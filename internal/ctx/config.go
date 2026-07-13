@@ -9,12 +9,12 @@ import (
 )
 
 type Config struct {
-	ProjectRoot string
-	WebWordlist string
+	ProjectRoot       string
+	WordlistProviders string
 }
 
 const ConfigKeyProjectRoot = "project.root"
-const ConfigKeyWebWordlist = "web.wordlist"
+const ConfigKeyWordlistProviders = "wordlist.providers"
 
 type ConfigEntry struct {
 	Key   string
@@ -46,10 +46,8 @@ func LoadConfig() (*Config, error) {
 			section = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "["), "]"))
 			continue
 		}
-		if section != "project" {
-			if section != "web" {
-				continue
-			}
+		if section != "project" && section != "web" && section != "wordlist" {
+			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if !ok {
@@ -57,13 +55,13 @@ func LoadConfig() (*Config, error) {
 		}
 		parsed, err := strconv.Unquote(strings.TrimSpace(value))
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse project root in %s: %w", path, err)
+			return nil, fmt.Errorf("failed to parse configuration value in %s: %w", path, err)
 		}
 		switch {
 		case section == "project" && strings.TrimSpace(key) == "root":
 			config.ProjectRoot = parsed
-		case section == "web" && strings.TrimSpace(key) == "wordlist":
-			config.WebWordlist = parsed
+		case section == "wordlist" && strings.TrimSpace(key) == "providers":
+			config.WordlistProviders = parsed
 		}
 	}
 
@@ -77,8 +75,8 @@ func SaveConfig(config *Config) error {
 	}
 
 	content := "[project]\nroot = " + strconv.Quote(config.ProjectRoot) + "\n"
-	if config.WebWordlist != "" {
-		content += "\n[web]\nwordlist = " + strconv.Quote(config.WebWordlist) + "\n"
+	if config.WordlistProviders != "" {
+		content += "\n[wordlist]\nproviders = " + strconv.Quote(config.WordlistProviders) + "\n"
 	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write config %s: %w", path, err)
@@ -94,8 +92,8 @@ func GetConfigValue(key string) (string, error) {
 	switch key {
 	case ConfigKeyProjectRoot:
 		return config.ProjectRoot, nil
-	case ConfigKeyWebWordlist:
-		return config.WebWordlist, nil
+	case ConfigKeyWordlistProviders:
+		return config.WordlistProviders, nil
 	default:
 		return "", fmt.Errorf("unknown config key: %s", key)
 	}
@@ -117,16 +115,16 @@ func SetConfigValue(key, value string) (string, error) {
 			return "", err
 		}
 		return root, nil
-	case ConfigKeyWebWordlist:
-		wordlist, err := expandPath(value)
+	case ConfigKeyWordlistProviders:
+		providers, err := NormalizeWordlistProviders(value)
 		if err != nil {
 			return "", err
 		}
-		config.WebWordlist = wordlist
+		config.WordlistProviders = strings.Join(providers, " ")
 		if err := SaveConfig(config); err != nil {
 			return "", err
 		}
-		return wordlist, nil
+		return config.WordlistProviders, nil
 	default:
 		return "", fmt.Errorf("unknown config key: %s", key)
 	}
@@ -139,7 +137,7 @@ func ListConfigValues() ([]ConfigEntry, error) {
 	}
 	return []ConfigEntry{
 		{Key: ConfigKeyProjectRoot, Value: config.ProjectRoot},
-		{Key: ConfigKeyWebWordlist, Value: config.WebWordlist},
+		{Key: ConfigKeyWordlistProviders, Value: config.WordlistProviders},
 	}, nil
 }
 

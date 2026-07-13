@@ -70,6 +70,26 @@ func TestCompletionScriptsIncludeProjectHelpers(t *testing.T) {
 	}
 }
 
+func TestCompletionScriptsIncludeAllConfigKeys(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell)
+		if err != nil {
+			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
+		}
+		for _, want := range []string{"project.root", "wordlist.providers"} {
+			if !strings.Contains(script, want) {
+				t.Errorf("CompletionScript(%s) missing config key %q", shell, want)
+			}
+		}
+		wants := []string{"seclists", "wordlists", "space-separated providers; order is priority"}
+		for _, want := range wants {
+			if !strings.Contains(script, want) {
+				t.Errorf("CompletionScript(%s) missing wordlist provider hint %q", shell, want)
+			}
+		}
+	}
+}
+
 func TestCompletionScriptsIncludeExtraShortcutsWhenRequested(t *testing.T) {
 	for _, shell := range []string{"zsh", "bash"} {
 		script, err := CompletionScript(shell, CompletionOptions{ExtraShortcuts: true})

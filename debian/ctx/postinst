@@ -11,6 +11,10 @@ Recommended:
     ctx init-shell
 
 This enables shell completion for your current shell.
+
+To also enable the optional pj, ta, and cr shortcuts:
+
+    ctx init-shell --extra-shortcuts
 MSG
 fi
 

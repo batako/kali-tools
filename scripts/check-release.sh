@@ -219,6 +219,7 @@ check_deb_install() {
   if [ "${PACKAGE_NAME}" = "ctx" ]; then
     if ! grep -q "ctx installed successfully." "${install_output}" ||
       ! grep -q "ctx init-shell" "${install_output}" ||
+      ! grep -q "ctx init-shell --extra-shortcuts" "${install_output}" ||
       ! ctx x --help | grep -q "usage: ctx x <command>" ||
       ! ctx completion bash | grep -q 'x() { ctx x "$@"; }' ||
       ! ctx completion zsh | grep -q 'x() { ctx x "$@" }' ||

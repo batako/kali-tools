@@ -406,6 +406,12 @@ _ctx_config_commands=(
 
 _ctx_config_keys=(
   'project.root:project root directory'
+  'wordlist.providers:ordered wordlist providers'
+)
+
+_ctx_wordlist_providers=(
+  'seclists:SecLists provider'
+  'wordlists:Kali wordlists provider'
 )
 
 _ctx_workspace_commands=(
@@ -595,7 +601,21 @@ _ctx() {
 
   case ${command} in
     config)
-      if [[ ${subcommand} == get || ${subcommand} == set ]] && (( CURRENT == command_position + 2 )); then
+      if [[ ${subcommand} == set && ${words[command_position+2]} == wordlist.providers ]] && (( CURRENT >= command_position + 3 )); then
+        local provider_current="${words[CURRENT]}"
+        local -a selected_providers
+        local selected
+        local provider
+        selected_providers=()
+        for (( selected = command_position + 3; selected < CURRENT; selected++ )); do
+          selected_providers+=("${words[selected]}")
+        done
+        for provider in seclists wordlists; do
+          [[ " ${selected_providers[*]} " == *" ${provider} "* ]] && continue
+          [[ ${provider} == "${provider_current}"* ]] && compadd -- "${provider}"
+        done
+        _message 'space-separated providers; order is priority'
+      elif [[ ${subcommand} == get || ${subcommand} == set ]] && (( CURRENT == command_position + 2 )); then
         _describe 'config key' _ctx_config_keys
       else
         _message 'argument'
@@ -776,6 +796,24 @@ _ctx_completion() {
     _ctx_complete_values target "${cur}"
     return
   fi
+  if [[ ${command} == config && ${subcommand} == set && ${COMP_WORDS[3]} == wordlist.providers && ${COMP_CWORD} -ge 4 ]]; then
+    # wordlist.providers accepts space-separated providers; order is priority.
+    local provider_current="${cur}"
+    local provider
+    local selected_index
+    local selected_provider
+    for provider in seclists wordlists; do
+      for ((selected_index = 4; selected_index < COMP_CWORD; selected_index++)); do
+        selected_provider="${COMP_WORDS[selected_index]}"
+        [[ ${selected_provider} == "${provider}" ]] && provider=""
+      done
+      [[ -z ${provider} ]] && continue
+      if [[ ${provider} == "${provider_current}"* ]]; then
+        COMPREPLY+=("${provider}")
+      fi
+    done
+    return
+  fi
 
   case "${prev}" in
     ctx)
@@ -792,7 +830,7 @@ _ctx_completion() {
       ;;
     get|set)
       if [[ ${command} == config ]]; then
-        COMPREPLY=($(compgen -W "project.root" -- "${cur}"))
+        COMPREPLY=($(compgen -W "project.root wordlist.providers" -- "${cur}"))
         return
       fi
       ;;

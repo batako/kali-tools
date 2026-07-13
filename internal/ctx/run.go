@@ -108,7 +108,8 @@ commands:
   set <key> <value> set a configuration value
 
 keys:
-  project.root      project root directory
+  project.root       project root directory
+  wordlist.providers ordered providers for automatic wordlist selection
 
 options:
   -h, --help        show this help`
@@ -1006,10 +1007,18 @@ func runConfig(args []string, stdout io.Writer) error {
 		_, err = fmt.Fprintln(stdout, value)
 		return err
 	case "set":
-		if len(args) != 3 {
+		if args[1] == ConfigKeyWordlistProviders {
+			if len(args) < 3 {
+				return errors.New("usage: ctx config set wordlist.providers <provider> [provider...]")
+			}
+		} else if len(args) != 3 {
 			return errors.New("usage: ctx config set <key> <value>")
 		}
-		value, err := SetConfigValue(args[1], args[2])
+		valueArg := args[2]
+		if args[1] == ConfigKeyWordlistProviders {
+			valueArg = strings.Join(args[2:], " ")
+		}
+		value, err := SetConfigValue(args[1], valueArg)
 		if err != nil {
 			return err
 		}
