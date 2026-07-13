@@ -77,6 +77,41 @@ func TestCommandOutputSectionsHideEmptyStreams(t *testing.T) {
 	}
 }
 
+func TestCommandOutputSectionsSanitizesTerminalControlSequences(t *testing.T) {
+	stdout := "\x1b[?2004h\x1b]0;testuser@target: ~\a\x1b[01;32mtestuser\x1b[00m:~$ j\b \bcd ../\n\x1b[?2004l\n/home/testuser\n"
+
+	got := commandOutputSections(stdout, "")
+	if strings.Contains(got, "\x1b") {
+		t.Fatalf("output = %q, must not contain ANSI escape sequences", got)
+	}
+	for _, want := range []string{"testuser:~$ cd ../", "/home/testuser"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want %q", got, want)
+		}
+	}
+	if strings.Contains(got, "cd ../\n\n") {
+		t.Fatalf("output = %q, must not contain PTY duplicate blank line", got)
+	}
+}
+
+func TestSanitizeTerminalOutputReconstructsEditedInput(t *testing.T) {
+	stdout := "testuser$ hoge\b \b\b \b\b \b\b \becho hge\b \b\b \b\b \basdf > aaa\n"
+
+	got := sanitizeTerminalOutput(stdout)
+	if got != "testuser$ echo asdf > aaa\n" {
+		t.Fatalf("sanitizeTerminalOutput() = %q, want edited command", got)
+	}
+}
+
+func TestSanitizeTerminalOutputRemovesBracketedPasteNewline(t *testing.T) {
+	stdout := "testuser$ pwd\n\x1b[?2004l\n/home/testuser\n"
+
+	got := sanitizeTerminalOutput(stdout)
+	if got != "testuser$ pwd\n/home/testuser\n" {
+		t.Fatalf("sanitizeTerminalOutput() = %q, want no control-sequence blank line", got)
+	}
+}
+
 func TestLogModelOpensDetailAndQReturnsThenQuits(t *testing.T) {
 	entry := TimelineEntry{
 		ID:        7,

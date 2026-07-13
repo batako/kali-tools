@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
@@ -270,6 +271,8 @@ func commandLogDetail(log *CommandLog) string {
 }
 
 func commandOutputSections(stdout, stderr string) string {
+	stdout = sanitizeTerminalOutput(stdout)
+	stderr = sanitizeTerminalOutput(stderr)
 	var output strings.Builder
 	if stdout != "" {
 		output.WriteString("---------------- stdout ----------------\n")
@@ -286,6 +289,69 @@ func commandOutputSections(stdout, stderr string) string {
 		output.WriteString(stderr)
 	}
 	return output.String()
+}
+
+func sanitizeTerminalOutput(value string) string {
+	output := make([]rune, 0, len(value))
+	for i := 0; i < len(value); i++ {
+		if value[i] != '\x1b' {
+			switch value[i] {
+			case '\r':
+				if i+1 >= len(value) || value[i+1] != '\n' {
+					output = append(output, '\n')
+				}
+			case '\b':
+				if len(output) > 0 && output[len(output)-1] != '\n' {
+					output = output[:len(output)-1]
+				}
+			case '\a':
+				continue
+			default:
+				if value[i] < 0x20 && value[i] != '\n' && value[i] != '\t' {
+					continue
+				}
+				r, size := utf8.DecodeRuneInString(value[i:])
+				output = append(output, r)
+				i += size - 1
+			}
+			continue
+		}
+
+		if i+1 >= len(value) {
+			break
+		}
+		i++
+		switch value[i] {
+		case '[':
+			sequenceStart := i + 1
+			for i+1 < len(value) {
+				i++
+				if value[i] >= 0x40 && value[i] <= 0x7e {
+					break
+				}
+			}
+			if value[sequenceStart:i+1] == "?2004l" {
+				for i+1 < len(value) && (value[i+1] == '\r' || value[i+1] == '\n') {
+					i++
+				}
+			}
+		case ']':
+			for i+1 < len(value) {
+				i++
+				if value[i] == '\a' {
+					break
+				}
+				if value[i] == '\x1b' && i+1 < len(value) && value[i+1] == '\\' {
+					i++
+					break
+				}
+			}
+		}
+		if i+1 < len(value) && value[i+1] == '\n' && len(output) > 0 && output[len(output)-1] == '\n' {
+			i++
+		}
+	}
+	return string(output)
 }
 
 func compactTimelineTime(value string) string {
