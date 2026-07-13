@@ -1,4 +1,4 @@
-package xssh
+package xftp
 
 import (
 	"bufio"
@@ -18,9 +18,9 @@ var (
 	Version = "1.0.0"
 )
 
-const usageText = `usage: xssh [credential-id|username]
+const usageText = `usage: xftp [credential-id|username]
 
-Connect to the current ctx target using a stored SSH credential when available.
+Connect to the current ctx target using a stored FTP credential when available.
 
 arguments:
   credential-id  use a credential by ID
@@ -107,7 +107,7 @@ func New(runner commandRunner, stdin io.Reader, stdout, stderr io.Writer) *App {
 func (app *App) Run(args []string) error {
 	commandArgs := args[1:]
 	if len(commandArgs) > 1 {
-		return app.errorf("usage: xssh [credential-id|username]")
+		return app.errorf("usage: xftp [credential-id|username]")
 	}
 	if len(commandArgs) == 1 {
 		switch commandArgs[0] {
@@ -115,12 +115,12 @@ func (app *App) Run(args []string) error {
 			_, err := fmt.Fprintln(app.stdout, usageText)
 			return err
 		case "-V", "--version":
-			_, err := fmt.Fprintf(app.stdout, "xssh %s\n", Version)
+			_, err := fmt.Fprintf(app.stdout, "xftp %s\n", Version)
 			return err
 		}
 	}
 
-	if err := app.requireCommands("ctx", "ssh"); err != nil {
+	if err := app.requireCommands("ctx", "lftp"); err != nil {
 		return err
 	}
 
@@ -136,11 +136,11 @@ func (app *App) Run(args []string) error {
 	}
 	targetIP := strings.TrimSpace(*prompt.TargetIP)
 
-	credentialData, err := ctxJSON[CredentialData](app.runner, "credential", "ls", "ssh", "--format", "json", "--format-version", "1")
+	credentialData, err := ctxJSON[CredentialData](app.runner, "credential", "ls", "ftp", "--format", "json", "--format-version", "1")
 	if err != nil {
 		return app.errorf("%s", err.Error())
 	}
-	credentials := sshCredentials(credentialData.Credentials)
+	credentials := ftpCredentials(credentialData.Credentials)
 	credential, err := app.resolveCredential(commandArgs, credentials, targetIP)
 	if err != nil {
 		return err
@@ -150,26 +150,20 @@ func (app *App) Run(args []string) error {
 	if err != nil {
 		return app.errorf("%s", err.Error())
 	}
-	port, err := app.resolveSSHPort(serviceData.Services)
+	port, err := app.resolveFTPPort(serviceData.Services)
 	if err != nil {
 		return err
 	}
 
-	if credential != nil && credential.Password != nil {
-		if err := app.requireCommands("sshpass"); err != nil {
-			return err
-		}
-	}
-	startedAt := time.Now().UTC()
-	expandedCommand := sshLogCommand(credential, targetIP, port)
-	logID, err := app.logger.Start("xssh", expandedCommand, startedAt.Format(time.RFC3339Nano))
-	if err != nil {
-		return app.errorf("failed to start SSH log: %s", err.Error())
-	}
 	if credential == nil {
 		_, _ = fmt.Fprintf(app.stdout, "Connecting to %s:%d...\n", targetIP, port)
 	} else {
 		_, _ = fmt.Fprintf(app.stdout, "Connecting to %s@%s:%d...\n", credential.Username, targetIP, port)
+	}
+	startedAt := time.Now().UTC()
+	logID, err := app.logger.Start("xftp", ftpLogCommand(credential, targetIP, port), startedAt.Format(time.RFC3339Nano))
+	if err != nil {
+		return app.errorf("failed to start FTP log: %s", err.Error())
 	}
 	var commandStdout, commandStderr bytes.Buffer
 	streamStdout := io.MultiWriter(app.stdout, &commandStdout)
@@ -183,7 +177,7 @@ func (app *App) Run(args []string) error {
 	}
 	finishErr := app.logger.Finish(logID, status, exitCode, commandStdout.String(), commandStderr.String(), time.Now().UTC().Format(time.RFC3339Nano))
 	if finishErr != nil {
-		return app.errorf("failed to finish SSH log: %s", finishErr.Error())
+		return app.errorf("failed to finish FTP log: %s", finishErr.Error())
 	}
 	if err == nil && credential != nil && credential.ID != 0 {
 		_ = app.state.Save(credential.ID)
@@ -219,7 +213,7 @@ func (app *App) resolveCredential(args []string, credentials []Credential, targe
 				return &credential, nil
 			}
 		}
-		return nil, app.errorf("SSH credential not found: %s", filter)
+		return nil, app.errorf("FTP credential not found: %s", filter)
 	}
 
 	matches := make([]Credential, 0)
@@ -240,7 +234,7 @@ func (app *App) resolveCredential(args []string, credentials []Credential, targe
 func (app *App) selectCredential(credentials []Credential, targetIP string) (*Credential, error) {
 	lastID, _ := app.state.Load()
 	defaultIndex := -1
-	_, _ = fmt.Fprintln(app.stdout, "Select an SSH credential:")
+	_, _ = fmt.Fprintln(app.stdout, "Select an FTP credential:")
 	_, _ = fmt.Fprintln(app.stdout)
 	for i, credential := range credentials {
 		marker := ""
@@ -258,16 +252,16 @@ func (app *App) selectCredential(credentials []Credential, targetIP string) (*Cr
 	return &credentials[index], nil
 }
 
-func (app *App) resolveSSHPort(services []Service) (int, error) {
-	ports := sshPorts(services)
+func (app *App) resolveFTPPort(services []Service) (int, error) {
+	ports := ftpPorts(services)
 	if len(ports) == 0 {
-		return 22, nil
+		return 21, nil
 	}
 	if len(ports) == 1 {
 		return ports[0].Port, nil
 	}
 
-	_, _ = fmt.Fprintln(app.stdout, "Select an SSH port:")
+	_, _ = fmt.Fprintln(app.stdout, "Select an FTP port:")
 	_, _ = fmt.Fprintln(app.stdout)
 	for i, port := range ports {
 		_, _ = fmt.Fprintf(app.stdout, "  %d) %d/%s\n", i+1, port.Port, port.Protocol)
@@ -335,18 +329,33 @@ func readSelectionLine(reader *bufio.Reader) (string, error) {
 
 func (app *App) connect(credential *Credential, targetIP string, port int, stdout, stderr io.Writer) error {
 	if credential == nil {
-		return app.runner.Run("ssh", []string{"-p", strconv.Itoa(port), targetIP}, nil, app.stdin, stdout, stderr)
+		args := []string{"-p", strconv.Itoa(port), targetIP, "-e", lftpAnonymousCommand}
+		return app.runner.Run("lftp", args, nil, app.stdin, stdout, stderr)
 	}
-	destination := fmt.Sprintf("%s@%s", credential.Username, targetIP)
-	args := []string{"-p", strconv.Itoa(port), destination}
+	args := []string{"-u", credential.Username, "-p", strconv.Itoa(port), targetIP}
 	if credential.Password != nil {
-		return app.runner.Run("sshpass", append([]string{"-e", "ssh"}, args...), []string{"SSHPASS=" + *credential.Password}, app.stdin, stdout, stderr)
+		args = append([]string{"--env-password", "-e", lftpAuthenticationCommand}, args...)
+		return app.runner.Run("lftp", args, []string{"LFTP_PASSWORD=" + *credential.Password}, app.stdin, stdout, stderr)
 	}
-	return app.runner.Run("ssh", args, nil, app.stdin, stdout, stderr)
+	args = append(args, "-e", lftpAuthenticationCommand)
+	return app.runner.Run("lftp", args, nil, app.stdin, stdout, stderr)
+}
+
+const (
+	lftpAuthenticationCommand = "set net:max-retries 0; set cmd:fail-exit yes; quote NOOP"
+	lftpAnonymousCommand      = "set net:max-retries 0"
+)
+
+func ftpLogCommand(credential *Credential, targetIP string, port int) string {
+	destination := targetIP
+	if credential != nil && credential.Username != "" {
+		destination = credential.Username + "@" + targetIP
+	}
+	return fmt.Sprintf("lftp -p %d %s", port, destination)
 }
 
 func (app *App) errorf(format string, args ...any) error {
-	_, _ = fmt.Fprintf(app.stderr, "xssh: "+format+"\n", args...)
+	_, _ = fmt.Fprintf(app.stderr, "xftp: "+format+"\n", args...)
 	return ExitCodeError{Code: 1}
 }
 
@@ -360,14 +369,6 @@ func isDigits(value string) bool {
 		}
 	}
 	return true
-}
-
-func sshLogCommand(credential *Credential, targetIP string, port int) string {
-	destination := targetIP
-	if credential != nil && credential.Username != "" {
-		destination = credential.Username + "@" + targetIP
-	}
-	return fmt.Sprintf("ssh -p %d %s", port, destination)
 }
 
 type APIResponse[T any] struct {
@@ -443,23 +444,23 @@ func ctxJSON[T any](runner commandRunner, args ...string) (*T, error) {
 	return response.Data, nil
 }
 
-func sshCredentials(credentials []Credential) []Credential {
+func ftpCredentials(credentials []Credential) []Credential {
 	filtered := make([]Credential, 0, len(credentials))
 	for _, credential := range credentials {
-		if credential.Scope == "ssh" {
+		if credential.Scope == "ftp" {
 			filtered = append(filtered, credential)
 		}
 	}
 	return filtered
 }
 
-func sshPorts(services []Service) []Service {
+func ftpPorts(services []Service) []Service {
 	ports := make([]Service, 0, len(services))
 	for _, service := range services {
 		if !strings.EqualFold(service.Protocol, "tcp") {
 			continue
 		}
-		if service.ServiceName == nil || !strings.EqualFold(strings.TrimSpace(*service.ServiceName), "ssh") {
+		if service.ServiceName == nil || !strings.EqualFold(strings.TrimSpace(*service.ServiceName), "ftp") {
 			continue
 		}
 		ports = append(ports, service)

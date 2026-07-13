@@ -395,7 +395,7 @@ func TestLastCredentialIsDefaultForEmptySelection(t *testing.T) {
 
 	runner.runs = nil
 	var secondOut, secondErr bytes.Buffer
-	second := New(runner, strings.NewReader("\n"), &secondOut, &secondErr)
+	second := New(runner, strings.NewReader("\r"), &secondOut, &secondErr)
 	second.state = state
 	if err := second.Run([]string{"xssh"}); err != nil {
 		t.Fatalf("second Run() error = %v, stderr = %q", err, secondErr.String())

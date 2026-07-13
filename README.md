@@ -7,6 +7,7 @@ This repository contains self-made CLI tools for Kali Linux.
 - `req`: A CLI tool for sending raw HTTP requests stored in `.req` files.
 - `ctx`: A CLI tool for managing workspace context for targets and hosts.
 - `xssh`: A ctx add-on for connecting to the current target with stored SSH credentials.
+- `xftp`: A ctx add-on for connecting to the current target with stored FTP credentials.
 
 ## req Usage
 
@@ -115,15 +116,38 @@ sudo apt install ctx
 sudo apt install xssh
 ```
 
+## xftp Usage
+
+`xftp` uses the ctx JSON API v1 series to read the current workspace target, `ftp` scoped credentials, and saved service information. It does not read the ctx SQLite database directly. `ctx` and `lftp` are required.
+
+```sh
+ctx credential set ftp anonymous anonymous@example.com
+xftp
+xftp 6
+xftp anonymous
+```
+
+With one saved FTP credential, `xftp` connects immediately. With multiple credentials or multiple FTP service ports, it prompts for a numbered selection. If no FTP credential is saved, it starts normal `lftp` to the current target. If no FTP service is saved, port 21 is used. When a stored password is present, `xftp` retrieves it from ctx in plain text and passes it to `lftp --env-password` through the child process environment so the password is not placed in the command arguments. When the password is `null`, it starts `lftp` without password automation.
+
+Install from the APT repository:
+
+```sh
+sudo apt install ctx
+sudo apt install xftp
+```
+
 ## Directory Structure
 
 - `cmd/req/`: Entry point for the `req` command
 - `cmd/xssh/`: Entry point for the `xssh` command
+- `cmd/xftp/`: Entry point for the `xftp` command
 - `internal/req/`: Implementation and tests for `req`
 - `internal/xssh/`: Implementation and tests for `xssh`
+- `internal/xftp/`: Implementation and tests for `xftp`
 - `debian/req/`: Debian packaging files for `req`
 - `debian/ctx/`: Debian packaging files for `ctx`
 - `debian/xssh/`: Debian packaging files for `xssh`
+- `debian/xftp/`: Debian packaging files for `xftp`
 - `scripts/`: Build and publishing scripts
 - `.github/workflows/`: GitHub Actions workflows
 
@@ -154,6 +178,7 @@ git diff --exit-code
 go test ./...
 ./scripts/check-version.sh ctx
 ./scripts/check-version.sh xssh
+./scripts/check-version.sh xftp
 ```
 
 ### `publish-apt-repo.yml`
@@ -166,12 +191,15 @@ git diff --exit-code
 go test ./...
 ./scripts/check-version.sh ctx
 ./scripts/check-version.sh xssh
+./scripts/check-version.sh xftp
 ./scripts/build-deb.sh req amd64
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
 ./scripts/build-deb.sh ctx arm64
 ./scripts/build-deb.sh xssh amd64
 ./scripts/build-deb.sh xssh arm64
+./scripts/build-deb.sh xftp amd64
+./scripts/build-deb.sh xftp arm64
 Restore the existing apt-repo branch into repo/
 ./scripts/build-apt-repo.sh
 Force-push to the apt-repo branch
@@ -195,6 +223,8 @@ You can also specify the package and target architecture explicitly:
 ./scripts/build-deb.sh ctx arm64
 ./scripts/build-deb.sh xssh amd64
 ./scripts/build-deb.sh xssh arm64
+./scripts/build-deb.sh xftp amd64
+./scripts/build-deb.sh xftp arm64
 ```
 
 Output:
@@ -220,7 +250,7 @@ Before a release, run the combined version, Go module, test, Debian package, and
 ./scripts/check-release.sh ctx
 ```
 
-When run without arguments, the release check validates `ctx` and bundled add-on packages such as `xssh`.
+When run without arguments, the release check validates `ctx` and bundled add-on packages such as `xssh` and `xftp`.
 
 After publishing, verify the amd64/arm64 APT metadata and `.deb` files on `apt.batako.net`. HTTP requests are retried to allow for propagation delays. Updating from the public APT repository and installing a specific version are printed as `TODO` items.
 

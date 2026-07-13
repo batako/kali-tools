@@ -5,6 +5,7 @@ on:
     tags:
       - ctx-v*
       - req-v*
+      - xftp-v*
 
 permissions:
   contents: write
@@ -36,6 +37,7 @@ jobs:
           case "${tag}" in
             ctx-v*) application="ctx"; version="${tag#ctx-v}" ;;
             req-v*) application="req"; version="${tag#req-v}" ;;
+            xftp-v*) application="xftp"; version="${tag#xftp-v}" ;;
             *)
               echo "unsupported release tag: ${tag}" >&2
               exit 1
@@ -60,7 +62,7 @@ jobs:
           set -eu
 
           case "${APPLICATION}" in
-            ctx|req) ;;
+            ctx|req|xftp) ;;
             *)
               echo "unsupported application: ${APPLICATION}" >&2
               exit 1
