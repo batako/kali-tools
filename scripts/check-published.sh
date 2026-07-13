@@ -4,7 +4,7 @@ set -u
 
 PACKAGE_NAME="${1:-ctx}"
 VERSION_FILE="debian/${PACKAGE_NAME}/VERSION"
-REPOSITORY_URL="${APT_REPOSITORY_URL:-https://apt.batako.net}"
+REPOSITORY_URL="${APT_REPOSITORY_URL:-https://offsec.batako.net}"
 TMP_DIR="$(mktemp -d)"
 FAILED=0
 

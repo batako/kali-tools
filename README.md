@@ -17,8 +17,8 @@ This monorepo manages self-made CLI tools for Kali Linux. Each tool has an indep
 Add the public repository once:
 
 ```sh
-echo "deb [trusted=yes] https://apt.batako.net stable main" \
-  | sudo tee /etc/apt/sources.list.d/batako.list
+echo "deb [trusted=yes] https://offsec.batako.net stable main" \
+  | sudo tee /etc/apt/sources.list.d/batako-offsec.list
 sudo apt update
 ```
 
