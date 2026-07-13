@@ -1,358 +1,179 @@
 # Kali Tools
 
-This repository contains self-made CLI tools for Kali Linux.
+This monorepo manages self-made CLI tools for Kali Linux. Each tool has an independent Go entrypoint and Debian package definition, and the packages are published through an APT repository.
 
-## Current Tool
+## Tools
 
-- `req`: A CLI tool for sending raw HTTP requests stored in `.req` files.
-- `ctx`: A CLI tool for managing workspace context for targets and hosts.
-- `xssh`: A ctx add-on for connecting to the current target with stored SSH credentials.
-- `xftp`: A ctx add-on for connecting to the current target with stored FTP credentials.
-- `xsmb`: A ctx add-on for connecting to selected SMB shares on the current target with stored SMB credentials.
+- `req`: Send raw HTTP requests saved as `.req` files.
+- `ctx`: Manage workspace context, targets, services, credentials, notes, and logs.
+- `xssh`: Connect to the current target over SSH using ctx credentials.
+- `xftp`: Connect to the current target over FTP using ctx credentials.
+- `xsmb`: Discover SMB shares and connect to a selected share using ctx credentials.
 
-## req Usage
+`xssh`, `xftp`, and `xsmb` are ctx add-ons. They use the ctx JSON API and do not read the ctx SQLite database directly.
 
-```sh
-req <REQ_FILE>
-req -S <REQ_FILE>
-req --help
-req --version
-req -V
-```
+## Installation
 
-Options:
-
-- `-S`, `--https`: Force `https` when the request file does not imply a scheme
-- `-h`, `--help`: Show help
-- `-V`, `--version`: Show version
-
-## ctx Usage
-
-```sh
-ctx workspace init
-ctx status
-ctx workspace ls
-ctx workspace rm [id]
-ctx scan
-ctx scan 10.10.10.20 -p 22,80,443
-ctx service ls
-ctx service ls --target target2
-ctx note "SMB anonymous login possible"
-ctx log
-ctx log <id>
-ctx prompt
-ctx prompt --field target-ip
-ctx prompt --format json
-ctx reset
-ctx x <command> [args...]
-ctx --help
-ctx --version
-ctx -V
-x <command> [args...]
-xscan [ip] [-p ports]
-xservice ls [--target name]
-```
-
-`ctx x` runs the given command in the current ctx workspace, streams stdout/stderr to the terminal, and saves the command, expanded command, exit code, timestamps, stdout, and stderr to `ctx log`. If an argument contains `$IP` or `${IP}`, it is expanded to the current primary target IP before execution. After `ctx init-shell`, the `x` helper function is available as the short form of `ctx x`.
-
-`ctx scan [ip]` runs `nmap -Pn -n -sV` for the current target, saves the raw artifacts under `~/.ctx/workspaces/<workspace_id>/scans/`, records the exact `nmap` execution in `ctx log`, and stores parsed port/service rows in the workspace database. Use `-p`/`--ports` to pass an explicit nmap port expression, or `-n`/`--dry-run` to print the command first. After `ctx init-shell`, `xscan` is available as the short form of `ctx scan`.
-
-`ctx service ls` shows the saved port scan results for the primary target. Use `--target <name>` to show another target. After `ctx init-shell`, use `xservice ls`.
-
-`ctx note <text>` saves a note as a `note:<id>` entry in the `ctx log` timeline. After `ctx init-shell`, use `xnote <text>` as its short form.
-
-On a terminal, `ctx log` opens an interactive timeline. Use `j`/`k` or the arrow keys to move, Enter to open command details, and `q` to return or quit. Use `-p`/`--plain` for a compact text timeline, `-v`/`--verbose` for IDs and execution status, or `-i`/`--interactive` to request the TUI explicitly.
-
-`ctx prompt` prints safely quoted shell variables for prompt integrations. It includes workspace, local interface/IP, and primary target data. Outside a workspace, `CTX_ACTIVE` is `0`. A minimal Powerlevel10k custom segment for `.p10k.zsh` is:
-
-```zsh
-function prompt_ctx() {
-  eval "$(ctx prompt)" || return
-  (( CTX_ACTIVE )) || return
-  p10k segment -t "${CTX_LOCAL_IP} -> ${CTX_TARGET_IP}"
-}
-```
-
-Add `ctx` to `POWERLEVEL9K_LEFT_PROMPT_ELEMENTS` or `POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS`, then choose colors, icons, and formatting in the segment as desired. Use `ctx prompt --field <name>` for one value or `ctx prompt --format json` for structured output.
-
-`ctx workspace rm` removes the current workspace's marker, database records, and data directory after confirmation. Outside a workspace, it lists the registered workspaces for selection. Pass an ID to select one directly, or add `--yes`/`-y` to skip confirmation.
-
-`ctx reset` removes all registered `.ctx` markers, ctx-owned database/log/data files, ctx blocks from `.zshrc` and `.bashrc`, and ctx-managed `/etc/hosts` blocks. It does not remove workspace directories, user files, shell history, or the `ctx` executable. Only the `/etc/hosts` cleanup requests `sudo` when necessary. Use `xreset` after shell integration or `ctx reset --yes`/`ctx reset -y` to skip confirmation, then restart the current shell to unload helper functions already in memory.
-
-## ctx Shell Setup
-
-```sh
-ctx completion zsh
-ctx completion bash
-ctx init-shell
-ctx init-shell --remove
-ctx doctor
-```
-
-`ctx completion zsh` and `ctx completion bash` only print shell scripts to stdout. They do not edit shell rc files.
-
-`ctx init-shell` detects the current shell and writes a marked ctx block to `.zshrc` or `.bashrc`. It also enables x-prefixed helper functions, so `ctx workspace init` can be run as `xinit`, `ctx status` as `xstatus`, and `ctx hosts` as `xhosts`. ctx does not create aliases.
-
-`ctx doctor` reports each executable, PATH, shell, shell integration, and workspace check as `OK` or `NG`. Terminal output colors `OK` green, `NG` red, and `Fix:` yellow. Every `NG` includes a corrective action, but diagnostic NG results do not make the command itself fail.
-
-## xssh Usage
-
-`xssh` uses the ctx JSON API v1 series to read the current workspace target, `ssh` scoped credentials, and saved service information. It does not read the ctx SQLite database directly. `ctx` and `openssh-client` are required. `sshpass` is only required when xssh uses a stored password.
-
-```sh
-ctx credential set ssh root password
-xssh
-xssh 6
-xssh root
-```
-
-With one saved SSH credential, `xssh` connects immediately. With multiple credentials or multiple SSH service ports, it prompts for a numbered selection. If no SSH credential is saved, it starts normal `ssh` to the current target. If no SSH service is saved, port 22 is used. When a stored password is present, `xssh` retrieves it from ctx in plain text and passes it to `sshpass -e` through the child process environment so the password is not placed in the command arguments. When the password is `null`, it starts normal `ssh`.
-
-Each connection records the sanitized SSH command, start and end times, status, exit code, stdout, and stderr in ctx logs. Use `xlog` to review the connection log. Passwords and `sshpass` arguments are not recorded.
-
-Install from the APT repository:
-
-```sh
-sudo apt install ctx
-sudo apt install xssh
-```
-
-## xftp Usage
-
-`xftp` uses the ctx JSON API v1 series to read the current workspace target, `ftp` scoped credentials, and saved service information. It does not read the ctx SQLite database directly. `ctx` and `lftp` are required.
-
-```sh
-ctx credential set ftp anonymous anonymous@example.com
-xftp
-xftp 6
-xftp anonymous
-```
-
-With one saved FTP credential, `xftp` connects immediately. With multiple credentials or multiple FTP service ports, it prompts for a numbered selection. If no FTP credential is saved, it starts normal `lftp` to the current target. If no FTP service is saved, port 21 is used. When a stored password is present, `xftp` retrieves it from ctx in plain text and passes it to `lftp --env-password` through the child process environment so the password is not placed in the command arguments. When the password is `null`, it starts `lftp` without password automation.
-
-Install from the APT repository:
-
-```sh
-sudo apt install ctx
-sudo apt install xftp
-```
-
-## xsmb Usage
-
-`xsmb` uses the ctx JSON API v1 series to read the current workspace target, `smb` scoped credentials, and saved service information. It does not read the ctx SQLite database directly. `ctx` and `smbclient` are required.
-
-```sh
-ctx credential set smb root password
-xsmb
-xsmb 6
-xsmb root
-```
-
-With one saved SMB credential, `xsmb` discovers the available disk shares and connects to the selected share with `smbclient`. `IPC$` is excluded from the share choices. With multiple credentials, SMB services, or disk shares, it prompts for a numbered selection and remembers the last successfully used credential as the default for the next Enter press. Credential IDs are accepted as arguments but are not shown in the selection list. If no SMB credential is saved, it discovers shares using normal `smbclient` behavior. If the requested username is not registered, it starts a normal username-based SMB connection. If no SMB service is saved, port 445 is used. `xsmb` recognizes `smb`, `microsoft-ds`, and `netbios-ssn` service names. When a stored password is present, `xsmb` retrieves it from ctx in plain text and passes it to `smbclient` through the child process environment so the password is not placed in the command arguments. When the password is `null`, it starts `smbclient` without password automation. Each connection records the sanitized SMB command, start and end times, status, exit code, stdout, and stderr in ctx logs for review with `xlog`; passwords and `PASSWD` values are not recorded.
-
-Install from the APT repository:
-
-```sh
-sudo apt install ctx
-sudo apt install xsmb
-```
-
-## Directory Structure
-
-- `cmd/req/`: Entry point for the `req` command
-- `cmd/xssh/`: Entry point for the `xssh` command
-- `cmd/xftp/`: Entry point for the `xftp` command
-- `cmd/xsmb/`: Entry point for the `xsmb` command
-- `internal/req/`: Implementation and tests for `req`
-- `internal/xssh/`: Implementation and tests for `xssh`
-- `internal/xftp/`: Implementation and tests for `xftp`
-- `internal/xsmb/`: Implementation and tests for `xsmb`
-- `debian/req/`: Debian packaging files for `req`
-- `debian/ctx/`: Debian packaging files for `ctx`
-- `debian/xssh/`: Debian packaging files for `xssh`
-- `debian/xftp/`: Debian packaging files for `xftp`
-- `debian/xsmb/`: Debian packaging files for `xsmb`
-- `scripts/`: Build and publishing scripts
-- `.github/workflows/`: GitHub Actions workflows
-
-## Branch Roles
-
-- `main`: Source code branch. A push to this branch triggers testing and publishes the APT repository if all checks pass.
-- `apt-repo`: Published APT repository
-
-The `apt-repo` branch contains only the generated APT repository. AWS Amplify publishes this branch only.
-
-## Generated Files Not Tracked on `main`
-
-- `dist/`
-- `repo/dists/`
-- `repo/pool/`
-
-These paths are listed in `.gitignore` and must not be committed to the `main` branch.
-
-## GitHub Actions
-
-### `test.yml`
-
-Runs on every `push` and executes:
-
-```sh
-go mod tidy
-git diff --exit-code
-go test ./...
-./scripts/check-version.sh ctx
-./scripts/check-version.sh xssh
-./scripts/check-version.sh xftp
-./scripts/check-version.sh xsmb
-```
-
-### `publish-apt-repo.yml`
-
-Runs only when `main` is updated and executes the following steps:
-
-```text
-go mod tidy
-git diff --exit-code
-go test ./...
-./scripts/check-version.sh ctx
-./scripts/check-version.sh xssh
-./scripts/check-version.sh xftp
-./scripts/check-version.sh xsmb
-./scripts/build-deb.sh req amd64
-./scripts/build-deb.sh req arm64
-./scripts/build-deb.sh ctx amd64
-./scripts/build-deb.sh ctx arm64
-./scripts/build-deb.sh xssh amd64
-./scripts/build-deb.sh xssh arm64
-./scripts/build-deb.sh xftp amd64
-./scripts/build-deb.sh xftp arm64
-./scripts/build-deb.sh xsmb amd64
-./scripts/build-deb.sh xsmb arm64
-Restore the existing apt-repo branch into repo/
-./scripts/build-apt-repo.sh
-Force-push to the apt-repo branch
-```
-
-If any test or the `go mod tidy` check fails, the repository is not published.
-
-## Building the Debian Package
-
-```sh
-./scripts/build-deb.sh
-./scripts/build-deb.sh ctx
-```
-
-You can also specify the package and target architecture explicitly:
-
-```sh
-./scripts/build-deb.sh req amd64
-./scripts/build-deb.sh req arm64
-./scripts/build-deb.sh ctx amd64
-./scripts/build-deb.sh ctx arm64
-./scripts/build-deb.sh xssh amd64
-./scripts/build-deb.sh xssh arm64
-./scripts/build-deb.sh xftp amd64
-./scripts/build-deb.sh xftp arm64
-./scripts/build-deb.sh xsmb amd64
-./scripts/build-deb.sh xsmb arm64
-```
-
-Output:
-
-```text
-dist/<package>_<version>_<architecture>.deb
-```
-
-Notes:
-
-- If no argument is given, the target architecture is detected using `dpkg --print-architecture`.
-- The corresponding Go `GOARCH` value is derived from the Debian architecture.
-- The package defaults to `req` when omitted.
-- The `ctx` package installs `ctx`; `x` is provided by shell integration as a helper for `ctx x`.
-- The package version is read from `debian/<package>/VERSION`.
-- `./scripts/check-version.sh <package>` checks that `debian/<package>/VERSION` matches `internal/<package>.Version` for packages that expose a Go version.
-
-## Release Checks
-
-Before a release, run the combined version, Go module, test, Debian package, and packaged executable checks. The script APT-installs the `.deb` on the current Kali Linux system, checks basic operation, `postinst`, and removal, then reinstalls it. After installation, the installed ctx tests the current `.zshrc` or `.bashrc` for removal, registration, idempotency, updates, and loading. This requires administrator privileges through `sudo`. A fully successful check leaves the ctx configuration in place; failures and interruptions restore the original contents and modification time. When run from a terminal, success starts a shell with the updated configuration loaded so interactive checks can begin immediately:
-
-```sh
-./scripts/check-release.sh ctx
-```
-
-When run without arguments, the release check validates `ctx` and bundled add-on packages such as `xssh` and `xftp`.
-
-After publishing, verify the amd64/arm64 APT metadata and `.deb` files on `apt.batako.net`. HTTP requests are retried to allow for propagation delays. Updating from the public APT repository and installing a specific version are printed as `TODO` items.
-
-```sh
-./scripts/check-published.sh ctx
-```
-
-To check another repository:
-
-```sh
-APT_REPOSITORY_URL=https://example.net ./scripts/check-published.sh ctx
-```
-
-## Building the APT Repository
-
-Run this after building the Debian package. The script copies new packages from `dist/` into `repo/pool/` without deleting existing packages, then regenerates metadata from every `.deb` stored in `repo/pool/` using `dpkg-scanpackages --multiversion`.
-
-```sh
-./scripts/build-apt-repo.sh
-```
-
-Output:
-
-```text
-repo/dists/stable/main/binary-all/Packages
-repo/dists/stable/main/binary-all/Packages.gz
-repo/dists/stable/main/binary-amd64/Packages
-repo/dists/stable/main/binary-amd64/Packages.gz
-repo/dists/stable/main/binary-arm64/Packages
-repo/dists/stable/main/binary-arm64/Packages.gz
-repo/pool/main/r/req/req_<version>_amd64.deb
-repo/pool/main/r/req/req_<version>_arm64.deb
-repo/pool/main/c/ctx/ctx_<version>_amd64.deb
-repo/pool/main/c/ctx/ctx_<version>_arm64.deb
-repo/pool/main/x/xssh/xssh_<version>_amd64.deb
-repo/pool/main/x/xssh/xssh_<version>_arm64.deb
-```
-
-## Using the APT Repository
-
-Add the repository:
+Add the public repository once:
 
 ```sh
 echo "deb [trusted=yes] https://apt.batako.net stable main" \
-| sudo tee /etc/apt/sources.list.d/batako.list
-```
-
-Update the package index:
-
-```sh
+  | sudo tee /etc/apt/sources.list.d/batako.list
 sudo apt update
 ```
 
-Install the latest package:
+Install the tools you need:
 
 ```sh
 sudo apt install req
 sudo apt install ctx
 sudo apt install xssh
+sudo apt install xftp
+sudo apt install xsmb
 ```
 
-Install a specific version:
+Dependencies are declared by each Debian package. For example, `xssh` uses `openssh-client` and `sshpass`, `xftp` uses `lftp`, and `xsmb` uses `smbclient`.
+
+## Usage
+
+### req
+
+Replay a raw HTTP request. The request method, path, host, headers, and body are read from the file.
 
 ```sh
-sudo apt install ctx=1.0.0
-sudo apt install xssh=0.1.0
-sudo apt install req=0.2.3
+req login.req
+req -S login.req
 ```
 
-To remove the repository:
+`-S`/`--https` forces HTTPS when the request file does not determine a scheme. `-h`/`--help` and `-V`/`--version` are also available. `Accept-Encoding` and `Content-Length` from the request file are not sent; Go's `net/http` handles gzip response decompression.
+
+### ctx
+
+Create or select a workspace, then register targets and credentials as needed:
 
 ```sh
-sudo rm -f /etc/apt/sources.list.d/batako.list
-sudo apt update
+ctx workspace init
+ctx status
+ctx target add 10.10.10.20 --name target
+ctx credential set ssh root password
+ctx scan
+ctx service ls
+ctx log
 ```
+
+Useful commands include `ctx workspace ls`, `ctx workspace rm`, `ctx note`, `ctx prompt`, `ctx reset`, and `ctx x <command> [args...]`. Run `ctx --help` for the complete command reference.
+
+Install shell integration when using the `x` helpers:
+
+```sh
+ctx completion zsh
+ctx completion bash
+ctx init-shell
+```
+
+### Add-ons
+
+Each add-on accepts an optional credential ID or username. With multiple credentials or service ports, it displays a selection. When no matching credential is registered, the underlying client is used with the supplied username or without a username.
+
+```sh
+xssh
+xssh root
+xftp
+xftp ftpuser
+xsmb
+xsmb smbuser
+```
+
+The add-ons save connection start/end times, status, exit code, sanitized command, stdout, and stderr to ctx logs. Review them with `xlog`. Passwords are not stored in the command log.
+
+`xsmb` lists disk shares, excludes `IPC$`, and lets you select the share before connecting. `xssh` defaults to port 22, `xftp` to port 21, and `xsmb` to port 445 when ctx has no matching service record.
+
+## Repository Layout
+
+```text
+.
+├── cmd/                 # Go command entrypoints
+├── internal/            # Tool implementations and tests
+├── debian/              # Per-tool package metadata and VERSION files
+├── scripts/             # Build, validation, and publication scripts
+├── releases/            # English and Japanese release notes
+├── docs/                # Detailed ctx and API documentation
+├── .github/workflows/   # Test, APT publication, and release workflows
+├── go.mod
+└── README.md
+```
+
+`debian/<tool>/VERSION` is the source of truth for that tool's package version. Current package versions are `req 0.1.0`, `ctx 1.2.0`, and `xssh`, `xftp`, `xsmb` `1.0.0`.
+
+## Branches and Generated Files
+
+- `main`: Source code, tests, package definitions, scripts, and documentation.
+- `dev`: Development branch. Pushes run tests only.
+- `apt-repo`: Generated APT repository only. AWS Amplify publishes this branch.
+
+The following are generated and must not be committed to `main`:
+
+```text
+dist/
+repo/dists/
+repo/pool/
+```
+
+## Development
+
+Run tests in the Kali development container:
+
+```sh
+docker-compose exec -w /tools kali go test ./...
+docker-compose exec -w /tools kali gofmt -w cmd internal
+```
+
+Build and install one package locally:
+
+```sh
+./scripts/install-deb.sh ctx
+./scripts/install-deb.sh xssh
+./scripts/install-deb.sh xftp
+./scripts/install-deb.sh xsmb
+```
+
+Build a package directly for either supported architecture:
+
+```sh
+./scripts/build-deb.sh xssh amd64
+./scripts/build-deb.sh xssh arm64
+```
+
+The output is `dist/<tool>_<version>_<architecture>.deb`. `scripts/build-apt-repo.sh` copies packages from `dist/` and regenerates `Packages` and `Packages.gz` for each architecture.
+
+## Automation
+
+`.github/workflows/test.yml` runs on every push and checks module tidiness, tests, and tool/package version consistency.
+
+`.github/workflows/publish-apt-repo.yml` runs only for pushes to `main`. It runs the same checks, builds `amd64` and `arm64` packages for all tools, regenerates the APT repository, and force-pushes only `repo/` contents to `apt-repo`. A failed check prevents publication.
+
+`.github/workflows/publish-release.yml` runs for version tags such as:
+
+```text
+ctx-v1.2.0
+xssh-v1.0.0
+xftp-v1.0.0
+xsmb-v1.0.0
+req-v0.1.0
+```
+
+It verifies `releases/<tool>/<version>.md`, collects the matching packages from `apt-repo`, and creates the GitHub Release. The Japanese notes use the corresponding `.ja.md` file.
+
+For local checks:
+
+```sh
+./scripts/check-version.sh xssh
+./scripts/check-release.sh xssh
+./scripts/check-published.sh xssh
+```
+
+`check-release.sh` performs the heavier local Debian/APT installation checks. `check-published.sh` verifies the public APT metadata and package files after publication.
+
+## Documentation
+
+See `docs/` for detailed ctx architecture, database, API, and add-on documentation. Run each command with `--help` for its current CLI syntax.
