@@ -33,8 +33,32 @@ func TestConfigValueProjectRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListConfigValues() error = %v", err)
 	}
-	if len(entries) != 1 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want {
-		t.Fatalf("ListConfigValues() = %+v, want project.root = %q", entries, want)
+	if len(entries) != 2 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want ||
+		entries[1].Key != ConfigKeyWebWordlist || entries[1].Value != "" {
+		t.Fatalf("ListConfigValues() = %+v, want project.root and empty web.wordlist", entries)
+	}
+}
+
+func TestConfigValueWebWordlist(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	chdirForTest(t, base)
+
+	want := filepath.Join(base, "wordlists", "web.txt")
+	got, err := SetConfigValue(ConfigKeyWebWordlist, "wordlists/web.txt")
+	if err != nil {
+		t.Fatalf("SetConfigValue(web.wordlist) error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("SetConfigValue(web.wordlist) = %q, want %q", got, want)
+	}
+
+	got, err = GetConfigValue(ConfigKeyWebWordlist)
+	if err != nil {
+		t.Fatalf("GetConfigValue(web.wordlist) error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("GetConfigValue(web.wordlist) = %q, want %q", got, want)
 	}
 }
 

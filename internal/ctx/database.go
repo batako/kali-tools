@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	currentSchemaVersion     = 2
+	currentSchemaVersion     = 3
 	v100SchemaVersion        = 1
 	latestSchemaSnapshotPath = "schema.sql"
 )
@@ -502,6 +502,19 @@ var v100SchemaIndexes = map[string]string{
 	"idx_notes_workspace_created_at":        "notes",
 }
 
+var currentSchemaIndexes = map[string]string{
+	"idx_targets_one_primary":               "targets",
+	"idx_targets_workspace_id":              "targets",
+	"idx_hosts_target_id":                   "hosts",
+	"idx_services_target_id":                "services",
+	"idx_credentials_target_id":             "credentials",
+	"idx_command_logs_workspace_started_at": "command_logs",
+	"idx_scan_runs_target_id":               "scan_runs",
+	"idx_notes_workspace_created_at":        "notes",
+	"idx_web_discoveries_target_id":         "web_discoveries",
+	"idx_web_discoveries_command_log_id":    "web_discoveries",
+}
+
 var currentSchemaTables = []schemaTable{
 	{
 		Name: "workspaces",
@@ -620,6 +633,28 @@ var currentSchemaTables = []schemaTable{
 		},
 		SQLFragments: []string{"FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"},
 	},
+	{
+		Name: "web_discoveries",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "target_id", Type: "INTEGER", NotNull: true},
+			{Name: "url", Type: "TEXT", NotNull: true},
+			{Name: "path", Type: "TEXT", NotNull: true},
+			{Name: "status_code", Type: "INTEGER", NotNull: true},
+			{Name: "content_length", Type: "INTEGER"},
+			{Name: "redirect_url", Type: "TEXT"},
+			{Name: "source_tool", Type: "TEXT", NotNull: true},
+			{Name: "wordlist", Type: "TEXT", NotNull: true},
+			{Name: "command_log_id", Type: "INTEGER"},
+			{Name: "discovered_at", Type: "TEXT", NotNull: true},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{
+			"FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE",
+			"FOREIGN KEY (command_log_id) REFERENCES command_logs(id) ON DELETE SET NULL",
+		},
+	},
 }
 
 func validateCurrentSchema(db *sql.DB) error {
@@ -631,7 +666,7 @@ func validateCurrentSchema(db *sql.DB) error {
 			return err
 		}
 	}
-	for index, table := range v100SchemaIndexes {
+	for index, table := range currentSchemaIndexes {
 		if err := validateSchemaIndex(db, index, table); err != nil {
 			return err
 		}

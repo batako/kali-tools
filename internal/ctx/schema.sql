@@ -106,6 +106,24 @@ CREATE TABLE notes (
 	FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 );
 
+CREATE TABLE web_discoveries (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	target_id INTEGER NOT NULL,
+	url TEXT NOT NULL,
+	path TEXT NOT NULL,
+	status_code INTEGER NOT NULL,
+	content_length INTEGER,
+	redirect_url TEXT,
+	source_tool TEXT NOT NULL,
+	wordlist TEXT NOT NULL,
+	command_log_id INTEGER,
+	discovered_at TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
+	FOREIGN KEY (command_log_id) REFERENCES command_logs(id) ON DELETE SET NULL
+);
+
 CREATE UNIQUE INDEX idx_targets_one_primary ON targets(workspace_id) WHERE is_primary = 1;
 CREATE INDEX idx_targets_workspace_id ON targets(workspace_id);
 CREATE INDEX idx_hosts_target_id ON hosts(target_id);
@@ -114,3 +132,5 @@ CREATE INDEX idx_credentials_target_id ON credentials(target_id);
 CREATE INDEX idx_command_logs_workspace_started_at ON command_logs(workspace_id, started_at DESC);
 CREATE INDEX idx_scan_runs_target_id ON scan_runs(target_id);
 CREATE INDEX idx_notes_workspace_created_at ON notes(workspace_id, created_at DESC);
+CREATE INDEX idx_web_discoveries_target_id ON web_discoveries(target_id, discovered_at DESC);
+CREATE INDEX idx_web_discoveries_command_log_id ON web_discoveries(command_log_id);

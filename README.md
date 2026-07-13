@@ -103,7 +103,7 @@ The add-ons save connection start/end times, status, exit code, sanitized comman
 └── README.md
 ```
 
-`debian/<tool>/VERSION` is the source of truth for that tool's package version. Current package versions are `req 0.1.0`, `ctx 1.2.0`, and `xssh`, `xftp`, `xsmb` `1.0.0`.
+Each tool's package version is defined by `debian/<tool>/VERSION`; current version numbers are intentionally not repeated here.
 
 ## Branches and Generated Files
 
@@ -155,11 +155,11 @@ The output is `dist/<tool>_<version>_<architecture>.deb`. `scripts/build-apt-rep
 `.github/workflows/publish-release.yml` runs for version tags such as:
 
 ```text
-ctx-v1.2.0
-xssh-v1.0.0
-xftp-v1.0.0
-xsmb-v1.0.0
-req-v0.1.0
+ctx-v<version>
+xssh-v<version>
+xftp-v<version>
+xsmb-v<version>
+req-v<version>
 ```
 
 It verifies `releases/<tool>/<version>.md`, collects the matching packages from `apt-repo`, and creates the GitHub Release. The Japanese notes use the corresponding `.ja.md` file.

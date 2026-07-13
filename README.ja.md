@@ -103,7 +103,7 @@ xsmb smbuser
 └── README.md
 ```
 
-バージョンの正は `debian/<tool>/VERSION` です。現在のバージョンは `req 0.1.0`、`ctx 1.2.0`、`xssh`・`xftp`・`xsmb` が `1.0.0` です。
+各ツールのパッケージバージョンは `debian/<tool>/VERSION` で管理し、現在のバージョン番号はREADMEに重複して記載しません。
 
 ## ブランチと生成物
 
@@ -155,11 +155,11 @@ docker-compose exec -w /tools kali gofmt -w cmd internal
 `.github/workflows/publish-release.yml` は次の形式のタグで実行します。
 
 ```text
-ctx-v1.2.0
-xssh-v1.0.0
-xftp-v1.0.0
-xsmb-v1.0.0
-req-v0.1.0
+ctx-v<version>
+xssh-v<version>
+xftp-v<version>
+xsmb-v<version>
+req-v<version>
 ```
 
 `releases/<tool>/<version>.md` の存在を確認し、`apt-repo` の対応パッケージを収集してGitHub Releaseを作成します。日本語版は対応する `.ja.md` です。
