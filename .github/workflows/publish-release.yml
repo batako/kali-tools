@@ -5,6 +5,7 @@ on:
     tags:
       - ctx-v*
       - req-v*
+      - xssh-v*
       - xftp-v*
       - xsmb-v*
 
@@ -38,6 +39,7 @@ jobs:
           case "${tag}" in
             ctx-v*) application="ctx"; version="${tag#ctx-v}" ;;
             req-v*) application="req"; version="${tag#req-v}" ;;
+            xssh-v*) application="xssh"; version="${tag#xssh-v}" ;;
             xftp-v*) application="xftp"; version="${tag#xftp-v}" ;;
             xsmb-v*) application="xsmb"; version="${tag#xsmb-v}" ;;
             *)
@@ -64,7 +66,7 @@ jobs:
           set -eu
 
           case "${APPLICATION}" in
-            ctx|req|xftp|xsmb) ;;
+            ctx|req|xssh|xftp|xsmb) ;;
             *)
               echo "unsupported application: ${APPLICATION}" >&2
               exit 1
