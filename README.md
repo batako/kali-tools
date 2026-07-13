@@ -6,6 +6,7 @@ This repository contains self-made CLI tools for Kali Linux.
 
 - `req`: A CLI tool for sending raw HTTP requests stored in `.req` files.
 - `ctx`: A CLI tool for managing workspace context for targets and hosts.
+- `xssh`: A ctx add-on for connecting to the current target with stored SSH credentials.
 
 ## req Usage
 
@@ -92,12 +93,35 @@ ctx doctor
 
 `ctx doctor` reports each executable, PATH, shell, shell integration, and workspace check as `OK` or `NG`. Terminal output colors `OK` green, `NG` red, and `Fix:` yellow. Every `NG` includes a corrective action, but diagnostic NG results do not make the command itself fail.
 
+## xssh Usage
+
+`xssh` uses the ctx JSON API v1 series to read the current workspace target, `ssh` scoped credentials, and saved service information. It does not read the ctx SQLite database directly. `ctx` and `openssh-client` are required. `sshpass` is only required when xssh uses a stored password.
+
+```sh
+ctx credential set ssh root password
+xssh
+xssh 6
+xssh root
+```
+
+With one saved SSH credential, `xssh` connects immediately. With multiple credentials or multiple SSH service ports, it prompts for a numbered selection. If no SSH credential is saved, it starts normal `ssh` to the current target. If no SSH service is saved, port 22 is used. When a stored password is present, `xssh` retrieves it from ctx in plain text and passes it to `sshpass -e` through the child process environment so the password is not placed in the command arguments. When the password is `null`, it starts normal `ssh`.
+
+Install from the APT repository:
+
+```sh
+sudo apt install ctx
+sudo apt install xssh
+```
+
 ## Directory Structure
 
 - `cmd/req/`: Entry point for the `req` command
+- `cmd/xssh/`: Entry point for the `xssh` command
 - `internal/req/`: Implementation and tests for `req`
+- `internal/xssh/`: Implementation and tests for `xssh`
 - `debian/req/`: Debian packaging files for `req`
 - `debian/ctx/`: Debian packaging files for `ctx`
+- `debian/xssh/`: Debian packaging files for `xssh`
 - `scripts/`: Build and publishing scripts
 - `.github/workflows/`: GitHub Actions workflows
 
@@ -127,6 +151,7 @@ go mod tidy
 git diff --exit-code
 go test ./...
 ./scripts/check-version.sh ctx
+./scripts/check-version.sh xssh
 ```
 
 ### `publish-apt-repo.yml`
@@ -138,10 +163,13 @@ go mod tidy
 git diff --exit-code
 go test ./...
 ./scripts/check-version.sh ctx
+./scripts/check-version.sh xssh
 ./scripts/build-deb.sh req amd64
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
 ./scripts/build-deb.sh ctx arm64
+./scripts/build-deb.sh xssh amd64
+./scripts/build-deb.sh xssh arm64
 Restore the existing apt-repo branch into repo/
 ./scripts/build-apt-repo.sh
 Force-push to the apt-repo branch
@@ -163,6 +191,8 @@ You can also specify the package and target architecture explicitly:
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
 ./scripts/build-deb.sh ctx arm64
+./scripts/build-deb.sh xssh amd64
+./scripts/build-deb.sh xssh arm64
 ```
 
 Output:
@@ -178,7 +208,7 @@ Notes:
 - The package defaults to `req` when omitted.
 - The `ctx` package installs `ctx`; `x` is provided by shell integration as a helper for `ctx x`.
 - The package version is read from `debian/<package>/VERSION`.
-- `./scripts/check-version.sh ctx` checks that `debian/ctx/VERSION` matches `internal/ctx.Version`.
+- `./scripts/check-version.sh <package>` checks that `debian/<package>/VERSION` matches `internal/<package>.Version` for packages that expose a Go version.
 
 ## Release Checks
 
@@ -187,6 +217,8 @@ Before a release, run the combined version, Go module, test, Debian package, and
 ```sh
 ./scripts/check-release.sh ctx
 ```
+
+When run without arguments, the release check validates `ctx` and bundled add-on packages such as `xssh`.
 
 After publishing, verify the amd64/arm64 APT metadata and `.deb` files on `apt.batako.net`. HTTP requests are retried to allow for propagation delays. Updating from the public APT repository and installing a specific version are printed as `TODO` items.
 
@@ -221,6 +253,8 @@ repo/pool/main/r/req/req_<version>_amd64.deb
 repo/pool/main/r/req/req_<version>_arm64.deb
 repo/pool/main/c/ctx/ctx_<version>_amd64.deb
 repo/pool/main/c/ctx/ctx_<version>_arm64.deb
+repo/pool/main/x/xssh/xssh_<version>_amd64.deb
+repo/pool/main/x/xssh/xssh_<version>_arm64.deb
 ```
 
 ## Using the APT Repository
@@ -243,12 +277,14 @@ Install the latest package:
 ```sh
 sudo apt install req
 sudo apt install ctx
+sudo apt install xssh
 ```
 
 Install a specific version:
 
 ```sh
 sudo apt install ctx=1.0.0
+sudo apt install xssh=0.1.0
 sudo apt install req=0.2.3
 ```
 

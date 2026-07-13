@@ -26,3 +26,6 @@ jobs:
 
       - name: Check ctx version
         run: ./scripts/check-version.sh ctx
+
+      - name: Check xssh version
+        run: ./scripts/check-version.sh xssh

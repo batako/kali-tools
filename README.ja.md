@@ -6,6 +6,7 @@ Kali Linux 向けの自作 CLI ツールを管理するリポジトリです。
 
 - `req`: `.req` ファイルとして保存した生 HTTP リクエストを送信する CLI
 - `ctx`: ターゲットと hosts のワークスペースコンテキストを管理する CLI
+- `xssh`: ctx の保存済み SSH 認証情報で現在のターゲットへ接続する Add-on
 
 ## req の使い方
 
@@ -92,12 +93,35 @@ ctx doctor
 
 `ctx doctor` は実行ファイル、PATH、shell、shell integration、workspaceをそれぞれ`OK`または`NG`で表示します。端末では`OK`を緑、`NG`を赤、`Fix:`を黄で表示します。すべての`NG`には改善方法を示しますが、診断結果のNGだけではコマンド自体をエラー終了しません。
 
+## xssh の使い方
+
+`xssh` は ctx JSON API v1 系を使い、現在の workspace target、`ssh` scope の credential、保存済み service information を取得します。ctx の SQLite は直接参照しません。実行には `ctx`、`openssh-client`、`sshpass` が必要です。
+
+```sh
+ctx credential set ssh root password
+xssh
+xssh 6
+xssh root
+```
+
+SSH credential が1件なら即接続します。credential または SSH service port が複数ある場合は番号選択を表示します。SSH service が保存されていない場合は22番を使います。保存済み password がある場合、`xssh` は ctx から平文で取得し、コマンド引数には含めず child process の環境変数として `sshpass -e` に渡します。password が `null` の場合は通常の `ssh` を起動します。
+
+APT リポジトリからインストールする場合:
+
+```sh
+sudo apt install ctx
+sudo apt install xssh
+```
+
 ## ディレクトリ構成
 
 - `cmd/req/`: `req` のエントリポイント
+- `cmd/xssh/`: `xssh` のエントリポイント
 - `internal/req/`: `req` の実装とテスト
+- `internal/xssh/`: `xssh` の実装とテスト
 - `debian/req/`: `req` の Debian パッケージ定義
 - `debian/ctx/`: `ctx` の Debian パッケージ定義
+- `debian/xssh/`: `xssh` の Debian パッケージ定義
 - `scripts/`: ビルドと公開用スクリプト
 - `.github/workflows/`: GitHub Actions
 
@@ -127,6 +151,7 @@ go mod tidy
 git diff --exit-code
 go test ./...
 ./scripts/check-version.sh ctx
+./scripts/check-version.sh xssh
 ```
 
 ### `publish-apt-repo.yml`
@@ -138,10 +163,13 @@ go mod tidy
 git diff --exit-code
 go test ./...
 ./scripts/check-version.sh ctx
+./scripts/check-version.sh xssh
 ./scripts/build-deb.sh req amd64
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
 ./scripts/build-deb.sh ctx arm64
+./scripts/build-deb.sh xssh amd64
+./scripts/build-deb.sh xssh arm64
 既存の apt-repo ブランチを repo/ に復元
 ./scripts/build-apt-repo.sh
 apt-repo ブランチへ force push
@@ -163,6 +191,8 @@ apt-repo ブランチへ force push
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
 ./scripts/build-deb.sh ctx arm64
+./scripts/build-deb.sh xssh amd64
+./scripts/build-deb.sh xssh arm64
 ```
 
 生成物:
@@ -178,7 +208,7 @@ dist/<package>_<version>_<architecture>.deb
 - パッケージを省略した場合は `req` を生成します
 - `ctx` パッケージに入る実行ファイルは `ctx` です。`x` は shell integration が提供する `ctx x` 用 helper です
 - バージョンは `debian/<package>/VERSION` から読み込みます
-- `./scripts/check-version.sh ctx` で `debian/ctx/VERSION` と `internal/ctx.Version` の一致を確認します
+- `./scripts/check-version.sh <package>` で `debian/<package>/VERSION` と `internal/<package>.Version` の一致を確認します
 
 ## リリースチェック
 
@@ -187,6 +217,8 @@ dist/<package>_<version>_<architecture>.deb
 ```sh
 ./scripts/check-release.sh ctx
 ```
+
+引数なしで実行した場合は、`ctx` と `xssh` などの同梱 Add-on パッケージを検証します。
 
 リリース公開後は、`apt.batako.net` の amd64/arm64 用 APT メタデータと `.deb` を確認します。反映待ちを考慮して HTTP 取得は自動で再試行します。公開APTリポジトリからの更新とバージョン指定インストールは、実行後に `TODO` として表示されます。
 
@@ -221,6 +253,8 @@ repo/pool/main/r/req/req_<version>_amd64.deb
 repo/pool/main/r/req/req_<version>_arm64.deb
 repo/pool/main/c/ctx/ctx_<version>_amd64.deb
 repo/pool/main/c/ctx/ctx_<version>_arm64.deb
+repo/pool/main/x/xssh/xssh_<version>_amd64.deb
+repo/pool/main/x/xssh/xssh_<version>_arm64.deb
 ```
 
 ## APT リポジトリの利用
@@ -238,17 +272,19 @@ echo "deb [trusted=yes] https://apt.batako.net stable main" \
 sudo apt update
 ```
 
-最新版の `req` または `ctx` をインストールします。
+最新版の `req`、`ctx`、`xssh` をインストールします。
 
 ```sh
 sudo apt install req
 sudo apt install ctx
+sudo apt install xssh
 ```
 
 バージョンを指定してインストールする場合:
 
 ```sh
 sudo apt install ctx=1.0.0
+sudo apt install xssh=0.1.0
 sudo apt install req=0.2.3
 ```
 

@@ -6,7 +6,7 @@ PACKAGE_NAME="req"
 
 if [ "$#" -gt 0 ]; then
   case "$1" in
-    req|ctx)
+    req|ctx|xssh)
       PACKAGE_NAME="$1"
       shift
       ;;

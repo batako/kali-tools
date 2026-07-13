@@ -2,6 +2,11 @@
 
 set -u
 
+RUN_BUNDLED_ADDONS=0
+if [ "$#" -eq 0 ]; then
+  RUN_BUNDLED_ADDONS=1
+fi
+
 PACKAGE_NAME="${1:-ctx}"
 VERSION_FILE="debian/${PACKAGE_NAME}/VERSION"
 ARCH="$(dpkg --print-architecture 2>/dev/null || true)"
@@ -230,6 +235,41 @@ check_deb_install() {
   fi
 }
 
+check_addon_package() {
+  addon_name="$1"
+  old_package_name="${PACKAGE_NAME}"
+  old_version_file="${VERSION_FILE}"
+  old_version="${VERSION}"
+
+  PACKAGE_NAME="${addon_name}"
+  VERSION_FILE="debian/${PACKAGE_NAME}/VERSION"
+
+  if [ -f "${VERSION_FILE}" ]; then
+    VERSION="$(sed -n '1{s/[[:space:]]//g;p;q;}' "${VERSION_FILE}")"
+  else
+    VERSION=""
+  fi
+
+  check "${PACKAGE_NAME} release files exist" check_package_files
+  check "${PACKAGE_NAME} source and package versions match" ./scripts/check-version.sh "${PACKAGE_NAME}"
+
+  if [ -n "${ARCH}" ] && [ -n "${VERSION}" ]; then
+    deb_path="dist/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
+    check "${PACKAGE_NAME} Debian package builds (${ARCH})" ./scripts/build-deb.sh "${PACKAGE_NAME}" "${ARCH}"
+    check "${PACKAGE_NAME} Debian package metadata is correct" check_deb_metadata "${deb_path}" "${VERSION}"
+    check "${PACKAGE_NAME} Debian package contains the executable" check_deb_contents "${deb_path}"
+    check "${PACKAGE_NAME} packaged executable reports ${VERSION}" check_deb_version "${deb_path}" "${VERSION}"
+    check "${PACKAGE_NAME} APT install, removal, and reinstall work on Kali Linux" check_deb_install "${deb_path}" "${VERSION}"
+  else
+    printf 'NG   %s package version and architecture are available\n' "${PACKAGE_NAME}"
+    FAILED=1
+  fi
+
+  PACKAGE_NAME="${old_package_name}"
+  VERSION_FILE="${old_version_file}"
+  VERSION="${old_version}"
+}
+
 printf 'Pre-release checks: %s\n\n' "${PACKAGE_NAME}"
 
 check "release files exist" check_package_files
@@ -243,7 +283,7 @@ fi
 check "Go modules are tidy" check_tidy
 check "Go tests pass" go test ./...
 
-if [ "${PACKAGE_NAME}" = "ctx" ]; then
+if [ "${PACKAGE_NAME}" = "ctx" ] || [ "${PACKAGE_NAME}" = "xssh" ]; then
   check "source and package versions match" ./scripts/check-version.sh "${PACKAGE_NAME}"
 fi
 
@@ -267,6 +307,10 @@ if [ -n "${ARCH}" ] && [ -n "${VERSION}" ]; then
 else
   printf 'NG   package version and architecture are available\n'
   FAILED=1
+fi
+
+if [ "${PACKAGE_NAME}" = "ctx" ] && [ "${RUN_BUNDLED_ADDONS}" -eq 1 ]; then
+  check_addon_package xssh
 fi
 
 if [ "${PACKAGE_NAME}" = "ctx" ] && [ "${FAILED}" -eq 0 ]; then

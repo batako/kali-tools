@@ -39,12 +39,17 @@ jobs:
       - name: Check ctx version
         run: ./scripts/check-version.sh ctx
 
+      - name: Check xssh version
+        run: ./scripts/check-version.sh xssh
+
       - name: Build Debian packages
         run: |
           ./scripts/build-deb.sh req amd64
           ./scripts/build-deb.sh req arm64
           ./scripts/build-deb.sh ctx amd64
           ./scripts/build-deb.sh ctx arm64
+          ./scripts/build-deb.sh xssh amd64
+          ./scripts/build-deb.sh xssh arm64
 
       - name: Restore existing APT repository
         run: |
