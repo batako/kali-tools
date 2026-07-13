@@ -45,6 +45,9 @@ jobs:
       - name: Check xftp version
         run: ./scripts/check-version.sh xftp
 
+      - name: Check xsmb version
+        run: ./scripts/check-version.sh xsmb
+
       - name: Build Debian packages
         run: |
           ./scripts/build-deb.sh req amd64
@@ -55,6 +58,8 @@ jobs:
           ./scripts/build-deb.sh xssh arm64
           ./scripts/build-deb.sh xftp amd64
           ./scripts/build-deb.sh xftp arm64
+          ./scripts/build-deb.sh xsmb amd64
+          ./scripts/build-deb.sh xsmb arm64
 
       - name: Restore existing APT repository
         run: |

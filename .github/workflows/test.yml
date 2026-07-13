@@ -32,3 +32,6 @@ jobs:
 
       - name: Check xftp version
         run: ./scripts/check-version.sh xftp
+
+      - name: Check xsmb version
+        run: ./scripts/check-version.sh xsmb

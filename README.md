@@ -8,6 +8,7 @@ This repository contains self-made CLI tools for Kali Linux.
 - `ctx`: A CLI tool for managing workspace context for targets and hosts.
 - `xssh`: A ctx add-on for connecting to the current target with stored SSH credentials.
 - `xftp`: A ctx add-on for connecting to the current target with stored FTP credentials.
+- `xsmb`: A ctx add-on for connecting to selected SMB shares on the current target with stored SMB credentials.
 
 ## req Usage
 
@@ -136,18 +137,41 @@ sudo apt install ctx
 sudo apt install xftp
 ```
 
+## xsmb Usage
+
+`xsmb` uses the ctx JSON API v1 series to read the current workspace target, `smb` scoped credentials, and saved service information. It does not read the ctx SQLite database directly. `ctx` and `smbclient` are required.
+
+```sh
+ctx credential set smb root password
+xsmb
+xsmb 6
+xsmb root
+```
+
+With one saved SMB credential, `xsmb` discovers the available disk shares and connects to the selected share with `smbclient`. `IPC$` is excluded from the share choices. With multiple credentials, SMB services, or disk shares, it prompts for a numbered selection and remembers the last successfully used credential as the default for the next Enter press. Credential IDs are accepted as arguments but are not shown in the selection list. If no SMB credential is saved, it discovers shares using normal `smbclient` behavior. If the requested username is not registered, it starts a normal username-based SMB connection. If no SMB service is saved, port 445 is used. `xsmb` recognizes `smb`, `microsoft-ds`, and `netbios-ssn` service names. When a stored password is present, `xsmb` retrieves it from ctx in plain text and passes it to `smbclient` through the child process environment so the password is not placed in the command arguments. When the password is `null`, it starts `smbclient` without password automation. Each connection records the sanitized SMB command, start and end times, status, exit code, stdout, and stderr in ctx logs for review with `xlog`; passwords and `PASSWD` values are not recorded.
+
+Install from the APT repository:
+
+```sh
+sudo apt install ctx
+sudo apt install xsmb
+```
+
 ## Directory Structure
 
 - `cmd/req/`: Entry point for the `req` command
 - `cmd/xssh/`: Entry point for the `xssh` command
 - `cmd/xftp/`: Entry point for the `xftp` command
+- `cmd/xsmb/`: Entry point for the `xsmb` command
 - `internal/req/`: Implementation and tests for `req`
 - `internal/xssh/`: Implementation and tests for `xssh`
 - `internal/xftp/`: Implementation and tests for `xftp`
+- `internal/xsmb/`: Implementation and tests for `xsmb`
 - `debian/req/`: Debian packaging files for `req`
 - `debian/ctx/`: Debian packaging files for `ctx`
 - `debian/xssh/`: Debian packaging files for `xssh`
 - `debian/xftp/`: Debian packaging files for `xftp`
+- `debian/xsmb/`: Debian packaging files for `xsmb`
 - `scripts/`: Build and publishing scripts
 - `.github/workflows/`: GitHub Actions workflows
 
@@ -179,6 +203,7 @@ go test ./...
 ./scripts/check-version.sh ctx
 ./scripts/check-version.sh xssh
 ./scripts/check-version.sh xftp
+./scripts/check-version.sh xsmb
 ```
 
 ### `publish-apt-repo.yml`
@@ -192,6 +217,7 @@ go test ./...
 ./scripts/check-version.sh ctx
 ./scripts/check-version.sh xssh
 ./scripts/check-version.sh xftp
+./scripts/check-version.sh xsmb
 ./scripts/build-deb.sh req amd64
 ./scripts/build-deb.sh req arm64
 ./scripts/build-deb.sh ctx amd64
@@ -200,6 +226,8 @@ go test ./...
 ./scripts/build-deb.sh xssh arm64
 ./scripts/build-deb.sh xftp amd64
 ./scripts/build-deb.sh xftp arm64
+./scripts/build-deb.sh xsmb amd64
+./scripts/build-deb.sh xsmb arm64
 Restore the existing apt-repo branch into repo/
 ./scripts/build-apt-repo.sh
 Force-push to the apt-repo branch
@@ -225,6 +253,8 @@ You can also specify the package and target architecture explicitly:
 ./scripts/build-deb.sh xssh arm64
 ./scripts/build-deb.sh xftp amd64
 ./scripts/build-deb.sh xftp arm64
+./scripts/build-deb.sh xsmb amd64
+./scripts/build-deb.sh xsmb arm64
 ```
 
 Output:

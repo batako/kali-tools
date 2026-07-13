@@ -283,7 +283,7 @@ fi
 check "Go modules are tidy" check_tidy
 check "Go tests pass" go test ./...
 
-if [ "${PACKAGE_NAME}" = "ctx" ] || [ "${PACKAGE_NAME}" = "xssh" ] || [ "${PACKAGE_NAME}" = "xftp" ]; then
+if [ "${PACKAGE_NAME}" = "ctx" ] || [ "${PACKAGE_NAME}" = "xssh" ] || [ "${PACKAGE_NAME}" = "xftp" ] || [ "${PACKAGE_NAME}" = "xsmb" ]; then
   check "source and package versions match" ./scripts/check-version.sh "${PACKAGE_NAME}"
 fi
 
@@ -312,6 +312,7 @@ fi
 if [ "${PACKAGE_NAME}" = "ctx" ] && [ "${RUN_BUNDLED_ADDONS}" -eq 1 ]; then
   check_addon_package xssh
   check_addon_package xftp
+  check_addon_package xsmb
 fi
 
 if [ "${PACKAGE_NAME}" = "ctx" ] && [ "${FAILED}" -eq 0 ]; then
