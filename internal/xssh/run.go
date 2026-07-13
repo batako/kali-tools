@@ -81,10 +81,13 @@ type App struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
+	state  credentialState
 }
 
 func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	return New(realRunner{}, stdin, stdout, stderr).Run(args)
+	app := New(realRunner{}, stdin, stdout, stderr)
+	app.state = fileCredentialState{}
+	return app.Run(args)
 }
 
 func New(runner commandRunner, stdin io.Reader, stdout, stderr io.Writer) *App {
@@ -93,6 +96,7 @@ func New(runner commandRunner, stdin io.Reader, stdout, stderr io.Writer) *App {
 		stdin:  stdin,
 		stdout: stdout,
 		stderr: stderr,
+		state:  noopCredentialState{},
 	}
 }
 
@@ -157,7 +161,11 @@ func (app *App) Run(args []string) error {
 	} else {
 		_, _ = fmt.Fprintf(app.stdout, "Connecting to %s@%s:%d...\n", credential.Username, targetIP, port)
 	}
-	return app.connect(credential, targetIP, port)
+	err = app.connect(credential, targetIP, port)
+	if err == nil && credential != nil && credential.ID != 0 {
+		_ = app.state.Save(credential.ID)
+	}
+	return err
 }
 
 func (app *App) requireCommands(commands ...string) error {
@@ -198,7 +206,7 @@ func (app *App) resolveCredential(args []string, credentials []Credential, targe
 		}
 	}
 	if len(matches) == 0 {
-		return nil, app.errorf("SSH credential not found: %s", filter)
+		return &Credential{Username: filter}, nil
 	}
 	if len(matches) == 1 {
 		return &matches[0], nil
@@ -207,13 +215,20 @@ func (app *App) resolveCredential(args []string, credentials []Credential, targe
 }
 
 func (app *App) selectCredential(credentials []Credential, targetIP string) (*Credential, error) {
+	lastID, _ := app.state.Load()
+	defaultIndex := -1
 	_, _ = fmt.Fprintln(app.stdout, "Select an SSH credential:")
 	_, _ = fmt.Fprintln(app.stdout)
 	for i, credential := range credentials {
-		_, _ = fmt.Fprintf(app.stdout, "  %d) [%d] %s@%s\n", i+1, credential.ID, credential.Username, targetIP)
+		marker := ""
+		if credential.ID == lastID {
+			defaultIndex = i
+			marker = " (default)"
+		}
+		_, _ = fmt.Fprintf(app.stdout, "  %d) %s@%s%s\n", i+1, credential.Username, targetIP, marker)
 	}
 	_, _ = fmt.Fprintln(app.stdout)
-	index, err := app.selectIndex(len(credentials))
+	index, err := app.selectIndex(len(credentials), defaultIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +257,11 @@ func (app *App) resolveSSHPort(services []Service) (int, error) {
 	return ports[index].Port, nil
 }
 
-func (app *App) selectIndex(count int) (int, error) {
+func (app *App) selectIndex(count int, defaults ...int) (int, error) {
+	defaultIndex := -1
+	if len(defaults) > 0 {
+		defaultIndex = defaults[0]
+	}
 	scanner := bufio.NewScanner(app.stdin)
 	for {
 		_, _ = fmt.Fprintf(app.stdout, "Select [1-%d]: ", count)
@@ -254,6 +273,9 @@ func (app *App) selectIndex(count int) (int, error) {
 		}
 		input := strings.TrimSpace(scanner.Text())
 		if input == "" {
+			if defaultIndex >= 0 && defaultIndex < count {
+				return defaultIndex, nil
+			}
 			return 0, app.errorf("cancelled")
 		}
 		selection, err := strconv.Atoi(input)

@@ -28,6 +28,19 @@ type fakeRun struct {
 	env  []string
 }
 
+type memoryCredentialState struct {
+	id int64
+}
+
+func (state *memoryCredentialState) Load() (int64, error) {
+	return state.id, nil
+}
+
+func (state *memoryCredentialState) Save(id int64) error {
+	state.id = id
+	return nil
+}
+
 func (runner *fakeRunner) LookPath(file string) (string, error) {
 	if runner.paths[file] {
 		return "/fake/" + file, nil
@@ -260,11 +273,49 @@ func TestCredentialFiltersAndSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v, stderr = %q", err, stderr.String())
 	}
-	if !strings.Contains(out.String(), "[6] fuga@2.3.4.5") || !strings.Contains(out.String(), "[7] tarou@2.3.4.5") {
+	if !strings.Contains(out.String(), "1) fuga@2.3.4.5") || !strings.Contains(out.String(), "2) tarou@2.3.4.5") {
 		t.Fatalf("stdout = %q, want ssh credential candidates", out.String())
+	}
+	if strings.Contains(out.String(), "[6]") || strings.Contains(out.String(), "[7]") {
+		t.Fatalf("stdout = %q, must not show credential IDs", out.String())
 	}
 	if strings.Contains(out.String(), "ignored") {
 		t.Fatalf("stdout leaked password: %q", out.String())
+	}
+	if got := runner.runs[0].args[len(runner.runs[0].args)-1]; got != "tarou@2.3.4.5" {
+		t.Fatalf("destination = %q, want tarou", got)
+	}
+}
+
+func TestLastCredentialIsDefaultForEmptySelection(t *testing.T) {
+	runner := newFakeRunner()
+	runner.outputs["ctx credential ls ssh --format json --format-version 1"] = fakeOutput{
+		stdout: apiJSON(`{"credentials":[
+			{"id":6,"scope":"ssh","username":"fuga","password":null},
+			{"id":7,"scope":"ssh","username":"tarou","password":null}
+		]}`),
+	}
+	state := &memoryCredentialState{}
+
+	var firstOut, firstErr bytes.Buffer
+	first := New(runner, strings.NewReader("2\n"), &firstOut, &firstErr)
+	first.state = state
+	if err := first.Run([]string{"xssh"}); err != nil {
+		t.Fatalf("first Run() error = %v, stderr = %q", err, firstErr.String())
+	}
+	if state.id != 7 {
+		t.Fatalf("saved credential ID = %d, want 7", state.id)
+	}
+
+	runner.runs = nil
+	var secondOut, secondErr bytes.Buffer
+	second := New(runner, strings.NewReader("\n"), &secondOut, &secondErr)
+	second.state = state
+	if err := second.Run([]string{"xssh"}); err != nil {
+		t.Fatalf("second Run() error = %v, stderr = %q", err, secondErr.String())
+	}
+	if !strings.Contains(secondOut.String(), "2) tarou@2.3.4.5 (default)") {
+		t.Fatalf("stdout = %q, want default credential", secondOut.String())
 	}
 	if got := runner.runs[0].args[len(runner.runs[0].args)-1]; got != "tarou@2.3.4.5" {
 		t.Fatalf("destination = %q, want tarou", got)
@@ -300,6 +351,36 @@ func TestCredentialIDAndUsername(t *testing.T) {
 	}
 }
 
+func TestMissingCredentialUsernameUsesPlainSSH(t *testing.T) {
+	runner := newFakeRunner()
+	runner.paths["sshpass"] = false
+	runner.outputs["ctx credential ls ssh --format json --format-version 1"] = fakeOutput{
+		stdout: apiJSON(`{"credentials":[{"id":6,"scope":"ssh","username":"root","password":null}]}`),
+	}
+
+	var out, stderr bytes.Buffer
+	err := New(runner, strings.NewReader(""), &out, &stderr).Run([]string{"xssh", "testuser"})
+	if err != nil {
+		t.Fatalf("Run() error = %v, stderr = %q", err, stderr.String())
+	}
+	if len(runner.runs) != 1 {
+		t.Fatalf("runs = %#v, want one", runner.runs)
+	}
+	run := runner.runs[0]
+	if run.name != "ssh" {
+		t.Fatalf("run name = %q, want ssh", run.name)
+	}
+	if !reflect.DeepEqual(run.args, []string{"-p", "22", "testuser@2.3.4.5"}) {
+		t.Fatalf("args = %#v, want username fallback", run.args)
+	}
+	if len(run.env) != 0 {
+		t.Fatalf("env = %#v, want none", run.env)
+	}
+	if !strings.Contains(out.String(), "Connecting to testuser@2.3.4.5:22...") {
+		t.Fatalf("stdout = %q, want connecting line", out.String())
+	}
+}
+
 func TestCredentialErrorsAndInvalidJSON(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
@@ -308,7 +389,6 @@ func TestCredentialErrorsAndInvalidJSON(t *testing.T) {
 		want   string
 	}{
 		{"missing id", apiJSON(`{"credentials":[{"id":6,"scope":"ssh","username":"root","password":null}]}`), []string{"9"}, "xssh: SSH credential not found: 9"},
-		{"missing username", apiJSON(`{"credentials":[{"id":6,"scope":"ssh","username":"root","password":null}]}`), []string{"guest"}, "xssh: SSH credential not found: guest"},
 		{"success false", apiErrorJSON("credential failed"), nil, "xssh: credential failed"},
 		{"invalid json", `{`, nil, "xssh: invalid JSON from ctx"},
 	} {
