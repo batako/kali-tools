@@ -106,6 +106,8 @@ xssh root
 
 SSH credential が1件なら即接続します。credential または SSH service port が複数ある場合は番号選択を表示します。SSH service が保存されていない場合は22番を使います。保存済み password がある場合、`xssh` は ctx から平文で取得し、コマンド引数には含めず child process の環境変数として `sshpass -e` に渡します。password が `null` の場合は通常の `ssh` を起動します。
 
+接続ごとに、パスワードを含まない SSH コマンド、開始・終了時刻、状態、終了コード、stdout、stderr を ctx のログへ保存します。接続ログは `xlog` で確認できます。パスワードや `sshpass` の引数は保存しません。
+
 APT リポジトリからインストールする場合:
 
 ```sh

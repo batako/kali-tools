@@ -11,9 +11,11 @@ import (
 )
 
 type fakeRunner struct {
-	paths   map[string]bool
-	outputs map[string]fakeOutput
-	runs    []fakeRun
+	paths      map[string]bool
+	outputs    map[string]fakeOutput
+	runOutputs map[string]fakeOutput
+	runInputs  map[string][]byte
+	runs       []fakeRun
 }
 
 type fakeOutput struct {
@@ -30,6 +32,35 @@ type fakeRun struct {
 
 type memoryCredentialState struct {
 	id int64
+}
+
+type memoryCommandLogger struct {
+	startCommand  string
+	startExpanded string
+	startAt       string
+	finishID      int64
+	finishStatus  string
+	finishCode    int
+	finishStdout  string
+	finishStderr  string
+	finishAt      string
+}
+
+func (logger *memoryCommandLogger) Start(command, expandedCommand, startedAt string) (int64, error) {
+	logger.startCommand = command
+	logger.startExpanded = expandedCommand
+	logger.startAt = startedAt
+	return 42, nil
+}
+
+func (logger *memoryCommandLogger) Finish(id int64, status string, exitCode int, stdout, stderr, endedAt string) error {
+	logger.finishID = id
+	logger.finishStatus = status
+	logger.finishCode = exitCode
+	logger.finishStdout = stdout
+	logger.finishStderr = stderr
+	logger.finishAt = endedAt
+	return nil
 }
 
 func (state *memoryCredentialState) Load() (int64, error) {
@@ -58,6 +89,19 @@ func (runner *fakeRunner) Output(name string, args ...string) ([]byte, []byte, e
 }
 
 func (runner *fakeRunner) Run(name string, args []string, env []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	key := name + " " + strings.Join(args, " ")
+	if name == "ctx" {
+		input, _ := io.ReadAll(stdin)
+		if runner.runInputs == nil {
+			runner.runInputs = map[string][]byte{}
+		}
+		runner.runInputs[key] = input
+	}
+	if output, ok := runner.runOutputs[key]; ok {
+		_, _ = io.WriteString(stdout, output.stdout)
+		_, _ = io.WriteString(stderr, output.stderr)
+		return output.err
+	}
 	runner.runs = append(runner.runs, fakeRun{
 		name: name,
 		args: append([]string(nil), args...),
@@ -73,6 +117,7 @@ func newFakeRunner() *fakeRunner {
 			"ssh":     true,
 			"sshpass": true,
 		},
+		runOutputs: map[string]fakeOutput{},
 		outputs: map[string]fakeOutput{
 			"ctx prompt --format json --format-version 1": {
 				stdout: apiJSON(`{"active":true,"target_ip":"2.3.4.5","target_name":"default"}`),
@@ -203,6 +248,47 @@ func TestCredentialSelectionAndSSHPass(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Connecting to root@2.3.4.5:22...") {
 		t.Fatalf("stdout = %q, want connecting line", out.String())
+	}
+}
+
+func TestRunRecordsSSHLogWithoutPassword(t *testing.T) {
+	runner := newFakeRunner()
+	logger := &memoryCommandLogger{}
+	var out, stderr bytes.Buffer
+	app := New(runner, strings.NewReader(""), &out, &stderr)
+	app.logger = logger
+
+	if err := app.Run([]string{"xssh"}); err != nil {
+		t.Fatalf("Run() error = %v, stderr = %q", err, stderr.String())
+	}
+	if logger.startCommand != "xssh" || logger.startExpanded != "ssh -p 22 root@2.3.4.5" {
+		t.Fatalf("start log = %+v, want sanitized SSH command", logger)
+	}
+	if strings.Contains(logger.startExpanded, "toor") {
+		t.Fatalf("password leaked in start log: %q", logger.startExpanded)
+	}
+	if logger.finishID != 42 || logger.finishStatus != "success" || logger.finishCode != 0 {
+		t.Fatalf("finish log = %+v, want successful log", logger)
+	}
+}
+
+func TestCtxCommandLoggerUsesJSONWithoutPassword(t *testing.T) {
+	runner := newFakeRunner()
+	startKey := "ctx log start --format json --format-version 1"
+	finishKey := "ctx log finish 42 --format json --format-version 1"
+	runner.runOutputs[startKey] = fakeOutput{stdout: apiJSON(`{"id":42}`)}
+	runner.runOutputs[finishKey] = fakeOutput{stdout: apiJSON(`{"id":42}`)}
+	logger := ctxCommandLogger{runner: runner}
+
+	id, err := logger.Start("xssh", "ssh -p 22 root@2.3.4.5", "2026-07-13T00:00:00Z")
+	if err != nil || id != 42 {
+		t.Fatalf("Start() = %d, %v; want ID 42", id, err)
+	}
+	if strings.Contains(string(runner.runInputs[startKey]), "toor") {
+		t.Fatalf("password leaked in start request: %q", runner.runInputs[startKey])
+	}
+	if err := logger.Finish(id, "success", 0, "connected\n", "", "2026-07-13T00:05:00Z"); err != nil {
+		t.Fatalf("Finish() error = %v", err)
 	}
 }
 

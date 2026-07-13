@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
@@ -82,11 +83,13 @@ type App struct {
 	stdout io.Writer
 	stderr io.Writer
 	state  credentialState
+	logger commandLogger
 }
 
 func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	app := New(realRunner{}, stdin, stdout, stderr)
 	app.state = fileCredentialState{}
+	app.logger = ctxCommandLogger{runner: app.runner}
 	return app.Run(args)
 }
 
@@ -97,6 +100,7 @@ func New(runner commandRunner, stdin io.Reader, stdout, stderr io.Writer) *App {
 		stdout: stdout,
 		stderr: stderr,
 		state:  noopCredentialState{},
+		logger: noopCommandLogger{},
 	}
 }
 
@@ -156,12 +160,31 @@ func (app *App) Run(args []string) error {
 			return err
 		}
 	}
+	startedAt := time.Now().UTC()
+	expandedCommand := sshLogCommand(credential, targetIP, port)
+	logID, err := app.logger.Start("xssh", expandedCommand, startedAt.Format(time.RFC3339Nano))
+	if err != nil {
+		return app.errorf("failed to start SSH log: %s", err.Error())
+	}
 	if credential == nil {
 		_, _ = fmt.Fprintf(app.stdout, "Connecting to %s:%d...\n", targetIP, port)
 	} else {
 		_, _ = fmt.Fprintf(app.stdout, "Connecting to %s@%s:%d...\n", credential.Username, targetIP, port)
 	}
-	err = app.connect(credential, targetIP, port)
+	var commandStdout, commandStderr bytes.Buffer
+	streamStdout := io.MultiWriter(app.stdout, &commandStdout)
+	streamStderr := io.MultiWriter(app.stderr, &commandStderr)
+	err = app.connect(credential, targetIP, port, streamStdout, streamStderr)
+	status := "success"
+	exitCode := 0
+	if err != nil {
+		status = "failed"
+		exitCode = commandExitCode(err)
+	}
+	finishErr := app.logger.Finish(logID, status, exitCode, commandStdout.String(), commandStderr.String(), time.Now().UTC().Format(time.RFC3339Nano))
+	if finishErr != nil {
+		return app.errorf("failed to finish SSH log: %s", finishErr.Error())
+	}
 	if err == nil && credential != nil && credential.ID != 0 {
 		_ = app.state.Save(credential.ID)
 	}
@@ -286,16 +309,16 @@ func (app *App) selectIndex(count int, defaults ...int) (int, error) {
 	}
 }
 
-func (app *App) connect(credential *Credential, targetIP string, port int) error {
+func (app *App) connect(credential *Credential, targetIP string, port int, stdout, stderr io.Writer) error {
 	if credential == nil {
-		return app.runner.Run("ssh", []string{"-p", strconv.Itoa(port), targetIP}, nil, app.stdin, app.stdout, app.stderr)
+		return app.runner.Run("ssh", []string{"-p", strconv.Itoa(port), targetIP}, nil, app.stdin, stdout, stderr)
 	}
 	destination := fmt.Sprintf("%s@%s", credential.Username, targetIP)
 	args := []string{"-p", strconv.Itoa(port), destination}
 	if credential.Password != nil {
-		return app.runner.Run("sshpass", append([]string{"-e", "ssh"}, args...), []string{"SSHPASS=" + *credential.Password}, app.stdin, app.stdout, app.stderr)
+		return app.runner.Run("sshpass", append([]string{"-e", "ssh"}, args...), []string{"SSHPASS=" + *credential.Password}, app.stdin, stdout, stderr)
 	}
-	return app.runner.Run("ssh", args, nil, app.stdin, app.stdout, app.stderr)
+	return app.runner.Run("ssh", args, nil, app.stdin, stdout, stderr)
 }
 
 func (app *App) errorf(format string, args ...any) error {
@@ -313,6 +336,14 @@ func isDigits(value string) bool {
 		}
 	}
 	return true
+}
+
+func sshLogCommand(credential *Credential, targetIP string, port int) string {
+	destination := targetIP
+	if credential != nil && credential.Username != "" {
+		destination = credential.Username + "@" + targetIP
+	}
+	return fmt.Sprintf("ssh -p %d %s", port, destination)
 }
 
 type APIResponse[T any] struct {

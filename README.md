@@ -106,6 +106,8 @@ xssh root
 
 With one saved SSH credential, `xssh` connects immediately. With multiple credentials or multiple SSH service ports, it prompts for a numbered selection. If no SSH credential is saved, it starts normal `ssh` to the current target. If no SSH service is saved, port 22 is used. When a stored password is present, `xssh` retrieves it from ctx in plain text and passes it to `sshpass -e` through the child process environment so the password is not placed in the command arguments. When the password is `null`, it starts normal `ssh`.
 
+Each connection records the sanitized SSH command, start and end times, status, exit code, stdout, and stderr in ctx logs. Use `xlog` to review the connection log. Passwords and `sshpass` arguments are not recorded.
+
 Install from the APT repository:
 
 ```sh
