@@ -29,6 +29,39 @@ func TestParseOptionsUsesExplicitWordlistAndURL(t *testing.T) {
 	}
 }
 
+func TestParseOptionsSupportsHostAndIP(t *testing.T) {
+	options, err := parseOptions([]string{"--host", "example.test"})
+	if err != nil || options.Host != "example.test" || options.IP {
+		t.Fatalf("host options = %+v, %v", options, err)
+	}
+	options, err = parseOptions([]string{"--ip"})
+	if err != nil || !options.IP || options.Host != "" {
+		t.Fatalf("IP options = %+v, %v", options, err)
+	}
+}
+
+func TestParseOptionsSupportsInsecureTLS(t *testing.T) {
+	options, err := parseOptions([]string{"-k"})
+	if err != nil || !options.Insecure {
+		t.Fatalf("insecure options = %+v, %v", options, err)
+	}
+	options, err = parseOptions([]string{"--no-tls-validation"})
+	if err != nil || !options.Insecure {
+		t.Fatalf("long insecure options = %+v, %v", options, err)
+	}
+	options, err = parseOptions([]string{"--tls-verify"})
+	if err != nil || !options.VerifyTLS {
+		t.Fatalf("verify TLS options = %+v, %v", options, err)
+	}
+}
+
+func TestEffectiveExtraAddsInsecureTLSFlag(t *testing.T) {
+	got := effectiveExtra(parsedOptions{Insecure: true})
+	if strings.Join(got, " ") != "-k" {
+		t.Fatalf("effectiveExtra() = %#v, want -k", got)
+	}
+}
+
 func TestParseOptionsSupportsEscalationFlags(t *testing.T) {
 	options, err := parseOptions([]string{"--next", "--force", "-t", "25"})
 	if err != nil {
@@ -49,6 +82,25 @@ func TestParseOptionsSupportsStatus(t *testing.T) {
 	}
 	if !options.Status {
 		t.Fatalf("options = %+v, want status", options)
+	}
+}
+
+func TestParseOptionsSupportsSitemap(t *testing.T) {
+	options, err := parseOptions([]string{"--sitemap"})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if !options.Sitemap {
+		t.Fatalf("options = %+v, want sitemap", options)
+	}
+}
+
+func TestColorizeStatusCode(t *testing.T) {
+	if got := colorizeStatusCode(200, true); got != "\033[32m200\033[0m" {
+		t.Fatalf("colorizeStatusCode(200) = %q", got)
+	}
+	if got := colorizeStatusCode(404, false); got != "404" {
+		t.Fatalf("colorizeStatusCode(404, false) = %q", got)
 	}
 }
 

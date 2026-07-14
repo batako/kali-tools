@@ -71,6 +71,7 @@ ctx log
 sudo apt install wordlists seclists dirb dirbuster
 ctx config set web.directory.max-requests 1000000
 ctx config set web.file.max-requests 200000
+ctx config set web.tls.verify false
 ```
 
 シェル連携と `x` 系ヘルパーを使う場合:
@@ -98,7 +99,9 @@ xsmb smbuser
 
 `xsmb` はディスク共有を一覧表示し、`IPC$` を除外してから接続先を選択します。ctxに該当サービスがない場合、`xssh` は22番、`xftp` は21番、`xsmb` は445番を使用します。
 
-`xgobuster` は現在のターゲットからWebサービスを選択して `gobuster dir` を実行します。`/usr/share/wordlists` 配下からワードリストを自動選択し、設定したリクエスト数の上限まで実行します。`web.directory.max-requests` の既定値は1,000,000、`web.file.max-requests` の既定値は200,000です。ファイル検索では指定した拡張子分を含めた実リクエスト数で計算します。`web-quick`、`web-standard`、`web-deep`はディレクトリ検索とファイル検索で共通の探索強度です。`--next`で次の強度へ進み、`--force`で完了済みワードリストを再実行できます。`--status`で現在の検索状態を確認できます。`--preset`または`-x`を指定するとファイル検索になり、`-x`で拡張子を上書きできます。Gobusterは拡張子なしのパスも同時に検索するため、ディレクトリ検索と検索済み状態を共有し、同じパスを再送信しません。`-w`または`--wordlist`を指定した場合は、そのワードリストだけを使う手動検索になります。解析した探索結果はctxのログと探索データへ保存します。
+`xgobuster` は現在のターゲットからWebサービスを選択して `gobuster dir` を実行します。対象に`xhost`で手動登録したホスト名が1件なら自動利用し、複数ある場合はホスト名または対象IPを選択します。登録済みホスト名を明示する場合は`--host <hostname>`、対象IPを強制する場合は`--ip`、URL全体を指定する場合は`-u`または`--url`を使います。`/usr/share/wordlists` 配下からワードリストを自動選択し、設定したリクエスト数の上限まで実行します。`web.directory.max-requests` の既定値は1,000,000、`web.file.max-requests` の既定値は200,000です。ファイル検索では指定した拡張子分を含めた実リクエスト数で計算します。`web-quick`、`web-standard`、`web-deep`はディレクトリ検索とファイル検索で共通の探索強度です。`--next`で次の強度へ進み、`--force`で完了済みワードリストを再実行できます。`--status`で現在の検索状態を確認できます。`--preset`または`-x`を指定するとファイル検索になり、`-x`で拡張子を上書きできます。Gobusterは拡張子なしのパスも同時に検索するため、ディレクトリ検索と検索済み状態を共有し、同じパスを再送信しません。`-w`または`--wordlist`を指定した場合は、そのワードリストだけを使う手動検索になります。解析した探索結果はctxのログと探索データへ保存します。
+
+`xgo --sitemap`で、現在のターゲットから収集したパスを重複排除し、originごとにまとめてURL順で表示できます。端末出力ではHTTPステータスコードを色分けします。期限切れや自己署名証明書を使う検証環境では、`-k`または`--no-tls-validation`でTLS証明書検証を無効化できます。
 
 `xgo` は `xgobuster` の短縮コマンドです。
 

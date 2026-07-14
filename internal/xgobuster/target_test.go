@@ -3,7 +3,52 @@ package xgobuster
 import (
 	"strings"
 	"testing"
+
+	"req/internal/ctx"
 )
+
+func TestResolveTargetHostUsesManualXHost(t *testing.T) {
+	hosts := []ctx.Host{
+		{Hostname: "example.test", TargetIP: "10.0.0.1", Source: "manual"},
+	}
+	if got, err := resolveTargetHost("10.0.0.1", hosts, "", false, strings.NewReader(""), &strings.Builder{}); err != nil || got != "example.test" {
+		t.Fatalf("resolveTargetHost() = %q, %v, want xhost hostname", got, err)
+	}
+}
+
+func TestResolveTargetHostFallsBackToIP(t *testing.T) {
+	hosts := []ctx.Host{
+		{Hostname: "discovered.test", TargetIP: "10.0.0.1", Source: "scan"},
+	}
+	if got, err := resolveTargetHost("10.0.0.1", hosts, "", false, strings.NewReader(""), &strings.Builder{}); err != nil || got != "10.0.0.1" {
+		t.Fatalf("resolveTargetHost() = %q, %v, want target IP", got, err)
+	}
+}
+
+func TestResolveTargetHostSelectsIPAmongMultipleHosts(t *testing.T) {
+	hosts := []ctx.Host{
+		{Hostname: "example.test", TargetIP: "10.0.0.1", Source: "manual"},
+		{Hostname: "admin.example.test", TargetIP: "10.0.0.1", Source: "manual"},
+	}
+	var output strings.Builder
+	got, err := resolveTargetHost("10.0.0.1", hosts, "", false, strings.NewReader("3\n"), &output)
+	if err != nil || got != "10.0.0.1" {
+		t.Fatalf("resolveTargetHost() = %q, %v, want target IP", got, err)
+	}
+	if !strings.Contains(output.String(), "10.0.0.1 (IP)") {
+		t.Fatalf("selection output = %q", output.String())
+	}
+}
+
+func TestResolveTargetHostHonorsExplicitHostAndIP(t *testing.T) {
+	hosts := []ctx.Host{{Hostname: "example.test", TargetIP: "10.0.0.1", Source: "manual"}}
+	if got, err := resolveTargetHost("10.0.0.1", hosts, "example.test", false, strings.NewReader(""), &strings.Builder{}); err != nil || got != "example.test" {
+		t.Fatalf("explicit host = %q, %v", got, err)
+	}
+	if got, err := resolveTargetHost("10.0.0.1", hosts, "", true, strings.NewReader(""), &strings.Builder{}); err != nil || got != "10.0.0.1" {
+		t.Fatalf("forced IP = %q, %v", got, err)
+	}
+}
 
 func TestServiceURL(t *testing.T) {
 	https := "https"

@@ -33,10 +33,28 @@ func TestConfigValueProjectRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListConfigValues() error = %v", err)
 	}
-	if len(entries) != 3 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want ||
+	if len(entries) != 4 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want ||
 		entries[1].Key != ConfigKeyDirectoryMaxRequests || entries[1].Value != "1000000" ||
-		entries[2].Key != ConfigKeyFileMaxRequests || entries[2].Value != "200000" {
+		entries[2].Key != ConfigKeyFileMaxRequests || entries[2].Value != "200000" ||
+		entries[3].Key != ConfigKeyTLSVerify || entries[3].Value != "true" {
 		t.Fatalf("ListConfigValues() = %+v, want project.root and request limits", entries)
+	}
+}
+
+func TestConfigValueTLSVerify(t *testing.T) {
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+
+	got, err := SetConfigValue(ConfigKeyTLSVerify, "false")
+	if err != nil || got != "false" {
+		t.Fatalf("SetConfigValue(web.tls.verify) = %q, %v", got, err)
+	}
+	got, err = GetConfigValue(ConfigKeyTLSVerify)
+	if err != nil || got != "false" {
+		t.Fatalf("GetConfigValue(web.tls.verify) = %q, %v", got, err)
+	}
+	config, err := LoadConfig()
+	if err != nil || config.TLSVerify {
+		t.Fatalf("LoadConfig().TLSVerify = %v, %v, want false", config.TLSVerify, err)
 	}
 }
 

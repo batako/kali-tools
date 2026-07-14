@@ -12,11 +12,13 @@ type Config struct {
 	ProjectRoot          string
 	DirectoryMaxRequests int
 	FileMaxRequests      int
+	TLSVerify            bool
 }
 
 const ConfigKeyProjectRoot = "project.root"
 const ConfigKeyDirectoryMaxRequests = "web.directory.max-requests"
 const ConfigKeyFileMaxRequests = "web.file.max-requests"
+const ConfigKeyTLSVerify = "web.tls.verify"
 const DefaultDirectoryMaxRequests = 1000000
 const DefaultFileMaxRequests = 200000
 
@@ -33,13 +35,13 @@ func LoadConfig() (*Config, error) {
 	path := configPath()
 	content, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &Config{}, nil
+		return &Config{TLSVerify: true}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config %s: %w", path, err)
 	}
 
-	config := Config{DirectoryMaxRequests: DefaultDirectoryMaxRequests, FileMaxRequests: DefaultFileMaxRequests}
+	config := Config{DirectoryMaxRequests: DefaultDirectoryMaxRequests, FileMaxRequests: DefaultFileMaxRequests, TLSVerify: true}
 	section := ""
 	for _, rawLine := range strings.Split(string(content), "\n") {
 		line := strings.TrimSpace(rawLine)
@@ -50,7 +52,7 @@ func LoadConfig() (*Config, error) {
 			section = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "["), "]"))
 			continue
 		}
-		if section != "project" && section != "web.directory" && section != "web.file" {
+		if section != "project" && section != "web.directory" && section != "web.file" && section != "web.tls" {
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
@@ -76,6 +78,12 @@ func LoadConfig() (*Config, error) {
 				return nil, fmt.Errorf("invalid file request limit in %s", path)
 			}
 			config.FileMaxRequests = limit
+		case section == "web.tls" && strings.TrimSpace(key) == "verify":
+			verify, parseErr := strconv.ParseBool(parsed)
+			if parseErr != nil {
+				return nil, fmt.Errorf("invalid TLS verification setting in %s", path)
+			}
+			config.TLSVerify = verify
 		}
 	}
 
@@ -95,6 +103,9 @@ func SaveConfig(config *Config) error {
 	if config.FileMaxRequests > 0 && config.FileMaxRequests != DefaultFileMaxRequests {
 		content += "\n[web.file]\nmax-requests = " + strconv.Quote(strconv.Itoa(config.FileMaxRequests)) + "\n"
 	}
+	if !config.TLSVerify {
+		content += "\n[web.tls]\nverify = \"false\"\n"
+	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write config %s: %w", path, err)
 	}
@@ -113,6 +124,8 @@ func GetConfigValue(key string) (string, error) {
 		return strconv.Itoa(config.DirectoryMaxRequests), nil
 	case ConfigKeyFileMaxRequests:
 		return strconv.Itoa(config.FileMaxRequests), nil
+	case ConfigKeyTLSVerify:
+		return strconv.FormatBool(config.TLSVerify), nil
 	default:
 		return "", fmt.Errorf("unknown config key: %s", key)
 	}
@@ -148,6 +161,16 @@ func SetConfigValue(key, value string) (string, error) {
 			return "", err
 		}
 		return strconv.Itoa(limit), nil
+	case ConfigKeyTLSVerify:
+		verify, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return "", fmt.Errorf("TLS verification must be true or false")
+		}
+		config.TLSVerify = verify
+		if err := SaveConfig(config); err != nil {
+			return "", err
+		}
+		return strconv.FormatBool(verify), nil
 	default:
 		return "", fmt.Errorf("unknown config key: %s", key)
 	}
@@ -162,6 +185,7 @@ func ListConfigValues() ([]ConfigEntry, error) {
 		{Key: ConfigKeyProjectRoot, Value: config.ProjectRoot},
 		{Key: ConfigKeyDirectoryMaxRequests, Value: strconv.Itoa(config.DirectoryMaxRequests)},
 		{Key: ConfigKeyFileMaxRequests, Value: strconv.Itoa(config.FileMaxRequests)},
+		{Key: ConfigKeyTLSVerify, Value: strconv.FormatBool(config.TLSVerify)},
 	}, nil
 }
 

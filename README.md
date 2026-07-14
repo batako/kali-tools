@@ -71,6 +71,7 @@ Discovery integrations use `/usr/share/wordlists` automatically. `xgobuster` sel
 sudo apt install wordlists seclists dirb dirbuster
 ctx config set web.directory.max-requests 1000000
 ctx config set web.file.max-requests 200000
+ctx config set web.tls.verify false
 ```
 
 Install shell integration when using the `x` helpers:
@@ -98,7 +99,9 @@ The add-ons save connection start/end times, status, exit code, sanitized comman
 
 `xsmb` lists disk shares, excludes `IPC$`, and lets you select the share before connecting. `xssh` defaults to port 22, `xftp` to port 21, and `xsmb` to port 445 when ctx has no matching service record.
 
-`xgobuster` selects a web service on the current target and runs `gobuster dir`. It automatically selects directory wordlists under `/usr/share/wordlists` and continues while the configured request limit allows. `web.directory.max-requests` defaults to 1,000,000 and `web.file.max-requests` defaults to 200,000. File requests include the selected extensions in the count. `web-quick`, `web-standard`, and `web-deep` are search intensities shared by directory and file searches. Use `--next` to move to the next intensity, `--force` to rerun a completed wordlist, and `--status` to show the current search state. A `--preset` or `-x` option switches to file search; explicit `-x` extensions override the preset. Gobuster checks the extensionless path together with each extension, so extensionless paths are shared with directory-search history and are not requested twice. An explicit `-w` or `--wordlist` performs a one-off search. Parsed discoveries are saved for later review through ctx logs and discovery data.
+`xgobuster` selects a web service on the current target and runs `gobuster dir`. When `xhost` has manually registered hostnames for the target, one hostname is used automatically; if multiple hostnames exist, `xgobuster` prompts for a hostname or the target IP. Use `--host <hostname>` for a deterministic registered-host selection, `--ip` to force the target IP, or `-u`/`--url` to provide a complete URL. It automatically selects directory wordlists under `/usr/share/wordlists` and continues while the configured request limit allows. `web.directory.max-requests` defaults to 1,000,000 and `web.file.max-requests` defaults to 200,000. File requests include the selected extensions in the count. `web-quick`, `web-standard`, and `web-deep` are search intensities shared by directory and file searches. Use `--next` to move to the next intensity, `--force` to rerun a completed wordlist, and `--status` to show the current search state. A `--preset` or `-x` option switches to file search; explicit `-x` extensions override the preset. Gobuster checks the extensionless path together with each extension, so extensionless paths are shared with directory-search history and are not requested twice. An explicit `-w` or `--wordlist` performs a one-off search. Parsed discoveries are saved for later review through ctx logs and discovery data.
+
+Use `xgo --sitemap` to display the deduplicated paths collected for the current target, grouped by origin and sorted by URL. HTTP status codes are colorized in terminal output. For test targets with expired or self-signed certificates, pass `-k` or `--no-tls-validation` to disable TLS certificate validation.
 
 `xgo` is a short alias for `xgobuster`.
 
