@@ -8,6 +8,7 @@ on:
       - xssh-v*
       - xftp-v*
       - xsmb-v*
+      - xgobuster-v*
 
 permissions:
   contents: write
@@ -42,6 +43,7 @@ jobs:
             xssh-v*) application="xssh"; version="${tag#xssh-v}" ;;
             xftp-v*) application="xftp"; version="${tag#xftp-v}" ;;
             xsmb-v*) application="xsmb"; version="${tag#xsmb-v}" ;;
+            xgobuster-v*) application="xgobuster"; version="${tag#xgobuster-v}" ;;
             *)
               echo "unsupported release tag: ${tag}" >&2
               exit 1
@@ -66,7 +68,7 @@ jobs:
           set -eu
 
           case "${APPLICATION}" in
-            ctx|req|xssh|xftp|xsmb) ;;
+            ctx|req|xssh|xftp|xsmb|xgobuster) ;;
             *)
               echo "unsupported application: ${APPLICATION}" >&2
               exit 1

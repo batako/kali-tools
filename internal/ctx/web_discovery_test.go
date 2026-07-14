@@ -35,7 +35,6 @@ func TestWebDiscoveryCanBeSavedAndListed(t *testing.T) {
 		Wordlist:           "/tmp/web.txt",
 		CommandLogID:       logID,
 		CommandLogIDValid:  true,
-		DiscoveredAt:       time.Now().UTC().Format(time.RFC3339Nano),
 	})
 	if err != nil {
 		t.Fatalf("SaveWebDiscovery() error = %v", err)
@@ -45,12 +44,11 @@ func TestWebDiscoveryCanBeSavedAndListed(t *testing.T) {
 	}
 
 	if _, err := SaveWebDiscovery(workspace, target, WebDiscovery{
-		URL:          "http://10.10.10.10/admin",
-		Path:         "/admin",
-		StatusCode:   200,
-		SourceTool:   "gobuster",
-		Wordlist:     "/tmp/web.txt",
-		DiscoveredAt: time.Now().UTC().Format(time.RFC3339Nano),
+		URL:        "http://10.10.10.10/admin",
+		Path:       "/admin",
+		StatusCode: 200,
+		SourceTool: "gobuster",
+		Wordlist:   "/tmp/web.txt",
 	}); err != nil {
 		t.Fatalf("SaveWebDiscovery() second error = %v", err)
 	}

@@ -33,29 +33,27 @@ func TestConfigValueProjectRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListConfigValues() error = %v", err)
 	}
-	if len(entries) != 2 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want ||
-		entries[1].Key != ConfigKeyWordlistProviders || entries[1].Value != "" {
-		t.Fatalf("ListConfigValues() = %+v, want project.root and empty providers", entries)
+	if len(entries) != 3 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want ||
+		entries[1].Key != ConfigKeyDirectoryMaxRequests || entries[1].Value != "1000000" ||
+		entries[2].Key != ConfigKeyFileMaxRequests || entries[2].Value != "200000" {
+		t.Fatalf("ListConfigValues() = %+v, want project.root and request limits", entries)
 	}
 }
 
-func TestConfigValueWordlistProviders(t *testing.T) {
+func TestConfigValueRequestLimits(t *testing.T) {
 	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
 
-	got, err := SetConfigValue(ConfigKeyWordlistProviders, "wordlists, seclists, wordlists")
-	if err != nil {
-		t.Fatalf("SetConfigValue(wordlist.providers) error = %v", err)
+	got, err := SetConfigValue(ConfigKeyDirectoryMaxRequests, "250")
+	if err != nil || got != "250" {
+		t.Fatalf("SetConfigValue(escalation limit) = %q, %v", got, err)
 	}
-	if got != "wordlists seclists" {
-		t.Fatalf("SetConfigValue(wordlist.providers) = %q, want normalized providers", got)
+	got, err = GetConfigValue(ConfigKeyDirectoryMaxRequests)
+	if err != nil || got != "250" {
+		t.Fatalf("GetConfigValue(escalation limit) = %q, %v", got, err)
 	}
-
-	got, err = GetConfigValue(ConfigKeyWordlistProviders)
-	if err != nil {
-		t.Fatalf("GetConfigValue(wordlist.providers) error = %v", err)
-	}
-	if got != "wordlists seclists" {
-		t.Fatalf("GetConfigValue(wordlist.providers) = %q, want normalized providers", got)
+	got, err = SetConfigValue(ConfigKeyFileMaxRequests, "100")
+	if err != nil || got != "100" {
+		t.Fatalf("SetConfigValue(file request limit) = %q, %v", got, err)
 	}
 }
 
@@ -106,29 +104,5 @@ func TestRunConfigGetSetProjectRoot(t *testing.T) {
 				t.Fatalf("Run(%v) output = %q, want %q", args, text, wantText)
 			}
 		}
-	}
-}
-
-func TestRunConfigSetWordlistProvidersWithSeparateArguments(t *testing.T) {
-	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
-
-	var out bytes.Buffer
-	if err := Run([]string{"ctx", "config", "set", ConfigKeyWordlistProviders, "seclists", "wordlists"}, &out); err != nil {
-		t.Fatalf("Run(ctx config set wordlist.providers ...) error = %v", err)
-	}
-	if got := strings.TrimSpace(out.String()); got != "seclists wordlists" {
-		t.Fatalf("set output = %q, want normalized providers", got)
-	}
-}
-
-func TestRunConfigSetWordlistProvidersWithCommaSeparatedArgument(t *testing.T) {
-	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
-
-	var out bytes.Buffer
-	if err := Run([]string{"ctx", "config", "set", ConfigKeyWordlistProviders, "seclists,wordlists"}, &out); err != nil {
-		t.Fatalf("Run(ctx config set wordlist.providers comma-separated) error = %v", err)
-	}
-	if got := strings.TrimSpace(out.String()); got != "seclists wordlists" {
-		t.Fatalf("set output = %q, want normalized providers", got)
 	}
 }

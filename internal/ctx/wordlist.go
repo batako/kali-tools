@@ -4,162 +4,179 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
 const (
-	WordlistProviderSecLists   = "seclists"
 	WordlistProviderLists      = "wordlists"
+	WordlistTypeDirectory      = "directory"
+	WordlistTypeEndpoint       = "endpoint"
+	WordlistTypeParameter      = "parameter"
+	WordlistTypePassword       = "password"
+	WordlistTypeUnknown        = "unknown"
 	WordlistProfileWebQuick    = "web-quick"
 	WordlistProfileWebStandard = "web-standard"
 	WordlistProfileWebDeep     = "web-deep"
 )
 
-type WordlistProvider struct {
-	Name string
-	Root string
-}
-
 type WordlistSelection struct {
 	Provider string
 	Profile  string
+	Type     string
 	Path     string
 }
 
-var wordlistProfileCandidates = map[string]map[string][]string{
-	WordlistProfileWebQuick: {
-		WordlistProviderSecLists: {
-			"Discovery/Web-Content/common.txt",
-			"Discovery/Web-Content/quickhits.txt",
-			"Discovery/Web-Content/directory-list-2.3-small.txt",
-		},
-		WordlistProviderLists: {
-			"dirb/common.txt",
-			"dirbuster/directory-list-2.3-small.txt",
-		},
-	},
-	WordlistProfileWebStandard: {
-		WordlistProviderSecLists: {
-			"Discovery/Web-Content/directory-list-2.3-small.txt",
-			"Discovery/Web-Content/raft-small-directories.txt",
-			"Discovery/Web-Content/directory-list-2.3-medium.txt",
-		},
-		WordlistProviderLists: {
-			"dirbuster/directory-list-2.3-medium.txt",
-			"dirb/common.txt",
-		},
-	},
-	WordlistProfileWebDeep: {
-		WordlistProviderSecLists: {
-			"Discovery/Web-Content/directory-list-2.3-medium.txt",
-			"Discovery/Web-Content/raft-medium-directories.txt",
-			"Discovery/Web-Content/directory-list-2.3-big.txt",
-		},
-		WordlistProviderLists: {
-			"dirbuster/directory-list-2.3-big.txt",
-			"dirbuster/directory-list-2.3-medium.txt",
-		},
-	},
-}
+// DiscoverConfiguredWebWordlists returns directory wordlists from the
+// standard Kali wordlists directory in an efficient, deterministic order.
+func DiscoverConfiguredWebWordlists() ([]WordlistSelection, error) {
+	root := DiscoverWordlistsRoot()
+	if root == "" {
+		return nil, fmt.Errorf("wordlists directory not found; install the wordlists package")
+	}
 
-func NormalizeWordlistProviders(value string) ([]string, error) {
-	var providers []string
+	type candidate struct {
+		selection    WordlistSelection
+		rank         int
+		size         int64
+		providerRank int
+		key          string
+	}
+	var candidates []candidate
 	seen := make(map[string]bool)
-	for _, raw := range strings.FieldsFunc(value, func(r rune) bool {
-		return r == ',' || r == ' ' || r == '\t' || r == '\n'
-	}) {
-		provider := strings.ToLower(strings.TrimSpace(raw))
-		if provider == "" || seen[provider] {
+	for _, source := range webWordlistRoots(root) {
+		base, evalErr := filepath.EvalSymlinks(source.path)
+		if evalErr != nil || !isDirectory(base) {
 			continue
 		}
-		if provider != WordlistProviderSecLists && provider != WordlistProviderLists {
-			return nil, fmt.Errorf("unsupported wordlist provider: %s", provider)
+		err := filepath.Walk(base, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if info == nil || !info.Mode().IsRegular() || !isWordlistFile(path) {
+				return nil
+			}
+			listType := classifyWordlist(path)
+			if listType != WordlistTypeDirectory {
+				return nil
+			}
+			realPath, evalErr := filepath.EvalSymlinks(path)
+			if evalErr == nil && seen[realPath] {
+				return nil
+			}
+			if evalErr == nil {
+				seen[realPath] = true
+			}
+			stat, statErr := os.Stat(path)
+			if statErr != nil {
+				return statErr
+			}
+			relative, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				return relErr
+			}
+			profile, rank := webWordlistProfile(relative)
+			candidates = append(candidates, candidate{
+				selection: WordlistSelection{Provider: WordlistProviderLists, Profile: profile, Type: listType, Path: path},
+				rank:      rank, size: stat.Size(), providerRank: source.rank, key: relative,
+			})
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan wordlists: %w", err)
 		}
-		seen[provider] = true
-		providers = append(providers, provider)
 	}
-	if len(providers) == 0 {
-		return nil, fmt.Errorf("wordlist providers must not be empty")
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].rank != candidates[j].rank {
+			return candidates[i].rank < candidates[j].rank
+		}
+		if candidates[i].providerRank != candidates[j].providerRank {
+			return candidates[i].providerRank < candidates[j].providerRank
+		}
+		if candidates[i].size != candidates[j].size {
+			return candidates[i].size < candidates[j].size
+		}
+		return candidates[i].key < candidates[j].key
+	})
+	result := make([]WordlistSelection, 0, len(candidates))
+	for _, candidate := range candidates {
+		result = append(result, candidate.selection)
 	}
-	return providers, nil
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no directory wordlist found under %s; install seclists, dirb, or dirbuster", root)
+	}
+	return result, nil
 }
 
-func DiscoverWordlistProviders() []WordlistProvider {
-	home, _ := os.UserHomeDir()
-	candidates := map[string][]string{
-		WordlistProviderSecLists: {
-			"/usr/share/seclists",
-			"/usr/local/share/seclists",
-			filepath.Join(home, "SecLists"),
-		},
-		WordlistProviderLists: {
-			"/usr/share/wordlists",
-			"/usr/local/share/wordlists",
-			filepath.Join(home, "wordlists"),
-		},
-	}
+type webWordlistRoot struct {
+	path string
+	rank int
+}
 
-	providers := make([]WordlistProvider, 0, len(candidates))
-	for _, name := range []string{WordlistProviderSecLists, WordlistProviderLists} {
-		for _, root := range candidates[name] {
-			if isDirectory(root) {
-				providers = append(providers, WordlistProvider{Name: name, Root: root})
-				break
-			}
+func webWordlistRoots(root string) []webWordlistRoot {
+	return []webWordlistRoot{
+		{path: filepath.Join(root, "dirb"), rank: 0},
+		{path: filepath.Join(root, "dirbuster"), rank: 1},
+		{path: filepath.Join(root, "seclists", "Discovery", "Web-Content"), rank: 2},
+	}
+}
+
+func classifyWordlist(path string) string {
+	lower := strings.ToLower(filepath.ToSlash(path))
+	switch {
+	case strings.Contains(lower, "/password"), strings.Contains(lower, "/user"), strings.Contains(lower, "rockyou"), strings.Contains(lower, "john.lst"):
+		return WordlistTypePassword
+	case strings.Contains(lower, "/parameter"), strings.Contains(lower, "/payload"), strings.Contains(lower, "/lfi"):
+		return WordlistTypeParameter
+	case strings.Contains(lower, "/fuzz"), strings.Contains(lower, ".fuzz."), strings.Contains(lower, "/cgi"):
+		return WordlistTypeEndpoint
+	case strings.Contains(lower, "/dirb/"), strings.Contains(lower, "/dirbuster/"), strings.Contains(lower, "/seclists/discovery/web-content/"):
+		return WordlistTypeDirectory
+	default:
+		return WordlistTypeUnknown
+	}
+}
+
+func isWordlistFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".txt" || ext == ".lst" || ext == ".list"
+}
+
+func webWordlistProfile(path string) (string, int) {
+	lower := strings.ToLower(path)
+	if strings.Contains(lower, "common") || strings.Contains(lower, "quick") || strings.Contains(lower, "small") {
+		return WordlistProfileWebQuick, 0
+	}
+	if strings.Contains(lower, "medium") || strings.Contains(lower, "raft") || strings.Contains(lower, "directory-list") {
+		return WordlistProfileWebStandard, 1
+	}
+	return WordlistProfileWebDeep, 2
+}
+
+func DiscoverWordlistsRoot() string {
+	home, _ := os.UserHomeDir()
+	for _, root := range []string{"/usr/share/wordlists", "/usr/local/share/wordlists", filepath.Join(home, "wordlists")} {
+		if isDirectory(root) {
+			return root
 		}
 	}
-	return providers
+	return ""
 }
 
 func ResolveConfiguredWordlist(profile string) (WordlistSelection, error) {
-	config, err := LoadConfig()
+	selections, err := DiscoverConfiguredWebWordlists()
 	if err != nil {
 		return WordlistSelection{}, err
 	}
-	if config.WordlistProviders == "" {
-		return WordlistSelection{}, fmt.Errorf("no wordlist provider configured; set %s", ConfigKeyWordlistProviders)
-	}
-	return resolveWordlist(profile, config.WordlistProviders, DiscoverWordlistProviders())
-}
-
-func resolveWordlist(profile, providerValue string, installed []WordlistProvider) (WordlistSelection, error) {
-	profiles, ok := wordlistProfileCandidates[profile]
-	if !ok {
-		return WordlistSelection{}, fmt.Errorf("unsupported wordlist profile: %s", profile)
-	}
-	providers, err := NormalizeWordlistProviders(providerValue)
-	if err != nil {
-		return WordlistSelection{}, err
-	}
-
-	roots := make(map[string]string)
-	for _, provider := range installed {
-		if _, exists := roots[provider.Name]; !exists {
-			roots[provider.Name] = provider.Root
+	for _, selection := range selections {
+		if selection.Profile == profile {
+			return selection, nil
 		}
 	}
-	for _, provider := range providers {
-		root, installed := roots[provider]
-		if !installed {
-			continue
-		}
-		for _, relative := range profiles[provider] {
-			path := filepath.Join(root, relative)
-			if isFile(path) {
-				return WordlistSelection{Provider: provider, Profile: profile, Path: path}, nil
-			}
-		}
-	}
-
-	return WordlistSelection{}, fmt.Errorf("no wordlist found for profile %s in configured providers %s", profile, strings.Join(providers, ","))
+	return WordlistSelection{}, fmt.Errorf("no wordlist found for profile %s", profile)
 }
 
 func isDirectory(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
-}
-
-func isFile(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
 }

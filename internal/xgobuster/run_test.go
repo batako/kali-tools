@@ -1,0 +1,197 @@
+package xgobuster
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"req/internal/ctx"
+)
+
+func TestParseOptionsUsesExplicitWordlistAndURL(t *testing.T) {
+	options, err := parseOptions([]string{
+		"-w", "/tmp/list.txt",
+		"--url=https://example.test/app",
+		"-x", "php",
+	})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if options.Wordlist != "/tmp/list.txt" {
+		t.Fatalf("wordlist = %q, want explicit path", options.Wordlist)
+	}
+	if options.URL != "https://example.test/app" {
+		t.Fatalf("URL = %q, want explicit URL", options.URL)
+	}
+	if strings.Join(options.Extra, " ") != "-x php" {
+		t.Fatalf("extra = %#v, want gobuster options without wrapper options", options.Extra)
+	}
+}
+
+func TestParseOptionsSupportsEscalationFlags(t *testing.T) {
+	options, err := parseOptions([]string{"--next", "--force", "-t", "25"})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if !options.Next || !options.Force {
+		t.Fatalf("options = %+v, want next and force", options)
+	}
+	if strings.Join(options.Extra, " ") != "-t 25" {
+		t.Fatalf("extra = %#v, want gobuster options", options.Extra)
+	}
+}
+
+func TestParseOptionsSupportsStatus(t *testing.T) {
+	options, err := parseOptions([]string{"--status"})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if !options.Status {
+		t.Fatalf("options = %+v, want status", options)
+	}
+}
+
+func TestParseOptionsSupportsProfile(t *testing.T) {
+	options, err := parseOptions([]string{"--status", "--profile=web-quick"})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if options.Profile != "web-quick" {
+		t.Fatalf("profile = %q, want web-quick", options.Profile)
+	}
+}
+
+func TestSearchModeDefaultsToDirectory(t *testing.T) {
+	if got := searchModeFromOptions(parsedOptions{}); got != "directory" {
+		t.Fatalf("searchModeFromOptions() = %q, want directory", got)
+	}
+}
+
+func TestSearchModeUsesFileForExtensions(t *testing.T) {
+	if got := searchModeFromOptions(parsedOptions{Extra: []string{"-x", "php,js"}}); got != "file" {
+		t.Fatalf("searchModeFromOptions() = %q, want file", got)
+	}
+}
+
+func TestEffectiveExtraUsesPresetExtensions(t *testing.T) {
+	options := parsedOptions{PresetExtensions: "php,js"}
+	got := effectiveExtra(options)
+	if strings.Join(got, " ") != "-x php,js" {
+		t.Fatalf("effectiveExtra() = %#v, want explicit extensions", got)
+	}
+}
+
+func TestSearchSignatureSeparatesExtensionSearches(t *testing.T) {
+	directory := searchSignature(parsedOptions{})
+	file := searchSignature(parsedOptions{Extra: []string{"-x", "php"}})
+	if directory == file {
+		t.Fatalf("search signatures are equal: directory=%q file=%q", directory, file)
+	}
+}
+
+func TestExtensionsFromExtra(t *testing.T) {
+	got := extensionsFromExtra([]string{"-x", "php,.js,php"})
+	if strings.Join(got, ",") != "php,js" {
+		t.Fatalf("extensionsFromExtra() = %#v, want php and js", got)
+	}
+}
+
+func TestWithoutExtensionsOption(t *testing.T) {
+	got := withoutExtensionsOption([]string{"-t", "10", "-x", "php,js", "-r"})
+	if strings.Join(got, " ") != "-t 10 -r" {
+		t.Fatalf("withoutExtensionsOption() = %#v, want non-extension options", got)
+	}
+}
+
+func TestHasStartedRunsIsProfileScoped(t *testing.T) {
+	runs := []ctx.WebWordlistRun{{Profile: "web-quick"}}
+	if hasStartedRuns(runs, parsedOptions{Profile: "web-standard"}) {
+		t.Fatal("web-standard should not be blocked by web-quick history")
+	}
+	if !hasStartedRuns(runs, parsedOptions{Profile: "web-quick"}) {
+		t.Fatal("web-quick history should be detected")
+	}
+}
+
+func TestParseDiscoveries(t *testing.T) {
+	discoveries := parseDiscoveries(
+		"admin                (Status: 302) [Size: 128] [--> http://10.0.0.1/admin/]\nlogin (Status: 200)\nnot a result\n",
+		"http://10.0.0.1",
+		"/usr/share/wordlists/dirb/common.txt",
+		7,
+	)
+	if len(discoveries) != 2 {
+		t.Fatalf("discoveries = %#v, want two results", discoveries)
+	}
+	if discoveries[0].URL != "http://10.0.0.1/admin" || discoveries[0].StatusCode != 302 || discoveries[0].ContentLength != 128 {
+		t.Fatalf("first discovery = %+v", discoveries[0])
+	}
+	if discoveries[1].Path != "/login" || discoveries[1].ContentLengthValid {
+		t.Fatalf("second discovery = %+v", discoveries[1])
+	}
+	if discoveries[0].CommandLogID != 7 || discoveries[0].SourceTool != "gobuster" {
+		t.Fatalf("discovery metadata = %+v", discoveries[0])
+	}
+}
+
+func TestFilteredWordlistExcludesPreviouslySearchedWords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "words.txt")
+	if err := os.WriteFile(path, []byte("admin\nlogin\nadmin\napi\n\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	words, err := filteredWordlist(path, map[string]struct{}{"admin": {}}, false)
+	if err != nil {
+		t.Fatalf("filteredWordlist() error = %v", err)
+	}
+	if strings.Join(words, ",") != "login,api" {
+		t.Fatalf("filtered words = %#v, want login and api", words)
+	}
+}
+
+func TestFilteredWordlistCanShareStateWithinOneCommand(t *testing.T) {
+	firstPath := filepath.Join(t.TempDir(), "first.txt")
+	secondPath := filepath.Join(t.TempDir(), "second.txt")
+	if err := os.WriteFile(firstPath, []byte("admin\nlogin\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondPath, []byte("admin\napi\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	seen := make(map[string]struct{})
+	first, err := filteredWordlist(firstPath, seen, false)
+	if err != nil {
+		t.Fatalf("filteredWordlist(first) error = %v", err)
+	}
+	for _, word := range first {
+		seen[word] = struct{}{}
+	}
+	second, err := filteredWordlist(secondPath, seen, false)
+	if err != nil {
+		t.Fatalf("filteredWordlist(second) error = %v", err)
+	}
+	if strings.Join(second, ",") != "api" {
+		t.Fatalf("second filtered words = %#v, want api", second)
+	}
+}
+
+func TestSearchedWordStateIsPersisted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "searched.words")
+	if err := appendSearchedWords(path, []string{"admin", "api"}); err == nil {
+		t.Fatal("appendSearchedWords() error = nil for missing directory")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendSearchedWords(path, []string{"admin", "api"}); err != nil {
+		t.Fatalf("appendSearchedWords() error = %v", err)
+	}
+	seen, err := loadSearchedWords(path)
+	if err != nil {
+		t.Fatalf("loadSearchedWords() error = %v", err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("seen = %#v, want two words", seen)
+	}
+}

@@ -9,12 +9,16 @@ import (
 )
 
 type Config struct {
-	ProjectRoot       string
-	WordlistProviders string
+	ProjectRoot          string
+	DirectoryMaxRequests int
+	FileMaxRequests      int
 }
 
 const ConfigKeyProjectRoot = "project.root"
-const ConfigKeyWordlistProviders = "wordlist.providers"
+const ConfigKeyDirectoryMaxRequests = "web.directory.max-requests"
+const ConfigKeyFileMaxRequests = "web.file.max-requests"
+const DefaultDirectoryMaxRequests = 1000000
+const DefaultFileMaxRequests = 200000
 
 type ConfigEntry struct {
 	Key   string
@@ -35,7 +39,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to read config %s: %w", path, err)
 	}
 
-	var config Config
+	config := Config{DirectoryMaxRequests: DefaultDirectoryMaxRequests, FileMaxRequests: DefaultFileMaxRequests}
 	section := ""
 	for _, rawLine := range strings.Split(string(content), "\n") {
 		line := strings.TrimSpace(rawLine)
@@ -46,7 +50,7 @@ func LoadConfig() (*Config, error) {
 			section = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "["), "]"))
 			continue
 		}
-		if section != "project" && section != "web" && section != "wordlist" {
+		if section != "project" && section != "web.directory" && section != "web.file" {
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
@@ -60,8 +64,18 @@ func LoadConfig() (*Config, error) {
 		switch {
 		case section == "project" && strings.TrimSpace(key) == "root":
 			config.ProjectRoot = parsed
-		case section == "wordlist" && strings.TrimSpace(key) == "providers":
-			config.WordlistProviders = parsed
+		case section == "web.directory" && strings.TrimSpace(key) == "max-requests":
+			limit, parseErr := strconv.Atoi(parsed)
+			if parseErr != nil || limit < 1 {
+				return nil, fmt.Errorf("invalid directory request limit in %s", path)
+			}
+			config.DirectoryMaxRequests = limit
+		case section == "web.file" && strings.TrimSpace(key) == "max-requests":
+			limit, parseErr := strconv.Atoi(parsed)
+			if parseErr != nil || limit < 1 {
+				return nil, fmt.Errorf("invalid file request limit in %s", path)
+			}
+			config.FileMaxRequests = limit
 		}
 	}
 
@@ -75,8 +89,11 @@ func SaveConfig(config *Config) error {
 	}
 
 	content := "[project]\nroot = " + strconv.Quote(config.ProjectRoot) + "\n"
-	if config.WordlistProviders != "" {
-		content += "\n[wordlist]\nproviders = " + strconv.Quote(config.WordlistProviders) + "\n"
+	if config.DirectoryMaxRequests > 0 && config.DirectoryMaxRequests != DefaultDirectoryMaxRequests {
+		content += "\n[web.directory]\nmax-requests = " + strconv.Quote(strconv.Itoa(config.DirectoryMaxRequests)) + "\n"
+	}
+	if config.FileMaxRequests > 0 && config.FileMaxRequests != DefaultFileMaxRequests {
+		content += "\n[web.file]\nmax-requests = " + strconv.Quote(strconv.Itoa(config.FileMaxRequests)) + "\n"
 	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write config %s: %w", path, err)
@@ -92,8 +109,10 @@ func GetConfigValue(key string) (string, error) {
 	switch key {
 	case ConfigKeyProjectRoot:
 		return config.ProjectRoot, nil
-	case ConfigKeyWordlistProviders:
-		return config.WordlistProviders, nil
+	case ConfigKeyDirectoryMaxRequests:
+		return strconv.Itoa(config.DirectoryMaxRequests), nil
+	case ConfigKeyFileMaxRequests:
+		return strconv.Itoa(config.FileMaxRequests), nil
 	default:
 		return "", fmt.Errorf("unknown config key: %s", key)
 	}
@@ -115,16 +134,20 @@ func SetConfigValue(key, value string) (string, error) {
 			return "", err
 		}
 		return root, nil
-	case ConfigKeyWordlistProviders:
-		providers, err := NormalizeWordlistProviders(value)
-		if err != nil {
-			return "", err
+	case ConfigKeyDirectoryMaxRequests, ConfigKeyFileMaxRequests:
+		limit, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || limit < 1 {
+			return "", fmt.Errorf("request limit must be a positive integer")
 		}
-		config.WordlistProviders = strings.Join(providers, " ")
+		if key == ConfigKeyDirectoryMaxRequests {
+			config.DirectoryMaxRequests = limit
+		} else {
+			config.FileMaxRequests = limit
+		}
 		if err := SaveConfig(config); err != nil {
 			return "", err
 		}
-		return config.WordlistProviders, nil
+		return strconv.Itoa(limit), nil
 	default:
 		return "", fmt.Errorf("unknown config key: %s", key)
 	}
@@ -137,7 +160,8 @@ func ListConfigValues() ([]ConfigEntry, error) {
 	}
 	return []ConfigEntry{
 		{Key: ConfigKeyProjectRoot, Value: config.ProjectRoot},
-		{Key: ConfigKeyWordlistProviders, Value: config.WordlistProviders},
+		{Key: ConfigKeyDirectoryMaxRequests, Value: strconv.Itoa(config.DirectoryMaxRequests)},
+		{Key: ConfigKeyFileMaxRequests, Value: strconv.Itoa(config.FileMaxRequests)},
 	}, nil
 }
 

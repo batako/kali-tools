@@ -35,3 +35,6 @@ jobs:
 
       - name: Check xsmb version
         run: ./scripts/check-version.sh xsmb
+
+      - name: Check xgobuster version
+        run: ./scripts/check-version.sh xgobuster

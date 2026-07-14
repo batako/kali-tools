@@ -19,7 +19,6 @@ type WebDiscovery struct {
 	Wordlist           string
 	CommandLogID       int64
 	CommandLogIDValid  bool
-	DiscoveredAt       string
 	CreatedAt          string
 	UpdatedAt          string
 }
@@ -34,15 +33,15 @@ func SaveWebDiscovery(workspace *Workspace, target *Target, discovery WebDiscove
 	result, err := db.Exec(`
 		INSERT INTO web_discoveries (
 			target_id, url, path, status_code, content_length, redirect_url,
-			source_tool, wordlist, command_log_id, discovered_at,
+			source_tool, wordlist, command_log_id,
 			created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`, target.ID, discovery.URL, discovery.Path, discovery.StatusCode,
 		nullableWebInt64(discovery.ContentLengthValid, discovery.ContentLength),
 		nullableWebString(discovery.RedirectURLValid, discovery.RedirectURL),
 		discovery.SourceTool, discovery.Wordlist,
-		nullableWebInt64(discovery.CommandLogIDValid, discovery.CommandLogID), discovery.DiscoveredAt)
+		nullableWebInt64(discovery.CommandLogIDValid, discovery.CommandLogID))
 	if err != nil {
 		return 0, fmt.Errorf("failed to save web discovery: %w", err)
 	}
@@ -64,10 +63,10 @@ func ListWebDiscoveries(workspace *Workspace, target *Target) ([]WebDiscovery, e
 	rows, err := db.Query(`
 		SELECT id, target_id, url, path, status_code, content_length,
 		       redirect_url, source_tool, wordlist, command_log_id,
-		       discovered_at, created_at, updated_at
+		       created_at, updated_at
 		FROM web_discoveries
 		WHERE target_id = ?
-		ORDER BY discovered_at ASC, id ASC
+		ORDER BY created_at ASC, id ASC
 	`, target.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list web discoveries: %w", err)
@@ -90,7 +89,6 @@ func ListWebDiscoveries(workspace *Workspace, target *Target) ([]WebDiscovery, e
 			&discovery.SourceTool,
 			&discovery.Wordlist,
 			&commandLogID,
-			&discovery.DiscoveredAt,
 			&discovery.CreatedAt,
 			&discovery.UpdatedAt,
 		); err != nil {

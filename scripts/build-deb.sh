@@ -6,7 +6,7 @@ PACKAGE_NAME="req"
 
 if [ "$#" -gt 0 ]; then
   case "$1" in
-    req|ctx|xssh|xftp|xsmb)
+    req|ctx|xssh|xftp|xsmb|xgobuster)
       PACKAGE_NAME="$1"
       shift
       ;;
@@ -83,6 +83,15 @@ build_binary() {
 }
 
 build_binary "${PACKAGE_NAME}" "./cmd/${PACKAGE_NAME}"
+
+if [ "${PACKAGE_NAME}" = "xgobuster" ]; then
+  ln -s "${PACKAGE_NAME}" "${PKG_ROOT}/usr/local/bin/xgo"
+  mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
+  mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
+  cp "debian/${PACKAGE_NAME}/xgobuster.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xgobuster"
+  cp "debian/${PACKAGE_NAME}/xgobuster.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xgobuster"
+  cp "debian/${PACKAGE_NAME}/xgo.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xgo"
+fi
 
 dpkg-deb --root-owner-group --build "${PKG_ROOT}" "${OUTPUT_DEB}"
 

@@ -80,6 +80,10 @@ func RunScan(args []string, stdout, stderr io.Writer) int {
 	}
 
 	startedAt := time.Now().UTC()
+	if err := os.MkdirAll(filepath.Join(workspace.DataPath, "scans"), 0755); err != nil {
+		fmt.Fprintf(stderr, "failed to prepare scan directory: %v\n", err)
+		return 1
+	}
 	stamp := startedAt.Format("20060102-150405.000000000")
 	base := filepath.Join(workspace.DataPath, "scans", "nmap-"+stamp)
 	normalPath := base + ".txt"

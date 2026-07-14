@@ -225,6 +225,10 @@ func openDatabase(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open database %s: %w", path, err)
 	}
 	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA busy_timeout = 10000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to configure database busy timeout: %w", err)
+	}
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
@@ -245,7 +249,152 @@ func createSchema(db *sql.DB) error {
 	if err := baselineLegacyDatabase(db, embeddedMigrations, "migrations"); err != nil {
 		return err
 	}
+	if err := repairUnreleasedSchema(db); err != nil {
+		return err
+	}
 	return applyPendingMigrations(db, embeddedMigrations, "migrations")
+}
+
+// repairUnreleasedSchema upgrades schema changes made during the unreleased
+// 1.3.0 development cycle without introducing another migration version.
+func repairUnreleasedSchema(db *sql.DB) error {
+	var version int
+	if err := db.QueryRow(`SELECT version FROM schema_migrations LIMIT 1`).Scan(&version); err != nil {
+		return nil
+	}
+	if uint(version) != currentSchemaVersion {
+		return nil
+	}
+	if _, err := db.Exec(`DROP INDEX IF EXISTS idx_web_technologies_target_id`); err != nil {
+		return fmt.Errorf("failed to remove obsolete web technology index: %w", err)
+	}
+	if _, err := db.Exec(`DROP TABLE IF EXISTS web_technologies`); err != nil {
+		return fmt.Errorf("failed to remove obsolete web technology table: %w", err)
+	}
+	exists, err := tableExists(db, "web_wordlist_runs")
+	if err != nil || !exists {
+		return err
+	}
+	columns, err := loadTableColumns(db, "web_wordlist_runs")
+	if err != nil {
+		return err
+	}
+	if _, ok := columns["profile"]; ok {
+		if _, ok := columns["search_signature"]; ok {
+			return nil
+		}
+	}
+
+	hasProfile := false
+	if _, ok := columns["profile"]; ok {
+		hasProfile = true
+	}
+
+	type legacyRun struct {
+		id, targetID, commandLogID                                                         sql.NullInt64
+		url, provider, profile, wordlist, status, startedAt, endedAt, createdAt, updatedAt sql.NullString
+	}
+	query := `
+		SELECT id, target_id, url, provider, wordlist, status, command_log_id,
+		       started_at, ended_at, created_at, updated_at
+		FROM web_wordlist_runs ORDER BY id
+	`
+	if hasProfile {
+		query = `
+			SELECT id, target_id, url, provider, profile, wordlist, status, command_log_id,
+			       started_at, ended_at, created_at, updated_at
+			FROM web_wordlist_runs ORDER BY id
+		`
+	}
+	rows, err := db.Query(query)
+	if err != nil {
+		return fmt.Errorf("failed to read legacy web wordlist runs: %w", err)
+	}
+	var legacyRuns []legacyRun
+	for rows.Next() {
+		var run legacyRun
+		if hasProfile {
+			err = rows.Scan(&run.id, &run.targetID, &run.url, &run.provider, &run.profile, &run.wordlist, &run.status, &run.commandLogID, &run.startedAt, &run.endedAt, &run.createdAt, &run.updatedAt)
+		} else {
+			err = rows.Scan(&run.id, &run.targetID, &run.url, &run.provider, &run.wordlist, &run.status, &run.commandLogID, &run.startedAt, &run.endedAt, &run.createdAt, &run.updatedAt)
+		}
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("failed to read legacy web wordlist run: %w", err)
+		}
+		legacyRuns = append(legacyRuns, run)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("failed to read legacy web wordlist runs: %w", err)
+	}
+	rows.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to start web wordlist schema repair: %w", err)
+	}
+	defer tx.Rollback()
+	statements := []string{
+		`DROP INDEX IF EXISTS idx_web_wordlist_runs_target_url`,
+		`ALTER TABLE web_wordlist_runs RENAME TO web_wordlist_runs_legacy`,
+		`CREATE TABLE web_wordlist_runs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			target_id INTEGER NOT NULL,
+			url TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			profile TEXT NOT NULL,
+			search_signature TEXT NOT NULL,
+			wordlist TEXT NOT NULL,
+			status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed', 'interrupted')),
+			command_log_id INTEGER,
+			started_at TEXT NOT NULL,
+			ended_at TEXT,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
+			FOREIGN KEY (command_log_id) REFERENCES command_logs(id) ON DELETE SET NULL,
+			UNIQUE (target_id, url, profile, search_signature, wordlist)
+		)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement); err != nil {
+			return fmt.Errorf("failed to repair web wordlist schema: %w", err)
+		}
+	}
+	insert, err := tx.Prepare(`
+		INSERT INTO web_wordlist_runs
+		(id, target_id, url, provider, profile, search_signature, wordlist, status, command_log_id, started_at, ended_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare web wordlist schema repair: %w", err)
+	}
+	defer insert.Close()
+	for _, run := range legacyRuns {
+		profile := run.profile.String
+		if profile == "" {
+			profile, _ = webWordlistProfile(run.wordlist.String)
+		}
+		searchSignature := ""
+		if profile == "web-files" {
+			profile = WordlistProfileWebQuick
+			searchSignature = "-x\x00html,htm,js,php"
+		}
+		if _, err := insert.Exec(run.id.Int64, run.targetID.Int64, run.url.String, run.provider.String, profile, searchSignature, run.wordlist.String, run.status.String, nullableInt64Value(run.commandLogID), run.startedAt.String, nullableStringValueAny(run.endedAt), nullableStringValueAny(run.createdAt), nullableStringValueAny(run.updatedAt)); err != nil {
+			return fmt.Errorf("failed to migrate web wordlist run %d: %w", run.id.Int64, err)
+		}
+	}
+	if _, err := tx.Exec(`DROP TABLE web_wordlist_runs_legacy`); err != nil {
+		return fmt.Errorf("failed to remove legacy web wordlist table: %w", err)
+	}
+	if _, err := tx.Exec(`CREATE INDEX idx_web_wordlist_runs_target_url ON web_wordlist_runs(target_id, url, id)`); err != nil {
+		return fmt.Errorf("failed to recreate web wordlist index: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit web wordlist schema repair: %w", err)
+	}
+	return nil
 }
 
 func createLatestSchema(db *sql.DB, fsys fs.FS, schemaPath string, version uint) error {
@@ -513,6 +662,7 @@ var currentSchemaIndexes = map[string]string{
 	"idx_notes_workspace_created_at":        "notes",
 	"idx_web_discoveries_target_id":         "web_discoveries",
 	"idx_web_discoveries_command_log_id":    "web_discoveries",
+	"idx_web_wordlist_runs_target_url":      "web_wordlist_runs",
 }
 
 var currentSchemaTables = []schemaTable{
@@ -646,13 +796,36 @@ var currentSchemaTables = []schemaTable{
 			{Name: "source_tool", Type: "TEXT", NotNull: true},
 			{Name: "wordlist", Type: "TEXT", NotNull: true},
 			{Name: "command_log_id", Type: "INTEGER"},
-			{Name: "discovered_at", Type: "TEXT", NotNull: true},
 			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
 			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
 		},
 		SQLFragments: []string{
 			"FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE",
 			"FOREIGN KEY (command_log_id) REFERENCES command_logs(id) ON DELETE SET NULL",
+		},
+	},
+	{
+		Name: "web_wordlist_runs",
+		Columns: []schemaColumn{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "target_id", Type: "INTEGER", NotNull: true},
+			{Name: "url", Type: "TEXT", NotNull: true},
+			{Name: "provider", Type: "TEXT", NotNull: true},
+			{Name: "profile", Type: "TEXT", NotNull: true},
+			{Name: "search_signature", Type: "TEXT", NotNull: true},
+			{Name: "wordlist", Type: "TEXT", NotNull: true},
+			{Name: "status", Type: "TEXT", NotNull: true},
+			{Name: "command_log_id", Type: "INTEGER"},
+			{Name: "started_at", Type: "TEXT", NotNull: true},
+			{Name: "ended_at", Type: "TEXT"},
+			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+		},
+		SQLFragments: []string{
+			"CHECK (status IN ('running', 'success', 'failed', 'interrupted'))",
+			"FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE",
+			"FOREIGN KEY (command_log_id) REFERENCES command_logs(id) ON DELETE SET NULL",
+			"UNIQUE (target_id, url, profile, search_signature, wordlist)",
 		},
 	},
 }
