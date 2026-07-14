@@ -14,6 +14,8 @@ _xgobuster() {
     '(-u --url)'{-u,--url}'[override the target URL]:url:' \
     '--host[use a registered xhost hostname for the target]:hostname:' \
     '--ip[use the target IP instead of an xhost hostname]' \
+    '(-c --cookies)'{-c,--cookies}'[send cookies with requests]:cookie:' \
+    '--exclude-length[exclude responses with these body sizes]:size:' \
     '(-k --no-tls-validation)'{-k,--no-tls-validation}'[disable TLS certificate validation]' \
     '--tls-verify[verify TLS certificates for this run]' \
     '*:gobuster option:'

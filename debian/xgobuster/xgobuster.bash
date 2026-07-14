@@ -12,13 +12,13 @@ _xgobuster_completion() {
       COMPREPLY=($(compgen -W "php wordpress aspnet java node static" -- "${cur}"))
       return
       ;;
-    -w|--wordlist|-u|--url|--host)
+    -w|--wordlist|-u|--url|--host|-c|--cookies|--exclude-length)
       COMPREPLY=($(compgen -f -- "${cur}"))
       return
       ;;
   esac
 
-  COMPREPLY=($(compgen -W "-w --wordlist -u --url --host --ip -k --no-tls-validation --tls-verify --preset --profile --status --sitemap --next --force -h --help -V --version" -- "${cur}"))
+  COMPREPLY=($(compgen -W "-w --wordlist -u --url --host --ip -c --cookies --exclude-length -k --no-tls-validation --tls-verify --preset --profile --status --sitemap --next --force -h --help -V --version" -- "${cur}"))
 }
 
 complete -F _xgobuster_completion xgobuster xgo

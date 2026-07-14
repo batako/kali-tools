@@ -38,6 +38,8 @@ options:
   -u, --url <url>        override the URL derived from the current target
   --host <hostname>      use a registered xhost hostname for the target
   --ip                   use the target IP instead of an xhost hostname
+  -c, --cookies <value>   send cookies with requests
+  --exclude-length <size> exclude responses with these body sizes
   -k, --no-tls-validation disable TLS certificate validation
   --tls-verify           verify TLS certificates for this run
   --preset <name>        select a technology preset
@@ -271,8 +273,13 @@ func (app *App) Run(args []string) error {
 			if countErr != nil {
 				return app.errorf("failed to prepare wordlist %s: %s", candidate.Path, countErr)
 			}
+			allWords := words
 			if searchModeFromOptions(options) == "file" {
-				words, countErr = filteredWordlist(candidate.Path, nil, false)
+				allWords, countErr = filteredWordlist(candidate.Path, nil, false)
+				if countErr != nil {
+					return app.errorf("failed to prepare wordlist %s: %s", candidate.Path, countErr)
+				}
+				words, countErr = filteredWordlist(candidate.Path, baseSearched, options.Force && i == start)
 				if countErr != nil {
 					return app.errorf("failed to prepare wordlist %s: %s", candidate.Path, countErr)
 				}
@@ -308,16 +315,20 @@ func (app *App) Run(args []string) error {
 					missingBase = append(missingBase, word)
 					continue
 				}
-				if _, ok := baseSearched[word]; ok {
+				missingBase = append(missingBase, word)
+			}
+			if !forceCurrent {
+				for _, word := range allWords {
+					if _, ok := baseSearched[word]; !ok {
+						continue
+					}
 					for _, extension := range extensions {
 						request := word + "." + extension
 						if _, ok := extensionSearched[extension][request]; !ok {
 							missingExtensions = append(missingExtensions, request)
 						}
 					}
-					continue
 				}
-				missingBase = append(missingBase, word)
 			}
 			if len(missingBase) > 0 {
 				requestCount := len(missingBase) * (len(extensions) + 1)
@@ -640,7 +651,11 @@ func (app *App) showSitemap(workspace *ctx.Workspace, target *ctx.Target) error 
 	entriesByURL := make(map[string]siteEntry)
 	for _, discovery := range discoveries {
 		key := discovery.URL
-		entriesByURL[key] = siteEntry{URL: discovery.URL, Path: discovery.Path, StatusCode: discovery.StatusCode}
+		path := discovery.Path
+		if parsedURL, parseErr := url.Parse(discovery.URL); parseErr == nil && parsedURL.Path != "" {
+			path = parsedURL.Path
+		}
+		entriesByURL[key] = siteEntry{URL: discovery.URL, Path: path, StatusCode: discovery.StatusCode}
 	}
 	entries := make([]siteEntry, 0, len(entriesByURL))
 	for _, entry := range entriesByURL {
@@ -886,6 +901,12 @@ func effectiveExtra(options parsedOptions) []string {
 	}
 	if options.Insecure {
 		extra = append(extra, "-k")
+	}
+	if options.Cookie != "" {
+		extra = append(extra, "--cookies", options.Cookie)
+	}
+	if options.ExcludeLength != "" {
+		extra = append(extra, "--exclude-length", options.ExcludeLength)
 	}
 	return extra
 }
@@ -1257,6 +1278,8 @@ type parsedOptions struct {
 	URL              string
 	Host             string
 	IP               bool
+	Cookie           string
+	ExcludeLength    string
 	Insecure         bool
 	VerifyTLS        bool
 	Preset           string
@@ -1316,6 +1339,18 @@ func parseOptions(args []string) (parsedOptions, error) {
 			i++
 		case "--ip":
 			options.IP = true
+		case "-c", "--cookies":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
+			}
+			options.Cookie = args[i+1]
+			i++
+		case "--exclude-length":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
+			}
+			options.ExcludeLength = args[i+1]
+			i++
 		case "-k", "--no-tls-validation":
 			options.Insecure = true
 		case "--tls-verify":
@@ -1338,6 +1373,20 @@ func parseOptions(args []string) (parsedOptions, error) {
 			if strings.HasPrefix(args[i], "--host=") {
 				options.Host = strings.TrimPrefix(args[i], "--host=")
 				if options.Host == "" {
+					return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
+				}
+				continue
+			}
+			if strings.HasPrefix(args[i], "--cookies=") {
+				options.Cookie = strings.TrimPrefix(args[i], "--cookies=")
+				if options.Cookie == "" {
+					return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
+				}
+				continue
+			}
+			if strings.HasPrefix(args[i], "--exclude-length=") {
+				options.ExcludeLength = strings.TrimPrefix(args[i], "--exclude-length=")
+				if options.ExcludeLength == "" {
 					return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
 				}
 				continue
@@ -1377,10 +1426,17 @@ func parseDiscoveries(output, baseURL, wordlist string, logID int64) []ctx.WebDi
 		if !strings.HasPrefix(path, "/") {
 			path = "/" + path
 		}
+		storedPath := path
+		if parsedBase, parseErr := url.Parse(baseURL); parseErr == nil {
+			basePath := strings.TrimRight(parsedBase.Path, "/")
+			if basePath != "" && basePath != "/" {
+				storedPath = basePath + path
+			}
+		}
 		url := strings.TrimRight(baseURL, "/") + path
 		discoveries = append(discoveries, ctx.WebDiscovery{
 			URL:                url,
-			Path:               path,
+			Path:               storedPath,
 			StatusCode:         status,
 			ContentLength:      size,
 			ContentLengthValid: sizeErr == nil,

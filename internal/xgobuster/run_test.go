@@ -55,6 +55,26 @@ func TestParseOptionsSupportsInsecureTLS(t *testing.T) {
 	}
 }
 
+func TestParseOptionsSupportsCookies(t *testing.T) {
+	options, err := parseOptions([]string{"-c", "PHPSESSID=abc; theme=dark"})
+	if err != nil || options.Cookie != "PHPSESSID=abc; theme=dark" {
+		t.Fatalf("cookie options = %+v, %v", options, err)
+	}
+	if got := strings.Join(effectiveExtra(options), " "); got != "--cookies PHPSESSID=abc; theme=dark" {
+		t.Fatalf("effectiveExtra() = %q", got)
+	}
+}
+
+func TestParseOptionsSupportsExcludedResponseLengths(t *testing.T) {
+	options, err := parseOptions([]string{"--exclude-length", "274,512"})
+	if err != nil || options.ExcludeLength != "274,512" {
+		t.Fatalf("exclude length options = %+v, %v", options, err)
+	}
+	if got := strings.Join(effectiveExtra(options), " "); got != "--exclude-length 274,512" {
+		t.Fatalf("effectiveExtra() = %q", got)
+	}
+}
+
 func TestEffectiveExtraAddsInsecureTLSFlag(t *testing.T) {
 	got := effectiveExtra(parsedOptions{Insecure: true})
 	if strings.Join(got, " ") != "-k" {
@@ -184,6 +204,24 @@ func TestParseDiscoveries(t *testing.T) {
 	}
 	if discoveries[0].CommandLogID != 7 || discoveries[0].SourceTool != "gobuster" {
 		t.Fatalf("discovery metadata = %+v", discoveries[0])
+	}
+}
+
+func TestParseDiscoveriesStoresURLRelativePath(t *testing.T) {
+	discoveries := parseDiscoveries(
+		"dashboard.php (Status: 200) [Size: 12]\n",
+		"https://grep.thm/public/html/",
+		"/tmp/words.txt",
+		0,
+	)
+	if len(discoveries) != 1 {
+		t.Fatalf("discoveries = %#v, want one result", discoveries)
+	}
+	if discoveries[0].URL != "https://grep.thm/public/html/dashboard.php" {
+		t.Fatalf("URL = %q", discoveries[0].URL)
+	}
+	if discoveries[0].Path != "/public/html/dashboard.php" {
+		t.Fatalf("Path = %q, want URL-root-relative path", discoveries[0].Path)
 	}
 }
 
