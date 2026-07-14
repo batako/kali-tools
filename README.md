@@ -45,9 +45,10 @@ Replay a raw HTTP request. The request method, path, host, headers, and body are
 ```sh
 req login.req
 req -S login.req
+req -k login.req
 ```
 
-`-S`/`--https` forces HTTPS when the request file does not determine a scheme. `-h`/`--help` and `-V`/`--version` are also available. `Accept-Encoding` and `Content-Length` from the request file are not sent; Go's `net/http` handles gzip response decompression.
+`-S`/`--https` forces HTTPS when the request file does not determine a scheme. Use `-k`/`--no-tls-validation` for test targets with expired or self-signed certificates; `--tls-verify` explicitly keeps validation enabled. `-h`/`--help` and `-V`/`--version` are also available. `Accept-Encoding` and `Content-Length` from the request file are not sent; Go's `net/http` handles gzip response decompression. `req` is distributed as the standalone `req` Debian package.
 
 ### ctx
 
@@ -158,6 +159,7 @@ Build and install one package locally:
 
 ```sh
 ./scripts/install-deb.sh ctx
+./scripts/install-deb.sh req
 ./scripts/install-deb.sh xssh
 ./scripts/install-deb.sh xftp
 ./scripts/install-deb.sh xsmb

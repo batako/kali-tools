@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -91,6 +92,34 @@ func TestSendWithHTTPTestServer(t *testing.T) {
 	}
 }
 
+func TestSendWithOptionsCanSkipTLSVerification(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer server.Close()
+
+	host := strings.TrimPrefix(server.URL, "https://")
+	parsedURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+	parsed := &ParsedRequest{
+		Method: http.MethodGet,
+		URL:    parsedURL,
+		Host:   host,
+		Header: make(http.Header),
+	}
+	resp, err := sendWithOptions(parsed, true)
+	if err != nil {
+		t.Fatalf("sendWithOptions() error = %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || string(body) != "ok" {
+		t.Fatalf("response body = %q, %v", body, err)
+	}
+}
+
 func TestWriteResponseFormatsHTTPResponse(t *testing.T) {
 	t.Parallel()
 
@@ -134,8 +163,9 @@ func TestRunReturnsUsageErrorWhenArgumentMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("Run() error = nil, want usage error")
 	}
-	if err.Error() != "usage: req [-S|--https] <REQ_FILE>" {
-		t.Fatalf("Run() error = %q, want %q", err.Error(), "usage: req [-S|--https] <REQ_FILE>")
+	wantUsage := "usage: req [-S|--https] [-k|--no-tls-validation] [--tls-verify] <REQ_FILE>"
+	if err.Error() != wantUsage {
+		t.Fatalf("Run() error = %q, want %q", err.Error(), wantUsage)
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
@@ -168,7 +198,7 @@ func TestRunWritesHelp(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "usage: req [-S|--https] <REQ_FILE>") {
+	if !strings.Contains(output, "usage: req [-S|--https] [-k|--no-tls-validation] [--tls-verify] <REQ_FILE>") {
 		t.Fatalf("help output = %q", output)
 	}
 	if !strings.Contains(output, "-S, --https") {
@@ -179,6 +209,9 @@ func TestRunWritesHelp(t *testing.T) {
 	}
 	if !strings.Contains(output, "-V, --version") {
 		t.Fatalf("help output missing version description: %q", output)
+	}
+	if !strings.Contains(output, "-k, --no-tls-validation") || !strings.Contains(output, "--tls-verify") {
+		t.Fatalf("help output missing TLS options: %q", output)
 	}
 }
 

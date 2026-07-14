@@ -45,9 +45,10 @@ sudo apt install xgobuster
 ```sh
 req login.req
 req -S login.req
+req -k login.req
 ```
 
-`-S`/`--https` はリクエストファイルからスキームを決められない場合にHTTPSを強制します。`-h`/`--help` と `-V`/`--version` も使用できます。リクエストファイルの `Accept-Encoding` と `Content-Length` は送信せず、gzipレスポンスの展開はGoの `net/http` に任せます。
+`-S`/`--https` はリクエストファイルからスキームを決められない場合にHTTPSを強制します。期限切れや自己署名証明書を使う検証環境では`-k`/`--no-tls-validation`を使い、`--tls-verify`で明示的に検証を有効化できます。`-h`/`--help` と `-V`/`--version` も使用できます。リクエストファイルの `Accept-Encoding` と `Content-Length` は送信せず、gzipレスポンスの展開はGoの `net/http` に任せます。`req`は独立したDebianパッケージとして配布します。
 
 ### ctx
 
@@ -158,6 +159,7 @@ docker-compose exec -w /tools kali gofmt -w cmd internal
 
 ```sh
 ./scripts/install-deb.sh ctx
+./scripts/install-deb.sh req
 ./scripts/install-deb.sh xssh
 ./scripts/install-deb.sh xftp
 ./scripts/install-deb.sh xsmb
