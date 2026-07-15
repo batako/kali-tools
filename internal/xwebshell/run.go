@@ -5,16 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"req/internal/ctx"
 )
 
-var Version = "dev"
+var (
+	Version = "1.0.1"
+)
 
 const webshellRoot = "/usr/share/webshells"
 
@@ -344,32 +347,11 @@ func callbackIP(reader *bufio.Reader, stdout io.Writer, fallback string) (string
 }
 
 func detectCallbackIP() string {
-	interfaces, err := net.Interfaces()
+	data, err := ctx.LoadPromptData(".")
 	if err != nil {
 		return ""
 	}
-	for _, networkInterface := range interfaces {
-		if networkInterface.Flags&net.FlagUp == 0 || networkInterface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addresses, err := networkInterface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, address := range addresses {
-			var ip net.IP
-			switch value := address.(type) {
-			case *net.IPNet:
-				ip = value.IP
-			case *net.IPAddr:
-				ip = value.IP
-			}
-			if ip != nil && ip.To4() != nil && !ip.IsLoopback() {
-				return ip.To4().String()
-			}
-		}
-	}
-	return ""
+	return data.LocalIP
 }
 
 func findValue(text, expression string) string {

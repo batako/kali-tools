@@ -35,13 +35,15 @@ func TestRunHelp(t *testing.T) {
 func TestConfigureTemplate(t *testing.T) {
 	content := []byte("my $ip = '127.0.0.1';\nmy $port = 1234;\n")
 	var prompts strings.Builder
-	configured, err := configureTemplate("perl/perl-reverse-shell.pl", content, bufio.NewReader(strings.NewReader("4444\n")), &prompts)
-	if err != nil {
-		t.Fatalf("configureTemplate() error = %v", err)
-	}
+	input := "4444\n"
 	expectedIP := detectCallbackIP()
 	if expectedIP == "" {
 		expectedIP = "127.0.0.1"
+		input = expectedIP + "\n" + input
+	}
+	configured, err := configureTemplate("perl/perl-reverse-shell.pl", content, bufio.NewReader(strings.NewReader(input)), &prompts)
+	if err != nil {
+		t.Fatalf("configureTemplate() error = %v", err)
 	}
 	expected := "my $ip = '" + expectedIP + "';\nmy $port = 4444;\n"
 	if got := string(configured); got != expected {
