@@ -40,6 +40,17 @@ func TestParseOptionsSupportsHostAndIP(t *testing.T) {
 	}
 }
 
+func TestParseOptionsSupportsServiceSelection(t *testing.T) {
+	options, err := parseOptions([]string{"--service", "2"})
+	if err != nil || options.Service != 2 {
+		t.Fatalf("service options = %+v, %v", options, err)
+	}
+	options, err = parseOptions([]string{"--service=3"})
+	if err != nil || options.Service != 3 {
+		t.Fatalf("service equals options = %+v, %v", options, err)
+	}
+}
+
 func TestParseOptionsSupportsInsecureTLS(t *testing.T) {
 	options, err := parseOptions([]string{"-k"})
 	if err != nil || !options.Insecure {

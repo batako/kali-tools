@@ -38,6 +38,7 @@ options:
   -u, --url <url>        override the URL derived from the current target
   --host <hostname>      use a registered xhost hostname for the target
   --ip                   use the target IP instead of an xhost hostname
+  --service <number>     select a web service by its displayed number
   -c, --cookies <value>   send cookies with requests
   --exclude-length <size> exclude responses with these body sizes
   -k, --no-tls-validation disable TLS certificate validation
@@ -204,10 +205,12 @@ func (app *App) Run(args []string) error {
 		if serviceErr != nil {
 			return serviceErr
 		}
-		url, err = resolveURL(targetHost, services, app.stdin, app.stdout)
+		url, err = resolveURL(targetHost, services, options.Service, app.stdin, app.stdout)
 		if err != nil {
 			return err
 		}
+	} else if options.Service != 0 {
+		return app.errorf("usage: --service cannot be combined with --url")
 	}
 	if options.Wordlist == "" {
 		if err := resolveExecutionStrategy(workspace, target, url, &options); err != nil {
@@ -1278,6 +1281,7 @@ type parsedOptions struct {
 	URL              string
 	Host             string
 	IP               bool
+	Service          int
 	Cookie           string
 	ExcludeLength    string
 	Insecure         bool
@@ -1339,6 +1343,16 @@ func parseOptions(args []string) (parsedOptions, error) {
 			i++
 		case "--ip":
 			options.IP = true
+		case "--service":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
+			}
+			service, convErr := strconv.Atoi(args[i+1])
+			if convErr != nil || service < 1 {
+				return parsedOptions{}, errors.New("invalid service number")
+			}
+			options.Service = service
+			i++
 		case "-c", "--cookies":
 			if i+1 >= len(args) || args[i+1] == "" {
 				return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
@@ -1375,6 +1389,15 @@ func parseOptions(args []string) (parsedOptions, error) {
 				if options.Host == "" {
 					return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
 				}
+				continue
+			}
+			if strings.HasPrefix(args[i], "--service=") {
+				value := strings.TrimPrefix(args[i], "--service=")
+				service, convErr := strconv.Atoi(value)
+				if convErr != nil || service < 1 {
+					return parsedOptions{}, errors.New("invalid service number")
+				}
+				options.Service = service
 				continue
 			}
 			if strings.HasPrefix(args[i], "--cookies=") {

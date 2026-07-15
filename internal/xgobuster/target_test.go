@@ -63,7 +63,7 @@ func TestServiceURL(t *testing.T) {
 
 func TestResolveURLDefaultsAndSelectsWebService(t *testing.T) {
 	var output strings.Builder
-	if got, err := resolveURL("10.0.0.1", nil, strings.NewReader(""), &output); err == nil || got != "" || !strings.Contains(err.Error(), "run xscan first") {
+	if got, err := resolveURL("10.0.0.1", nil, 0, strings.NewReader(""), &output); err == nil || got != "" || !strings.Contains(err.Error(), "run xscan first") {
 		t.Fatalf("resolveURL(without services) = %q, %v", got, err)
 	}
 	http := "http"
@@ -71,7 +71,7 @@ func TestResolveURLDefaultsAndSelectsWebService(t *testing.T) {
 	got, err := resolveURL("10.0.0.1", []Service{
 		{Port: 80, ServiceName: &http},
 		{Port: 443, ServiceName: &https},
-	}, strings.NewReader("2\n"), &output)
+	}, 0, strings.NewReader("2\n"), &output)
 	if err != nil {
 		t.Fatalf("resolveURL(selection) error = %v", err)
 	}
@@ -80,5 +80,27 @@ func TestResolveURLDefaultsAndSelectsWebService(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Select a web service:") {
 		t.Fatalf("selection output = %q", output.String())
+	}
+}
+
+func TestResolveURLSelectsServiceByNumber(t *testing.T) {
+	http := "http"
+	got, err := resolveURL("10.0.0.1", []Service{
+		{Port: 80, ServiceName: &http},
+		{Port: 62337, ServiceName: &http},
+	}, 2, strings.NewReader(""), &strings.Builder{})
+	if err != nil {
+		t.Fatalf("resolveURL() error = %v", err)
+	}
+	if got != "http://10.0.0.1:62337" {
+		t.Fatalf("resolveURL() = %q, want selected service", got)
+	}
+}
+
+func TestResolveURLRejectsInvalidServiceNumber(t *testing.T) {
+	http := "http"
+	_, err := resolveURL("10.0.0.1", []Service{{Port: 80, ServiceName: &http}}, 2, strings.NewReader(""), &strings.Builder{})
+	if err == nil || !strings.Contains(err.Error(), "choose 1-1") {
+		t.Fatalf("resolveURL() error = %v, want invalid selection", err)
 	}
 }

@@ -69,7 +69,7 @@ func resolveTargetHost(targetIP string, hosts []ctx.Host, requested string, forc
 	return registered[index-1], nil
 }
 
-func resolveURL(targetIP string, services []Service, stdin io.Reader, stdout io.Writer) (string, error) {
+func resolveURL(targetIP string, services []Service, selected int, stdin io.Reader, stdout io.Writer) (string, error) {
 	var candidates []Service
 	for _, service := range services {
 		name := ""
@@ -82,6 +82,12 @@ func resolveURL(targetIP string, services []Service, stdin io.Reader, stdout io.
 	}
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("no HTTP service found; run xscan first or specify -u <url>")
+	}
+	if selected > 0 {
+		if selected > len(candidates) {
+			return "", fmt.Errorf("invalid web service selection: %d (choose 1-%d)", selected, len(candidates))
+		}
+		return serviceURL(targetIP, candidates[selected-1]), nil
 	}
 	if len(candidates) > 1 {
 		_, _ = fmt.Fprintln(stdout, "Select a web service:")
