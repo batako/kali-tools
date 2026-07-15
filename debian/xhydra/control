@@ -1,0 +1,9 @@
+Package: xhydra
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: @ARCH@
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx, hydra, wordlists
+Description: ctx-aware HTTP Hydra wrapper
+ Run Hydra against HTTP form authentication and save successful credentials to ctx.
