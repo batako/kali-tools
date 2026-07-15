@@ -2,8 +2,13 @@ package xhydra
 
 import (
 	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"req/internal/ctx"
 )
 
 func TestParseOptions(t *testing.T) {
@@ -17,6 +22,60 @@ func TestParseOptions(t *testing.T) {
 	}
 	if options.Mode != "http" || options.Username != "john" || options.RequestFile != "login.req" || options.UserField != "username" || options.PasswordField != "password" || options.FailJSON != "status=error" || options.PasswordList != "/tmp/passwords.txt" {
 		t.Fatalf("options = %+v", options)
+	}
+}
+
+func TestParseServiceOptions(t *testing.T) {
+	options, err := parseOptions([]string{"smb", "-u", "john", "--host", "10.0.0.5", "--port", "1445", "--service", "2", "-P", "/tmp/passwords.txt"})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if options.Mode != "smb" || options.Username != "john" || options.Host != "10.0.0.5" || options.Port != "1445" || options.Service != "2" || options.PasswordList != "/tmp/passwords.txt" {
+		t.Fatalf("options = %+v", options)
+	}
+}
+
+func TestParseClearCacheOption(t *testing.T) {
+	options, err := parseOptions([]string{"ssh", "-u", "kali", "--clear-cache"})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if !options.ClearCache {
+		t.Fatalf("options.ClearCache = false, want true")
+	}
+}
+
+func TestMatchingServices(t *testing.T) {
+	services := matchingServices([]ctx.Service{
+		{Port: 22, Protocol: "tcp", ServiceName: "ssh"},
+		{Port: 2222, Protocol: "tcp", ServiceName: "ssh"},
+		{Port: 445, Protocol: "tcp", ServiceName: "microsoft-ds"},
+		{Port: 80, Protocol: "tcp", ServiceName: "http"},
+	}, "ssh")
+	if len(services) != 2 || services[0].Port != 22 || services[1].Port != 2222 {
+		t.Fatalf("services = %+v", services)
+	}
+}
+
+func TestBuildServiceHydraArgs(t *testing.T) {
+	args := buildServiceHydraArgs("smb", "10.0.0.5", 1445, "/tmp/passwords.txt", "john")
+	want := []string{"-l", "john", "-P", "/tmp/passwords.txt", "-f", "-s", "1445", "10.0.0.5", "smb2"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+}
+
+func TestFilteredPasswordWordlistSkipsSharedWords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "passwords.txt")
+	if err := os.WriteFile(path, []byte("secret\npassword\nsecret\n\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	words, err := filteredPasswordWordlist(path, map[string]struct{}{"password": {}}, false)
+	if err != nil {
+		t.Fatalf("filteredPasswordWordlist() error = %v", err)
+	}
+	if !reflect.DeepEqual(words, []string{"secret"}) {
+		t.Fatalf("words = %#v", words)
 	}
 }
 
