@@ -33,10 +33,11 @@ func TestConfigValueProjectRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListConfigValues() error = %v", err)
 	}
-	if len(entries) != 4 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want ||
-		entries[1].Key != ConfigKeyDirectoryMaxRequests || entries[1].Value != "1000000" ||
-		entries[2].Key != ConfigKeyFileMaxRequests || entries[2].Value != "200000" ||
-		entries[3].Key != ConfigKeyTLSVerify || entries[3].Value != "true" {
+	if len(entries) != 5 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want || entries[0].DefaultValue != "-" ||
+		entries[1].Key != ConfigKeyDirectoryMaxRequests || entries[1].Value != "1000000" || entries[1].DefaultValue != "1000000" ||
+		entries[2].Key != ConfigKeyFileMaxRequests || entries[2].Value != "200000" || entries[2].DefaultValue != "200000" ||
+		entries[3].Key != ConfigKeyPasswordMaxRequests || entries[3].Value != "10000" || entries[3].DefaultValue != "10000" ||
+		entries[4].Key != ConfigKeyTLSVerify || entries[4].Value != "true" || entries[4].DefaultValue != "true" {
 		t.Fatalf("ListConfigValues() = %+v, want project.root and request limits", entries)
 	}
 }

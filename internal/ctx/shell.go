@@ -428,6 +428,7 @@ _ctx_config_keys=(
   'project.root:project root directory'
   'web.directory.max-requests:maximum directory requests per automatic run'
   'web.file.max-requests:maximum file requests per automatic run'
+  'password.max-requests:maximum password requests per automatic run'
   'web.tls.verify:verify TLS certificates for web requests'
 )
 
@@ -814,7 +815,7 @@ _ctx_completion() {
       ;;
     get|set)
       if [[ ${command} == config ]]; then
-        COMPREPLY=($(compgen -W "project.root web.directory.max-requests web.file.max-requests web.tls.verify" -- "${cur}"))
+        COMPREPLY=($(compgen -W "project.root web.directory.max-requests web.file.max-requests password.max-requests web.tls.verify" -- "${cur}"))
         return
       fi
       ;;

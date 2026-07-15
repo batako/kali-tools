@@ -112,6 +112,7 @@ keys:
   project.root       project root directory
   web.directory.max-requests maximum directory requests per automatic run
   web.file.max-requests maximum file requests per automatic run
+  password.max-requests maximum password requests per automatic run
 
 options:
   -h, --help        show this help`
@@ -1030,11 +1031,11 @@ func printConfigValues(stdout io.Writer) error {
 		return err
 	}
 	table := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(table, "KEY\tVALUE"); err != nil {
+	if _, err := fmt.Fprintln(table, "KEY\tVALUE\tDEFAULT"); err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		if _, err := fmt.Fprintf(table, "%s\t%s\n", entry.Key, entry.Value); err != nil {
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\n", entry.Key, entry.Value, entry.DefaultValue); err != nil {
 			return err
 		}
 	}
