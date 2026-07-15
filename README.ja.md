@@ -183,12 +183,13 @@ docker-compose exec -w /tools kali gofmt -w cmd internal
 `.github/workflows/publish-release.yml` は次の形式のタグで実行します。
 
 ```text
-ctx-v<version>
-xssh-v<version>
-xftp-v<version>
-xgobuster-v<version>
-xsmb-v<version>
-req-v<version>
+ctx/v<version>
+xssh/v<version>
+xftp/v<version>
+xgobuster/v<version>
+xsmb/v<version>
+req/v<version>
+xwebshell/v<version>
 ```
 
 `releases/<tool>/<version>.md` の存在を確認し、`apt-repo` の対応パッケージを収集してGitHub Releaseを作成します。日本語版は対応する `.ja.md` です。

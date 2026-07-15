@@ -183,12 +183,13 @@ The output is `dist/<tool>_<version>_<architecture>.deb`. `scripts/build-apt-rep
 `.github/workflows/publish-release.yml` runs for version tags such as:
 
 ```text
-ctx-v<version>
-xssh-v<version>
-xftp-v<version>
-xgobuster-v<version>
-xsmb-v<version>
-req-v<version>
+ctx/v<version>
+xssh/v<version>
+xftp/v<version>
+xgobuster/v<version>
+xsmb/v<version>
+req/v<version>
+xwebshell/v<version>
 ```
 
 It verifies `releases/<tool>/<version>.md`, collects the matching packages from `apt-repo`, and creates the GitHub Release. The Japanese notes use the corresponding `.ja.md` file.
