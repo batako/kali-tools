@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -217,6 +218,10 @@ func (app *App) Run(args []string) error {
 	if options.Status {
 		return app.showStatus(workspace, target, url, options)
 	}
+	historyURLs, historyErr := compatibleHistoryURLs(workspace, target, url)
+	if historyErr != nil {
+		return app.errorf("failed to load web wordlist history: %s", historyErr)
+	}
 	selection := ctx.WordlistSelection{Provider: "manual", Path: wordlist}
 
 	planned := []plannedWordlist{{Selection: selection, Path: selection.Path, Extra: effectiveExtra(options)}}
@@ -234,19 +239,11 @@ func (app *App) Run(args []string) error {
 			return app.errorf("no wordlists found for profile %s", options.Profile)
 		}
 		start := 0
-		baseStatePath, stateErr := searchedBaseWordsPath(workspace, target.ID, url)
-		if stateErr != nil {
-			return app.errorf("failed to prepare wordlist state: %s", stateErr)
-		}
-		baseSearched, loadErr := loadSearchedWords(baseStatePath)
+		baseSearched, loadErr := loadSearchedWordsForURLs(workspace, target.ID, historyURLs, "base", "")
 		if loadErr != nil {
 			return app.errorf("failed to load wordlist state: %s", loadErr)
 		}
-		legacyStatePath, legacyPathErr := searchedWordsPath(workspace, target.ID, url, effectiveExtra(options))
-		if legacyPathErr != nil {
-			return app.errorf("failed to prepare legacy wordlist state: %s", legacyPathErr)
-		}
-		legacySearched, legacyErr := loadSearchedWords(legacyStatePath)
+		legacySearched, legacyErr := loadSearchedWordsForURLs(workspace, target.ID, historyURLs, "legacy", strings.Join(effectiveExtra(options), "\x00"))
 		if legacyErr != nil {
 			return app.errorf("failed to load legacy wordlist state: %s", legacyErr)
 		}
@@ -254,11 +251,7 @@ func (app *App) Run(args []string) error {
 		extensions := extensionsFromExtra(effectiveExtra(options))
 		extensionSearched := make(map[string]map[string]struct{}, len(extensions))
 		for _, extension := range extensions {
-			path, pathErr := searchedExtensionWordsPath(workspace, target.ID, url, extension)
-			if pathErr != nil {
-				return app.errorf("failed to prepare extension wordlist state: %s", pathErr)
-			}
-			words, wordsErr := loadSearchedWords(path)
+			words, wordsErr := loadSearchedWordsForURLs(workspace, target.ID, historyURLs, "extension", extension)
 			if wordsErr != nil {
 				return app.errorf("failed to load extension wordlist state: %s", wordsErr)
 			}
@@ -524,23 +517,22 @@ func (app *App) showStatus(workspace *ctx.Workspace, target *ctx.Target, url str
 	if len(candidates) == 0 {
 		return app.errorf("no wordlists found for profile %s", options.Profile)
 	}
-	runs, err := ctx.ListWebWordlistRuns(workspace, target, url)
+	allRuns, err := ctx.ListWebWordlistRunsForTarget(workspace, target)
 	if err != nil {
 		return app.errorf("failed to load wordlist run history: %s", err)
 	}
-	statePath, err := searchedBaseWordsPath(workspace, target.ID, url)
-	if err != nil {
-		return app.errorf("failed to prepare wordlist state: %s", err)
+	historyURLs := compatibleURLList(url, allRuns)
+	runs := make([]ctx.WebWordlistRun, 0, len(allRuns))
+	for _, run := range allRuns {
+		if containsString(historyURLs, run.URL) {
+			runs = append(runs, run)
+		}
 	}
-	searched, err := loadSearchedWords(statePath)
+	searched, err := loadSearchedWordsForURLs(workspace, target.ID, historyURLs, "base", "")
 	if err != nil {
 		return app.errorf("failed to load wordlist state: %s", err)
 	}
-	legacyStatePath, legacyPathErr := searchedWordsPath(workspace, target.ID, url, effectiveExtra(options))
-	if legacyPathErr != nil {
-		return app.errorf("failed to prepare legacy wordlist state: %s", legacyPathErr)
-	}
-	legacySearched, legacyErr := loadSearchedWords(legacyStatePath)
+	legacySearched, legacyErr := loadSearchedWordsForURLs(workspace, target.ID, historyURLs, "legacy", strings.Join(effectiveExtra(options), "\x00"))
 	if legacyErr != nil {
 		return app.errorf("failed to load legacy wordlist state: %s", legacyErr)
 	}
@@ -548,11 +540,7 @@ func (app *App) showStatus(workspace *ctx.Workspace, target *ctx.Target, url str
 	extensions := extensionsFromExtra(effectiveExtra(options))
 	extensionSearched := make(map[string]map[string]struct{}, len(extensions))
 	for _, extension := range extensions {
-		path, pathErr := searchedExtensionWordsPath(workspace, target.ID, url, extension)
-		if pathErr != nil {
-			return app.errorf("failed to prepare extension wordlist state: %s", pathErr)
-		}
-		words, wordsErr := loadSearchedWords(path)
+		words, wordsErr := loadSearchedWordsForURLs(workspace, target.ID, historyURLs, "extension", extension)
 		if wordsErr != nil {
 			return app.errorf("failed to load extension wordlist state: %s", wordsErr)
 		}
@@ -786,7 +774,7 @@ func resolveExecutionStrategy(workspace *ctx.Workspace, target *ctx.Target, url 
 		return persistActiveStrategy(workspace, target.ID, url, *options)
 	}
 
-	active, err := loadActiveStrategy(workspace, target.ID, url)
+	active, err := loadCompatibleActiveStrategy(workspace, target.ID, url)
 	if err != nil {
 		return err
 	}
@@ -875,6 +863,35 @@ func loadActiveStrategy(workspace *ctx.Workspace, targetID int64, url string) (a
 		}
 	}
 	return strategy, nil
+}
+
+func loadCompatibleActiveStrategy(workspace *ctx.Workspace, targetID int64, currentURL string) (activeStrategy, error) {
+	strategy, err := loadActiveStrategy(workspace, targetID, currentURL)
+	if err != nil || strategy.Profile != "" {
+		return strategy, err
+	}
+
+	target, err := ctx.GetPrimaryTarget(workspace)
+	if err != nil {
+		return activeStrategy{}, err
+	}
+	runs, err := ctx.ListWebWordlistRunsForTarget(workspace, target)
+	if err != nil {
+		return activeStrategy{}, err
+	}
+	for _, historyURL := range compatibleURLList(currentURL, runs) {
+		if historyURL == currentURL {
+			continue
+		}
+		strategy, err := loadActiveStrategy(workspace, targetID, historyURL)
+		if err != nil {
+			return activeStrategy{}, err
+		}
+		if strategy.Profile != "" {
+			return strategy, nil
+		}
+	}
+	return activeStrategy{}, nil
 }
 
 func saveActiveStrategy(workspace *ctx.Workspace, targetID int64, url string, strategy activeStrategy) error {
@@ -1030,6 +1047,78 @@ func searchedWordsProfilePath(workspace *ctx.Workspace, targetID int64, url stri
 		return "", err
 	}
 	return filepath.Join(filepath.Dir(path), profile+".searched.words"), nil
+}
+
+func compatibleHistoryURLs(workspace *ctx.Workspace, target *ctx.Target, currentURL string) ([]string, error) {
+	runs, err := ctx.ListWebWordlistRunsForTarget(workspace, target)
+	if err != nil {
+		return nil, err
+	}
+	return compatibleURLList(currentURL, runs), nil
+}
+
+func compatibleURLList(currentURL string, runs []ctx.WebWordlistRun) []string {
+	urls := []string{currentURL}
+	seen := map[string]struct{}{currentURL: struct{}{}}
+	for _, run := range runs {
+		if _, ok := seen[run.URL]; ok || !compatibleWebURL(currentURL, run.URL) {
+			continue
+		}
+		seen[run.URL] = struct{}{}
+		urls = append(urls, run.URL)
+	}
+	return urls
+}
+
+func compatibleWebURL(currentURL, previousURL string) bool {
+	current, currentErr := url.Parse(currentURL)
+	previous, previousErr := url.Parse(previousURL)
+	if currentErr != nil || previousErr != nil || current.Scheme != previous.Scheme || current.Port() != previous.Port() || current.EscapedPath() != previous.EscapedPath() || current.RawQuery != previous.RawQuery {
+		return false
+	}
+	currentIP := net.ParseIP(current.Hostname())
+	previousIP := net.ParseIP(previous.Hostname())
+	return currentIP != nil && previousIP != nil && currentIP.To4() != nil && previousIP.To4() != nil
+}
+
+func loadSearchedWordsForURLs(workspace *ctx.Workspace, targetID int64, urls []string, kind, value string) (map[string]struct{}, error) {
+	merged := make(map[string]struct{})
+	for _, candidateURL := range urls {
+		var path string
+		var err error
+		switch kind {
+		case "base":
+			path, err = searchedBaseWordsPath(workspace, targetID, candidateURL)
+		case "legacy":
+			var extra []string
+			if value != "" {
+				extra = strings.Split(value, "\x00")
+			}
+			path, err = searchedWordsPath(workspace, targetID, candidateURL, extra)
+		case "extension":
+			path, err = searchedExtensionWordsPath(workspace, targetID, candidateURL, value)
+		default:
+			return nil, fmt.Errorf("unknown searched word state: %s", kind)
+		}
+		if err != nil {
+			return nil, err
+		}
+		words, loadErr := loadSearchedWords(path)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		mergeSearchedWords(merged, words)
+	}
+	return merged, nil
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func loadSearchedWords(path string) (map[string]struct{}, error) {

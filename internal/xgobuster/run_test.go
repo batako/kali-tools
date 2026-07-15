@@ -285,3 +285,49 @@ func TestSearchedWordStateIsPersisted(t *testing.T) {
 		t.Fatalf("seen = %#v, want two words", seen)
 	}
 }
+
+func TestCompatibleWebURLOnlyChangesIPv4Host(t *testing.T) {
+	tests := []struct {
+		current, previous string
+		want              bool
+	}{
+		{"http://10.10.10.20/app/", "http://10.10.10.10/app/", true},
+		{"https://10.10.10.20:8443/app/", "https://10.10.10.10:8443/app/", true},
+		{"http://10.10.10.20/app/", "http://10.10.10.10/other/", false},
+		{"http://target.thm/app/", "http://10.10.10.10/app/", false},
+		{"http://10.10.10.20/app/", "https://10.10.10.10/app/", false},
+	}
+	for _, tt := range tests {
+		if got := compatibleWebURL(tt.current, tt.previous); got != tt.want {
+			t.Errorf("compatibleWebURL(%q, %q) = %t, want %t", tt.current, tt.previous, got, tt.want)
+		}
+	}
+}
+
+func TestLoadSearchedWordsForChangedIPv4URL(t *testing.T) {
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	workspace, err := ctx.InitWorkspace(t.TempDir())
+	if err != nil {
+		t.Fatalf("InitWorkspace() error = %v", err)
+	}
+	target, err := ctx.SetPrimaryTargetIP(workspace, "10.10.10.10")
+	if err != nil {
+		t.Fatalf("SetPrimaryTargetIP() error = %v", err)
+	}
+	oldURL := "http://10.10.10.10/app/"
+	path, err := searchedBaseWordsPath(workspace, target.ID, oldURL)
+	if err != nil {
+		t.Fatalf("searchedBaseWordsPath() error = %v", err)
+	}
+	if err := appendSearchedWords(path, []string{"admin", "login"}); err != nil {
+		t.Fatalf("appendSearchedWords() error = %v", err)
+	}
+
+	seen, err := loadSearchedWordsForURLs(workspace, target.ID, []string{"http://10.10.10.20/app/", oldURL}, "base", "")
+	if err != nil {
+		t.Fatalf("loadSearchedWordsForURLs() error = %v", err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("seen = %#v, want two words", seen)
+	}
+}

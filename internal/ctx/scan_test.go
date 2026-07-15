@@ -192,6 +192,40 @@ func TestRunScanSkipsDuplicateWithoutCommandLog(t *testing.T) {
 	}
 }
 
+func TestRunScanSkipsPreviousScanAfterTargetIPChanges(t *testing.T) {
+	workspace := initXTestWorkspace(t)
+	if _, err := SetPrimaryTargetIP(workspace, "10.10.10.10"); err != nil {
+		t.Fatalf("SetPrimaryTargetIP() error = %v", err)
+	}
+	installFakeNmap(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := RunScan([]string{"scan", "-p", "22,80"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("initial RunScan exit code = %d; stderr = %q", code, stderr.String())
+	}
+	if _, err := SetPrimaryTargetIP(workspace, "10.10.20.20"); err != nil {
+		t.Fatalf("SetPrimaryTargetIP() update error = %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := RunScan([]string{"scan", "-p", "22,80"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("updated RunScan exit code = %d; stderr = %q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Skipped duplicate scan for 10.10.20.20") {
+		t.Fatalf("stdout = %q, want scan history reused after IP change", stdout.String())
+	}
+
+	logs, err := ListCommandLogs(workspace)
+	if err != nil {
+		t.Fatalf("ListCommandLogs() error = %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("logs len = %d, want 1 after reused scan", len(logs))
+	}
+}
+
 func TestRunScanForceRepeatsDuplicate(t *testing.T) {
 	workspace := initXTestWorkspace(t)
 	if _, err := SetPrimaryTargetIP(workspace, "10.10.10.10"); err != nil {
