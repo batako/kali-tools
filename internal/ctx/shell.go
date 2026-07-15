@@ -228,6 +228,9 @@ func enableExtraShortcutsInZshCompletionScript(script string) (string, error) {
   elif [[ ${invocation} == cr ]]; then
     command=credential
     command_position=1
+  elif [[ ${invocation} == sv ]]; then
+    command=service
+    command_position=1
   else
     command=${invocation#x}
     command_position=1
@@ -244,9 +247,10 @@ pj() { xproject "$@" }
 ta() { xtarget "$@" }
 unalias cr 2>/dev/null
 cr() { xcredential "$@" }
+sv() { xservice "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
+compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv
 `,
 		},
 	})
@@ -271,6 +275,9 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
     subcommand="${COMP_WORDS[1]}"
   elif [[ ${invocation} == cr ]]; then
     command=credential
+    subcommand="${COMP_WORDS[1]}"
+  elif [[ ${invocation} == sv ]]; then
+    command=service
     subcommand="${COMP_WORDS[1]}"
   else
     command="${invocation#x}"
@@ -305,6 +312,18 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
 `,
 			new: `    credential|xcredential|cr)
       COMPREPLY=($(compgen -W "ls set add update rm -h --help" -- "${cur}"))
+				return
+				;;
+`,
+		},
+		{
+			old: `    service|xservice)
+      COMPREPLY=($(compgen -W "ls -h --help" -- "${cur}"))
+      return
+      ;;
+`,
+			new: `    service|xservice|sv)
+      COMPREPLY=($(compgen -W "ls -h --help" -- "${cur}"))
       return
       ;;
 `,
@@ -320,9 +339,10 @@ pj() { xproject "$@"; }
 ta() { xtarget "$@"; }
 unalias cr 2>/dev/null
 cr() { xcredential "$@"; }
+sv() { xservice "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
+complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv
 `,
 		},
 	})

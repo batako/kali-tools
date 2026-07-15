@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	Version = "1.3.0"
+	Version = "1.4.0"
 
 	hostsFilePath                = "/etc/hosts"
 	syncHostsFileFunc            = SyncHostsFile
@@ -88,6 +88,7 @@ extra shortcuts (requires ctx init-shell --extra-shortcuts):
   pj           ctx project
   ta           ctx target
   cr           ctx credential
+  sv           ctx service
 
 Run ctx <command> -h for command-specific help.`
 
