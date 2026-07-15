@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -147,10 +149,10 @@ func TestRunHelpAndVersion(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"xssh", "-h"}, "usage: xssh [credential-id|username]"},
+		{[]string{"xssh", "-h"}, "usage: xssh [credential-id|username|key]"},
 		{[]string{"xssh", "--help"}, "Connect to the current ctx target using a stored SSH credential when available."},
-		{[]string{"xssh", "-V"}, "xssh 1.0.0\n"},
-		{[]string{"xssh", "--version"}, "xssh 1.0.0\n"},
+		{[]string{"xssh", "-V"}, "xssh 1.1.0\n"},
+		{[]string{"xssh", "--version"}, "xssh 1.1.0\n"},
 	} {
 		var out, stderr bytes.Buffer
 		err := New(newFakeRunner(), strings.NewReader(""), &out, &stderr).Run(tt.args)
@@ -160,6 +162,29 @@ func TestRunHelpAndVersion(t *testing.T) {
 		if !strings.Contains(out.String(), tt.want) {
 			t.Fatalf("Run(%v) output = %q, want %q", tt.args, out.String(), tt.want)
 		}
+	}
+}
+
+func TestPrepareKeyPrintsAuthorizedKeysCommand(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	keyPath := filepath.Join(home, ".ssh", "id_ed25519.pub")
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("ssh-ed25519 AAAAexample user@example\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, stderr bytes.Buffer
+	if err := New(newFakeRunner(), strings.NewReader(""), &out, &stderr).Run([]string{"xssh", "key"}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "ssh-ed25519 AAAAexample user@example") {
+		t.Fatalf("output = %q", out.String())
+	}
+	if !strings.Contains(out.String(), `(grep -qxF 'ssh-ed25519 AAAAexample user@example'`) {
+		t.Fatalf("output does not contain duplicate-safe registration: %q", out.String())
 	}
 }
 

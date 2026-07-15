@@ -93,6 +93,13 @@ if [ "${PACKAGE_NAME}" = "xgobuster" ]; then
   cp "debian/${PACKAGE_NAME}/xgo.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xgo"
 fi
 
+if [ "${PACKAGE_NAME}" = "xssh" ]; then
+  mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
+  mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
+  cp "debian/${PACKAGE_NAME}/xssh.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xssh"
+  cp "debian/${PACKAGE_NAME}/xssh.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xssh"
+fi
+
 if [ "${PACKAGE_NAME}" = "xwebshell" ]; then
   mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
   mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
