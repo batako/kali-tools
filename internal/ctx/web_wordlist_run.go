@@ -21,6 +21,20 @@ type WebWordlistRun struct {
 }
 
 func ListWebWordlistRuns(workspace *Workspace, target *Target, url string) ([]WebWordlistRun, error) {
+	runs, err := ListWebWordlistRunsForTarget(workspace, target)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]WebWordlistRun, 0, len(runs))
+	for _, run := range runs {
+		if run.URL == url {
+			filtered = append(filtered, run)
+		}
+	}
+	return filtered, nil
+}
+
+func ListWebWordlistRunsForTarget(workspace *Workspace, target *Target) ([]WebWordlistRun, error) {
 	db, err := openWorkspaceDatabase(workspace)
 	if err != nil {
 		return nil, err
@@ -29,8 +43,8 @@ func ListWebWordlistRuns(workspace *Workspace, target *Target, url string) ([]We
 	rows, err := db.Query(`
 		SELECT id, target_id, url, provider, profile, search_signature, wordlist, status, command_log_id,
 		       started_at, COALESCE(ended_at, '')
-		FROM web_wordlist_runs WHERE target_id = ? AND url = ? ORDER BY id ASC
-	`, target.ID, url)
+		FROM web_wordlist_runs WHERE target_id = ? ORDER BY id ASC
+	`, target.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list web wordlist runs: %w", err)
 	}

@@ -228,6 +228,9 @@ func enableExtraShortcutsInZshCompletionScript(script string) (string, error) {
   elif [[ ${invocation} == cr ]]; then
     command=credential
     command_position=1
+  elif [[ ${invocation} == sv ]]; then
+    command=service
+    command_position=1
   else
     command=${invocation#x}
     command_position=1
@@ -244,9 +247,10 @@ pj() { xproject "$@" }
 ta() { xtarget "$@" }
 unalias cr 2>/dev/null
 cr() { xcredential "$@" }
+sv() { xservice "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
+compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv
 `,
 		},
 	})
@@ -271,6 +275,9 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
     subcommand="${COMP_WORDS[1]}"
   elif [[ ${invocation} == cr ]]; then
     command=credential
+    subcommand="${COMP_WORDS[1]}"
+  elif [[ ${invocation} == sv ]]; then
+    command=service
     subcommand="${COMP_WORDS[1]}"
   else
     command="${invocation#x}"
@@ -305,6 +312,18 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
 `,
 			new: `    credential|xcredential|cr)
       COMPREPLY=($(compgen -W "ls set add update rm -h --help" -- "${cur}"))
+				return
+				;;
+`,
+		},
+		{
+			old: `    service|xservice)
+      COMPREPLY=($(compgen -W "ls -h --help" -- "${cur}"))
+      return
+      ;;
+`,
+			new: `    service|xservice|sv)
+      COMPREPLY=($(compgen -W "ls -h --help" -- "${cur}"))
       return
       ;;
 `,
@@ -320,9 +339,10 @@ pj() { xproject "$@"; }
 ta() { xtarget "$@"; }
 unalias cr 2>/dev/null
 cr() { xcredential "$@"; }
+sv() { xservice "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr
+complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv
 `,
 		},
 	})
@@ -408,6 +428,8 @@ _ctx_config_keys=(
   'project.root:project root directory'
   'web.directory.max-requests:maximum directory requests per automatic run'
   'web.file.max-requests:maximum file requests per automatic run'
+  'password.max-requests:maximum password requests per automatic run'
+  'dns.max-queries:maximum DNS queries per automatic run'
   'web.tls.verify:verify TLS certificates for web requests'
 )
 
@@ -794,7 +816,7 @@ _ctx_completion() {
       ;;
     get|set)
       if [[ ${command} == config ]]; then
-        COMPREPLY=($(compgen -W "project.root web.directory.max-requests web.file.max-requests web.tls.verify" -- "${cur}"))
+        COMPREPLY=($(compgen -W "project.root web.directory.max-requests web.file.max-requests password.max-requests dns.max-queries web.tls.verify" -- "${cur}"))
         return
       fi
       ;;

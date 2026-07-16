@@ -76,7 +76,7 @@ func TestCompletionScriptsIncludeAllConfigKeys(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
 		}
-		for _, want := range []string{"project.root", "web.directory.max-requests", "web.file.max-requests", "web.tls.verify"} {
+		for _, want := range []string{"project.root", "web.directory.max-requests", "web.file.max-requests", "password.max-requests", "dns.max-queries", "web.tls.verify"} {
 			if !strings.Contains(script, want) {
 				t.Errorf("CompletionScript(%s) missing config key %q", shell, want)
 			}
@@ -95,19 +95,22 @@ func TestCompletionScriptsIncludeExtraShortcutsWhenRequested(t *testing.T) {
 			"ta() { xtarget \"$@\"",
 			"unalias cr 2>/dev/null",
 			"cr() { xcredential \"$@\"",
+			"sv() { xservice \"$@\"",
 		}
 		if shell == "zsh" {
 			wants = append(wants,
 				"elif [[ ${invocation} == pj ]]",
 				"elif [[ ${invocation} == ta ]]",
 				"elif [[ ${invocation} == cr ]]",
-				"compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr",
+				"elif [[ ${invocation} == sv ]]",
+				"compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv",
 			)
 		} else {
 			wants = append(wants,
 				"project|xproject|pj",
 				"target|xtarget|ta",
 				"credential|xcredential|cr",
+				"service|xservice|sv",
 			)
 		}
 		for _, want := range wants {
@@ -128,11 +131,13 @@ func TestCompletionScriptsDoNotIncludeExtraShortcutsByDefault(t *testing.T) {
 			"pj() { xproject",
 			"ta() { xtarget",
 			"cr() { xcredential",
+			"sv() { xservice",
 			"elif [[ ${invocation} == pj ]]",
 			"elif [[ ${invocation} == cr ]]",
+			"elif [[ ${invocation} == sv ]]",
 			"project|xproject|pj",
 			"credential|xcredential|cr",
-			"pj ta cr",
+			"pj ta cr sv",
 		} {
 			if strings.Contains(script, unwanted) {
 				t.Fatalf("CompletionScript(%s) unexpectedly contains %q", shell, unwanted)
@@ -327,7 +332,7 @@ func TestRunCompletionAndInitShell(t *testing.T) {
 	if got := out.String(); !strings.Contains(got, "complete -F _ctx_completion ctx") || !strings.Contains(got, "xinit()") || !strings.Contains(got, "x() { ctx x") {
 		t.Fatalf("completion output = %q", got)
 	}
-	if strings.Contains(out.String(), "pj()") || strings.Contains(out.String(), "ta()") || strings.Contains(out.String(), "cr()") {
+	if strings.Contains(out.String(), "pj()") || strings.Contains(out.String(), "ta()") || strings.Contains(out.String(), "cr()") || strings.Contains(out.String(), "sv()") {
 		t.Fatalf("completion output unexpectedly contains extra shortcuts: %q", out.String())
 	}
 
@@ -335,7 +340,7 @@ func TestRunCompletionAndInitShell(t *testing.T) {
 	if err := Run([]string{"ctx", "completion", "bash", "--extra-shortcuts"}, &out); err != nil {
 		t.Fatalf("Run(completion bash --extra-shortcuts) error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "pj() { xproject \"$@\"") || !strings.Contains(got, "ta() { xtarget \"$@\"") || !strings.Contains(got, "cr() { xcredential \"$@\"") {
+	if got := out.String(); !strings.Contains(got, "pj() { xproject \"$@\"") || !strings.Contains(got, "ta() { xtarget \"$@\"") || !strings.Contains(got, "cr() { xcredential \"$@\"") || !strings.Contains(got, "sv() { xservice \"$@\"") {
 		t.Fatalf("completion output with extra shortcuts = %q", got)
 	}
 

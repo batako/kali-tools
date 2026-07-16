@@ -12,7 +12,7 @@ Recommended:
 
 This enables shell completion for your current shell.
 
-To also enable the optional pj, ta, and cr shortcuts:
+To also enable the optional pj, ta, cr, and sv shortcuts:
 
     ctx init-shell --extra-shortcuts
 MSG
