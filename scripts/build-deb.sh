@@ -6,7 +6,7 @@ PACKAGE_NAME="req"
 
 if [ "$#" -gt 0 ]; then
   case "$1" in
-    req|ctx|xssh|xftp|xsmb|xgobuster|xwebshell)
+    req|ctx|xssh|xscp|xftp|xsmb|xgobuster|xwebshell)
       PACKAGE_NAME="$1"
       shift
       ;;
@@ -98,6 +98,13 @@ if [ "${PACKAGE_NAME}" = "xwebshell" ]; then
   mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
   cp "debian/${PACKAGE_NAME}/xwebshell.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xwebshell"
   cp "debian/${PACKAGE_NAME}/xwebshell.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xwebshell"
+fi
+
+if [ "${PACKAGE_NAME}" = "xscp" ]; then
+  mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
+  mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
+  cp "debian/${PACKAGE_NAME}/xscp.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xscp"
+  cp "debian/${PACKAGE_NAME}/xscp.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xscp"
 fi
 
 dpkg-deb --root-owner-group --build "${PKG_ROOT}" "${OUTPUT_DEB}"

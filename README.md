@@ -7,11 +7,12 @@ This monorepo manages self-made CLI tools for Kali Linux. Each tool has an indep
 - `req`: Send raw HTTP requests saved as `.req` files.
 - `ctx`: Manage workspace context, targets, services, credentials, notes, and logs.
 - `xssh`: Connect to the current target over SSH using ctx credentials.
+- `xscp`: Transfer files to and from the current target over SSH using ctx credentials.
 - `xftp`: Connect to the current target over FTP using ctx credentials.
 - `xsmb`: Discover SMB shares and connect to a selected share using ctx credentials.
 - `xgobuster`: Run Gobuster against the current target and save web discoveries to ctx.
 
-`xssh`, `xftp`, and `xsmb` are ctx add-ons. They use the ctx JSON API and do not read the ctx SQLite database directly.
+`xssh`, `xscp`, `xftp`, and `xsmb` are ctx add-ons. They use the ctx JSON API and do not read the ctx SQLite database directly.
 
 ## Installation
 
@@ -29,12 +30,13 @@ Install the tools you need:
 sudo apt install req
 sudo apt install ctx
 sudo apt install xssh
+sudo apt install xscp
 sudo apt install xftp
 sudo apt install xsmb
 sudo apt install xgobuster
 ```
 
-Dependencies are declared by each Debian package. For example, `xssh` uses `openssh-client` and `sshpass`, `xftp` uses `lftp`, `xsmb` uses `smbclient`, and `xgobuster` uses `gobuster` and `wordlists`.
+Dependencies are declared by each Debian package. For example, `xssh` and `xscp` use `openssh-client` and `sshpass`, `xftp` uses `lftp`, `xsmb` uses `smbclient`, and `xgobuster` uses `gobuster` and `wordlists`.
 
 ## Usage
 
@@ -90,6 +92,8 @@ Each add-on accepts an optional credential ID or username. With multiple credent
 ```sh
 xssh
 xssh root
+xscp upload ./local.txt /tmp/remote.txt
+xscp download /tmp/remote.txt ./local.txt
 xftp
 xftp ftpuser
 xsmb
@@ -99,6 +103,8 @@ xsmb smbuser
 The add-ons save connection start/end times, status, exit code, sanitized command, stdout, and stderr to ctx logs. Review them with `xlog`. Passwords are not stored in the command log.
 
 `xsmb` lists disk shares, excludes `IPC$`, and lets you select the share before connecting. `xssh` defaults to port 22, `xftp` to port 21, and `xsmb` to port 445 when ctx has no matching service record.
+
+`xscp upload` copies a local file to the target and `xscp download` copies a remote file locally. Both commands use the same SSH credential and service selection as `xssh`.
 
 `xgobuster` selects a web service on the current target and runs `gobuster dir`. When `xhost` has manually registered hostnames for the target, one hostname is used automatically; if multiple hostnames exist, `xgobuster` prompts for a hostname or the target IP. Use `--host <hostname>` for a deterministic registered-host selection, `--ip` to force the target IP, or `-u`/`--url` to provide a complete URL. It automatically selects directory wordlists under `/usr/share/wordlists` and continues while the configured request limit allows. `web.directory.max-requests` defaults to 1,000,000 and `web.file.max-requests` defaults to 200,000. File requests include the selected extensions in the count. `web-quick`, `web-standard`, and `web-deep` are search intensities shared by directory and file searches. Use `--next` to move to the next intensity, `--force` to rerun a completed wordlist, and `--status` to show the current search state. A `--preset` or `-x` option switches to file search; explicit `-x` extensions override the preset. Gobuster checks the extensionless path together with each extension, so extensionless paths are shared with directory-search history and are not requested twice. An explicit `-w` or `--wordlist` performs a one-off search. Parsed discoveries are saved for later review through ctx logs and discovery data.
 
@@ -185,6 +191,7 @@ The output is `dist/<tool>_<version>_<architecture>.deb`. `scripts/build-apt-rep
 ```text
 ctx/v<version>
 xssh/v<version>
+xscp/v<version>
 xftp/v<version>
 xgobuster/v<version>
 xsmb/v<version>
@@ -198,6 +205,7 @@ For local checks:
 
 ```sh
 ./scripts/check-version.sh xssh
+./scripts/check-version.sh xscp
 ./scripts/check-version.sh xgobuster
 ./scripts/check-release.sh xssh
 ./scripts/check-published.sh xssh

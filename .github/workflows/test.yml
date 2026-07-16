@@ -30,6 +30,9 @@ jobs:
       - name: Check xssh version
         run: ./scripts/check-version.sh xssh
 
+      - name: Check xscp version
+        run: ./scripts/check-version.sh xscp
+
       - name: Check xftp version
         run: ./scripts/check-version.sh xftp
 

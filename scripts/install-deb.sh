@@ -3,17 +3,17 @@
 set -eu
 
 if [ "$#" -ne 1 ]; then
-  echo "usage: $0 <req|ctx|xssh|xftp|xsmb|xgobuster|xwebshell>" >&2
+  echo "usage: $0 <req|ctx|xssh|xscp|xftp|xsmb|xgobuster|xwebshell>" >&2
   exit 1
 fi
 
 PACKAGE_NAME="$1"
 case "${PACKAGE_NAME}" in
-  req|ctx|xssh|xftp|xsmb|xgobuster|xwebshell)
+  req|ctx|xssh|xscp|xftp|xsmb|xgobuster|xwebshell)
     ;;
   *)
     echo "unsupported package: ${PACKAGE_NAME}" >&2
-    echo "usage: $0 <req|ctx|xssh|xftp|xsmb|xgobuster|xwebshell>" >&2
+    echo "usage: $0 <req|ctx|xssh|xscp|xftp|xsmb|xgobuster|xwebshell>" >&2
     exit 1
     ;;
 esac
