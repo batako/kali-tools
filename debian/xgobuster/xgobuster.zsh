@@ -15,11 +15,33 @@ _xgobuster_services() {
 }
 
 _xgobuster() {
+  local mode="${words[2]}"
+  if [[ "${mode}" == "dns" ]]; then
+    _arguments -s \
+      '1:mode:(dns)' \
+      '(-h --help)'{-h,--help}'[show this help]' \
+      '(-V --version)'{-V,--version}'[show version]' \
+      '(-d --domain)'{-d,--domain}'[DNS domain]:domain:' \
+      '(-w --wordlist)'{-w,--wordlist}'[use an explicit wordlist]:wordlist:_files' \
+      '--threads[DNS threads]:threads:' \
+      '--resolver[DNS resolver]:resolver:' \
+      '--timeout[DNS timeout]:timeout:' \
+      '--wildcard[continue with wildcard DNS results]' \
+      '--status[show DNS wordlist search status]' \
+      '--clear-cache[clear DNS search cache]' \
+      '--next[continue with the next DNS wordlist]' \
+      '--force[rerun the first DNS wordlist]' \
+      '*:gobuster option:'
+    return
+  fi
+
   _arguments -s \
+    '1:mode:(dns)' \
     '(-h --help)'{-h,--help}'[show this help]' \
     '(-V --version)'{-V,--version}'[show version]' \
     '--preset[select a technology preset]:preset:(php wordpress aspnet java node static)' \
     '--status[show wordlist search status]' \
+    '--clear-cache[clear DNS search cache]' \
     '--sitemap[show collected paths as a site map]' \
     '--next[continue with the next automatic wordlist]' \
     '--force[rerun an already completed wordlist]' \

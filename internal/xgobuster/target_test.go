@@ -50,6 +50,28 @@ func TestResolveTargetHostHonorsExplicitHostAndIP(t *testing.T) {
 	}
 }
 
+func TestResolveDNSDomainUsesExplicitDomainWithoutXHost(t *testing.T) {
+	got, err := resolveDNSDomain("10.0.0.1", nil, "NahamStore.THM.", strings.NewReader(""), &strings.Builder{})
+	if err != nil || got != "nahamstore.thm" {
+		t.Fatalf("resolveDNSDomain() = %q, %v", got, err)
+	}
+}
+
+func TestResolveDNSDomainSelectsAmongXHosts(t *testing.T) {
+	hosts := []ctx.Host{
+		{Hostname: "admin.example.test", TargetIP: "10.0.0.1", Source: "manual"},
+		{Hostname: "example.test", TargetIP: "10.0.0.1", Source: "manual"},
+	}
+	var output strings.Builder
+	got, err := resolveDNSDomain("10.0.0.1", hosts, "", strings.NewReader("2\n"), &output)
+	if err != nil || got != "example.test" {
+		t.Fatalf("resolveDNSDomain() = %q, %v", got, err)
+	}
+	if !strings.Contains(output.String(), "Select a DNS domain:") {
+		t.Fatalf("selection output = %q", output.String())
+	}
+}
+
 func TestServiceURL(t *testing.T) {
 	https := "https"
 	if got := serviceURL("10.0.0.1", Service{Port: 443, ServiceName: &https}); got != "https://10.0.0.1" {

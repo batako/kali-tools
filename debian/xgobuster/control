@@ -4,5 +4,5 @@ Section: utils
 Priority: optional
 Architecture: @ARCH@
 Maintainer: batako <2323213+batako@users.noreply.github.com>
-Depends: ctx, gobuster, wordlists
+Depends: ctx (>= 1.4.0), gobuster, wordlists
 Description: Run Gobuster against ctx targets and save web discoveries

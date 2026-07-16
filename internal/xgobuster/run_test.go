@@ -29,6 +29,34 @@ func TestParseOptionsUsesExplicitWordlistAndURL(t *testing.T) {
 	}
 }
 
+func TestParseOptionsSupportsDNSMode(t *testing.T) {
+	options, err := parseOptions([]string{"dns", "--domain", "example.test", "-w", "/tmp/dns.txt", "-t", "25"})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if !options.DNS {
+		t.Fatalf("DNS mode = false, want true")
+	}
+	if options.Domain != "example.test" {
+		t.Fatalf("domain = %q, want example.test", options.Domain)
+	}
+	if options.Wordlist != "/tmp/dns.txt" {
+		t.Fatalf("wordlist = %q, want explicit path", options.Wordlist)
+	}
+	if strings.Join(options.Extra, " ") != "-t 25" {
+		t.Fatalf("extra = %#v, want gobuster options", options.Extra)
+	}
+
+	options, err = parseOptions([]string{"dns", "-d", "example.test"})
+	if err != nil || options.Domain != "example.test" {
+		t.Fatalf("domain option = %+v, %v", options, err)
+	}
+	options, err = parseOptions([]string{"dns", "--domain=example.test"})
+	if err != nil || options.Domain != "example.test" {
+		t.Fatalf("domain equals option = %+v, %v", options, err)
+	}
+}
+
 func TestParseOptionsSupportsHostAndIP(t *testing.T) {
 	options, err := parseOptions([]string{"--host", "example.test"})
 	if err != nil || options.Host != "example.test" || options.IP {
@@ -113,6 +141,23 @@ func TestParseOptionsSupportsStatus(t *testing.T) {
 	}
 	if !options.Status {
 		t.Fatalf("options = %+v, want status", options)
+	}
+}
+
+func TestParseOptionsSupportsDNSCacheClear(t *testing.T) {
+	options, err := parseOptions([]string{"dns", "--clear-cache", "-d", "example.test"})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if !options.DNS || !options.ClearCache || options.Domain != "example.test" {
+		t.Fatalf("options = %+v, want DNS cache clear", options)
+	}
+}
+
+func TestParseDNSHosts(t *testing.T) {
+	got := parseDNSHosts("Found: admin.example.test\nFound: admin.example.test.\nFound: example.test\n", "example.test")
+	if strings.Join(got, ",") != "admin.example.test" {
+		t.Fatalf("parseDNSHosts() = %#v, want one subdomain", got)
 	}
 }
 

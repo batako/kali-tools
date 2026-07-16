@@ -106,6 +106,8 @@ Use `-c` or `--cookies` to send cookies with Gobuster requests. Use `--exclude-l
 
 `xgo` is a short alias for `xgobuster`.
 
+For DNS subdomain enumeration, use `xgobuster dns`. If one hostname is registered with `xhost` for the current target it is selected automatically; multiple hostnames are presented for selection. Use `-d` or `--domain` to select a domain without prompting, and `-w` or `--wordlist` for a one-off wordlist. DNS searches use a target-and-domain-specific cache, `--status` shows its progress, `--clear-cache` clears only that DNS cache, `--next` moves to the next wordlist, and `--force` reruns the first one. The default DNS query limit is controlled by `dns.max-queries` and is 100,000. Additional Gobuster DNS options can be passed after the xgobuster options.
+
 The `xgobuster` package installs bash and zsh completion files for both commands. Start a new shell, or reload your shell completion system after installation.
 
 Limit status or automatic escalation to one profile when needed:

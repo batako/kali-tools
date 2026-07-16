@@ -32,6 +32,9 @@ func resolveTargetHost(targetIP string, hosts []ctx.Host, requested string, forc
 	}
 	if requested != "" {
 		requestedKey := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(requested), "."))
+		if requestedKey == "" {
+			return "", fmt.Errorf("xhost hostname must not be empty")
+		}
 		for _, name := range registered {
 			if strings.ToLower(strings.TrimSuffix(name, ".")) == requestedKey {
 				return name, nil
@@ -65,6 +68,53 @@ func resolveTargetHost(targetIP string, hosts []ctx.Host, requested string, forc
 	}
 	if index == ipChoice {
 		return targetIP, nil
+	}
+	return registered[index-1], nil
+}
+
+func resolveDNSDomain(targetIP string, hosts []ctx.Host, requested string, stdin io.Reader, stdout io.Writer) (string, error) {
+	registered := make([]string, 0, len(hosts))
+	seen := make(map[string]struct{})
+	for _, host := range hosts {
+		if host.TargetIP != targetIP || host.Source != "manual" || strings.TrimSpace(host.Hostname) == "" {
+			continue
+		}
+		name := host.Hostname
+		key := strings.ToLower(strings.TrimSuffix(name, "."))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		registered = append(registered, name)
+	}
+	if requested != "" {
+		requestedKey := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(requested), "."))
+		if requestedKey == "" {
+			return "", fmt.Errorf("DNS domain must not be empty")
+		}
+		return requestedKey, nil
+	}
+	if len(registered) == 0 {
+		return "", fmt.Errorf("DNS domain is not set; use -d <domain> or register a hostname with xhost")
+	}
+	if len(registered) == 1 {
+		return registered[0], nil
+	}
+
+	_, _ = fmt.Fprintln(stdout, "Select a DNS domain:")
+	_, _ = fmt.Fprintln(stdout)
+	for i, name := range registered {
+		_, _ = fmt.Fprintf(stdout, "  %d) %s\n", i+1, name)
+	}
+	_, _ = fmt.Fprintln(stdout)
+	_, _ = fmt.Fprintf(stdout, "Select [1-%d]: ", len(registered))
+	line, err := bufio.NewReader(stdin).ReadString('\n')
+	if err != nil && len(strings.TrimSpace(line)) == 0 {
+		return "", fmt.Errorf("cancelled")
+	}
+	index, convErr := strconv.Atoi(strings.TrimSpace(line))
+	if convErr != nil || index < 1 || index > len(registered) {
+		return "", fmt.Errorf("invalid DNS domain selection")
 	}
 	return registered[index-1], nil
 }

@@ -26,14 +26,16 @@ var (
 	Version = "1.1.0"
 )
 
-const usageText = `usage: xgobuster [gobuster-options]
+const usageText = `usage: xgobuster [dns] [gobuster-options]
 
-Run gobuster dir against the current ctx target.
+Run gobuster dir against the current ctx target, or use dns mode for subdomain enumeration.
 
 The wordlist is selected from /usr/share/wordlists unless -w or --wordlist is provided.
 Automatic escalation continues while the configured request limit allows.
 
 options:
+  dns                    enumerate DNS subdomains
+  -d, --domain <domain>  target domain for dns mode
   -w, --wordlist <path>  use an explicit wordlist
   -u, --url <url>        override the URL derived from the current target
   --host <hostname>      use a registered xhost hostname for the target
@@ -47,6 +49,7 @@ options:
   --profile <name>       limit automatic selection to web-quick, web-standard, or web-deep
   -x, --extensions <list> pass extensions to Gobuster (for example php,html,js)
   --status               show wordlist search status
+  --clear-cache          clear DNS search cache without running Gobuster
   --sitemap              show collected paths as a site map
   --next                 continue with the next automatic wordlist
   --force                rerun an already completed automatic wordlist
@@ -117,8 +120,9 @@ func New(runner commandRunner, stdin io.Reader, stdout, stderr io.Writer) *App {
 
 func (app *App) Run(args []string) error {
 	commandArgs := args[1:]
-	if len(commandArgs) == 1 {
-		switch commandArgs[0] {
+	if len(commandArgs) == 1 || (len(commandArgs) == 2 && commandArgs[0] == "dns") {
+		helpArg := commandArgs[len(commandArgs)-1]
+		switch helpArg {
 		case "-h", "--help":
 			_, err := fmt.Fprintln(app.stdout, usageText)
 			return err
@@ -133,7 +137,7 @@ func (app *App) Run(args []string) error {
 	}
 
 	commands := []string{"ctx", "gobuster"}
-	if options.Status {
+	if options.Status || options.ClearCache {
 		commands = []string{"ctx"}
 	}
 	if options.Sitemap {
@@ -160,6 +164,30 @@ func (app *App) Run(args []string) error {
 	target, err := ctx.GetPrimaryTarget(workspace)
 	if err != nil {
 		return app.errorf("failed to load primary target: %s", err)
+	}
+	if options.DNS {
+		if (options.Status || options.ClearCache) && options.Wordlist != "" {
+			return app.errorf("usage: xgobuster dns --status cannot be combined with --wordlist")
+		}
+		if options.ClearCache && (options.Status || options.Next || options.Force) {
+			return app.errorf("usage: xgobuster dns --clear-cache cannot be combined with --status, --next, or --force")
+		}
+		if options.Next && options.Wordlist != "" {
+			return app.errorf("usage: xgobuster dns --next cannot be combined with --wordlist")
+		}
+		if options.Sitemap || options.Profile != "" || options.Preset != "" || options.URL != "" || options.Host != "" || options.IP || options.Service != 0 || options.Cookie != "" || options.ExcludeLength != "" || options.Insecure || options.VerifyTLS {
+			return app.errorf("dns mode accepts -d, -w, --status, --next, --force, and Gobuster DNS options only")
+		}
+		hosts, hostErr := ctx.ListHosts(workspace)
+		if hostErr != nil {
+			return app.errorf("failed to load hosts: %s", hostErr)
+		}
+		domain, domainErr := resolveDNSDomain(*prompt.TargetIP, hosts, options.Domain, app.stdin, app.stdout)
+		if domainErr != nil {
+			return domainErr
+		}
+		options.Domain = domain
+		return app.runDNS(workspace, target, options, args[1:])
 	}
 
 	if options.Status && options.Wordlist != "" {
@@ -435,6 +463,261 @@ func searchRequestLimit(config *ctx.Config, options parsedOptions) int {
 		return config.FileMaxRequests
 	}
 	return config.DirectoryMaxRequests
+}
+
+func (app *App) runDNS(workspace *ctx.Workspace, target *ctx.Target, options parsedOptions, originalArgs []string) error {
+	statePath, err := dnsSearchedWordsPath(workspace, target.ID, options.Domain)
+	if err != nil {
+		return app.errorf("failed to prepare DNS wordlist state: %s", err)
+	}
+	searched, err := loadSearchedWords(statePath)
+	if err != nil {
+		return app.errorf("failed to load DNS wordlist state: %s", err)
+	}
+	if options.ClearCache {
+		if err := os.Remove(statePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return app.errorf("failed to clear DNS wordlist state: %s", err)
+		}
+		_, _ = fmt.Fprintf(app.stdout, "Cleared DNS search cache for %s\n", options.Domain)
+		return nil
+	}
+	config, err := ctx.LoadConfig()
+	if err != nil {
+		return app.errorf("failed to load config: %s", err)
+	}
+	candidates, err := discoverDNSWordlists()
+	if err != nil {
+		return app.errorf("failed to select DNS wordlists: %s", err)
+	}
+	if options.Status {
+		return app.showDNSStatus(options.Domain, candidates, searched)
+	}
+	if options.Wordlist != "" {
+		candidates = []ctx.WordlistSelection{{Provider: "manual", Profile: "manual", Type: "dns", Path: options.Wordlist}}
+	}
+	if options.Force {
+		candidates = candidates[:1]
+	}
+	var selected ctx.WordlistSelection
+	var words []string
+	skipNext := options.Next
+	for _, candidate := range candidates {
+		if _, statErr := os.Stat(candidate.Path); statErr != nil {
+			continue
+		}
+		ignoreSeen := options.Force && candidate.Path == candidates[0].Path
+		candidateWords, wordErr := filteredWordlist(candidate.Path, searched, ignoreSeen)
+		if wordErr != nil {
+			return app.errorf("failed to prepare DNS wordlist %s: %s", candidate.Path, wordErr)
+		}
+		if len(candidateWords) == 0 {
+			continue
+		}
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		selected, words = candidate, candidateWords
+		break
+	}
+	if len(words) == 0 {
+		return app.errorf("all DNS wordlists have completed; use --force to rerun")
+	}
+	if len(words) > config.DNSMaxQueries {
+		words = words[:config.DNSMaxQueries]
+	}
+	temporaryPath, err := writeTemporaryWordlist(words)
+	if err != nil {
+		return app.errorf("failed to create filtered DNS wordlist: %s", err)
+	}
+	defer os.Remove(temporaryPath)
+	logWordlist := selected.Path
+	gobusterArgs := []string{"dns", "--domain", options.Domain, "-w", temporaryPath}
+	gobusterArgs = append(gobusterArgs, options.Extra...)
+	logArgs := []string{"dns", "--domain", options.Domain, "-w", logWordlist}
+	logArgs = append(logArgs, options.Extra...)
+	startedAt := time.Now().UTC()
+	logID, err := ctx.StartCommandLog(workspace, ctx.CommandLog{Command: formatCommand("xgobuster", originalArgs), ExpandedCommand: formatCommand("gobuster", logArgs), StartedAt: startedAt.Format(time.RFC3339Nano)})
+	if err != nil {
+		return app.errorf("failed to start command log: %s", err)
+	}
+	_, _ = fmt.Fprintf(app.stdout, "Running gobuster DNS against %s with %s...\n", options.Domain, logWordlist)
+	var commandStdout, commandStderr bytes.Buffer
+	runErr := app.runner.Run("gobuster", gobusterArgs, app.stdin, io.MultiWriter(app.stdout, &commandStdout), io.MultiWriter(app.stderr, &commandStderr))
+	status, exitCode := "success", 0
+	if runErr != nil {
+		status, exitCode = "failed", commandExitCode(runErr)
+	}
+	endedAt := time.Now().UTC()
+	if err := ctx.FinishCommandLog(workspace, logID, ctx.CommandLog{Status: status, ExitCode: exitCode, Stdout: commandStdout.String(), Stderr: commandStderr.String(), EndedAt: endedAt.Format(time.RFC3339Nano)}); err != nil {
+		return app.errorf("failed to finish command log: %s", err)
+	}
+	if runErr == nil {
+		for _, hostname := range parseDNSHosts(commandStdout.String(), options.Domain) {
+			if _, err := ctx.AddHost(workspace, hostname, target.Name); err != nil {
+				return app.errorf("failed to save DNS host %s: %s", hostname, err)
+			}
+		}
+	}
+	if runErr == nil && selected.Provider != "manual" {
+		if err := appendSearchedWords(statePath, words); err != nil {
+			return app.errorf("failed to save DNS wordlist state: %s", err)
+		}
+	}
+	return runErr
+}
+
+func parseDNSHosts(output, domain string) []string {
+	suffix := "." + strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	seen := make(map[string]struct{})
+	var hosts []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Found:") {
+			continue
+		}
+		hostname := strings.TrimSpace(strings.TrimPrefix(line, "Found:"))
+		hostname = strings.TrimSuffix(hostname, ".")
+		lower := strings.ToLower(hostname)
+		if hostname == "" || lower == strings.TrimPrefix(suffix, ".") || !strings.HasSuffix(lower, suffix) {
+			continue
+		}
+		if _, ok := seen[lower]; ok {
+			continue
+		}
+		seen[lower] = struct{}{}
+		hosts = append(hosts, hostname)
+	}
+	return hosts
+}
+
+func discoverDNSWordlists() ([]ctx.WordlistSelection, error) {
+	root := ctx.DiscoverWordlistsRoot()
+	if root == "" {
+		return nil, errors.New("wordlists directory not found; install seclists or use --wordlist")
+	}
+	roots := []string{filepath.Join(root, "seclists", "Discovery", "DNS"), "/usr/share/seclists/Discovery/DNS"}
+	seen := make(map[string]struct{})
+	var candidates []ctx.WordlistSelection
+	for _, base := range roots {
+		resolved, err := filepath.EvalSymlinks(base)
+		if err != nil {
+			continue
+		}
+		err = filepath.Walk(resolved, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil || info == nil || !info.Mode().IsRegular() || !dnsWordlistFile(path) {
+				return walkErr
+			}
+			realPath, evalErr := filepath.EvalSymlinks(path)
+			if evalErr == nil {
+				if _, ok := seen[realPath]; ok {
+					return nil
+				}
+				seen[realPath] = struct{}{}
+			}
+			candidates = append(candidates, ctx.WordlistSelection{Provider: "seclists", Profile: dnsWordlistProfile(path), Type: "dns", Path: path})
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan DNS wordlists: %w", err)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, errors.New("no DNS wordlist found; install seclists or use --wordlist")
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if dnsProfileRank(candidates[i].Profile) != dnsProfileRank(candidates[j].Profile) {
+			return dnsProfileRank(candidates[i].Profile) < dnsProfileRank(candidates[j].Profile)
+		}
+		return candidates[i].Path < candidates[j].Path
+	})
+	return candidates, nil
+}
+
+func dnsWordlistProfile(path string) string {
+	lower := strings.ToLower(filepath.Base(path))
+	if strings.Contains(lower, "5000") || strings.Contains(lower, "small") || strings.Contains(lower, "quick") {
+		return "dns-quick"
+	}
+	if strings.Contains(lower, "20000") || strings.Contains(lower, "medium") {
+		return "dns-standard"
+	}
+	return "dns-deep"
+}
+
+func dnsWordlistFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".txt", ".lst", ".list":
+		return true
+	default:
+		return false
+	}
+}
+
+func dnsProfileRank(profile string) int {
+	switch profile {
+	case "dns-quick":
+		return 0
+	case "dns-standard":
+		return 1
+	default:
+		return 2
+	}
+}
+
+func (app *App) showDNSStatus(domain string, candidates []ctx.WordlistSelection, searched map[string]struct{}) error {
+	type statusEntry struct {
+		candidate ctx.WordlistSelection
+		status    string
+		total     int
+	}
+	entries := make([]statusEntry, 0, len(candidates))
+	total, covered := 0, 0
+	for _, candidate := range candidates {
+		words, err := loadWordlistWords(candidate.Path)
+		if err != nil {
+			return app.errorf("failed to inspect DNS wordlist %s: %s", candidate.Path, err)
+		}
+		count := 0
+		for word := range words {
+			if _, ok := searched[word]; ok {
+				count++
+			}
+		}
+		total += len(words)
+		covered += count
+		status := "pending"
+		if count == len(words) {
+			status = "success"
+		} else if count > 0 {
+			status = "partial"
+		}
+		entries = append(entries, statusEntry{candidate: candidate, status: status, total: len(words)})
+	}
+	completed := 0
+	for _, entry := range entries {
+		if entry.status == "success" {
+			completed++
+		}
+	}
+	_, _ = fmt.Fprintf(app.stdout, "DNS wordlist status for %s\n", domain)
+	_, _ = fmt.Fprintln(app.stdout, "Mode: dns")
+	_, _ = fmt.Fprintf(app.stdout, "Total: %d  Completed: %d  Shared-cache covered: %d  Pending: %d\n", len(entries), completed, covered, len(entries)-completed-covered)
+	_, _ = fmt.Fprintf(app.stdout, "Entries: %d total, %d shared-cache covered, %d remaining\n", total, covered, total-covered)
+	_, _ = fmt.Fprintf(app.stdout, "Searched unique words: %d\n\n", len(searched))
+	for _, entry := range entries {
+		_, _ = fmt.Fprintf(app.stdout, "[%s] %-13s %6d words  %s\n", entry.status, entry.candidate.Profile, entry.total, entry.candidate.Path)
+	}
+	return nil
+}
+
+func dnsSearchedWordsPath(workspace *ctx.Workspace, targetID int64, domain string) (string, error) {
+	digest := sha256.Sum256([]byte(domain))
+	directory := filepath.Join(workspace.DataPath, "dns-wordlists", strconv.FormatInt(targetID, 10), hex.EncodeToString(digest[:]))
+	if err := os.MkdirAll(directory, 0755); err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "searched.words"), nil
 }
 
 func searchExtensionCount(extra []string) int {
@@ -1277,6 +1560,8 @@ type Service struct {
 }
 
 type parsedOptions struct {
+	DNS              bool
+	Domain           string
 	Wordlist         string
 	URL              string
 	Host             string
@@ -1294,15 +1579,29 @@ type parsedOptions struct {
 	Next             bool
 	Force            bool
 	Status           bool
+	ClearCache       bool
 	Sitemap          bool
 }
 
 func parseOptions(args []string) (parsedOptions, error) {
 	var options parsedOptions
-	for i := 0; i < len(args); i++ {
+	start := 0
+	if len(args) > 0 && args[0] == "dns" {
+		options.DNS = true
+		start = 1
+	}
+	for i := start; i < len(args); i++ {
 		switch args[i] {
+		case "-d", "--domain":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return parsedOptions{}, errors.New("usage: xgobuster dns --domain <domain> [gobuster-options]")
+			}
+			options.Domain = args[i+1]
+			i++
 		case "--status":
 			options.Status = true
+		case "--clear-cache":
+			options.ClearCache = true
 		case "--sitemap":
 			options.Sitemap = true
 		case "--profile":
@@ -1370,6 +1669,15 @@ func parseOptions(args []string) (parsedOptions, error) {
 		case "--tls-verify":
 			options.VerifyTLS = true
 		default:
+			if strings.HasPrefix(args[i], "--domain=") {
+				value := args[i]
+				value = strings.TrimPrefix(value, "--domain=")
+				if value == "" {
+					return parsedOptions{}, errors.New("usage: xgobuster dns --domain <domain> [gobuster-options]")
+				}
+				options.Domain = value
+				continue
+			}
 			if strings.HasPrefix(args[i], "--wordlist=") {
 				options.Wordlist = strings.TrimPrefix(args[i], "--wordlist=")
 				if options.Wordlist == "" {

@@ -4,6 +4,10 @@ _xgobuster_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   case "${prev}" in
+    -d|--domain)
+      COMPREPLY=($(compgen -W "example.com" -- "${cur}"))
+      return
+      ;;
     --profile)
       COMPREPLY=($(compgen -W "web-quick web-standard web-deep" -- "${cur}"))
       return
@@ -28,7 +32,12 @@ _xgobuster_completion() {
       ;;
   esac
 
-  COMPREPLY=($(compgen -W "-w --wordlist -u --url --host --ip --service -c --cookies --exclude-length -k --no-tls-validation --tls-verify --preset --profile --status --sitemap --next --force -h --help -V --version" -- "${cur}"))
+  if [[ "${COMP_WORDS[1]}" == "dns" ]]; then
+    COMPREPLY=($(compgen -W "-d --domain -w --wordlist -t --threads --resolver --timeout --wildcard --status --clear-cache --next --force -h --help -V --version" -- "${cur}"))
+    return
+  fi
+
+  COMPREPLY=($(compgen -W "dns -w --wordlist -u --url --host --ip --service -c --cookies --exclude-length -k --no-tls-validation --tls-verify --preset --profile --status --clear-cache --sitemap --next --force -h --help -V --version" -- "${cur}"))
 }
 
 complete -F _xgobuster_completion xgobuster xgo
