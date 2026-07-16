@@ -4,6 +4,6 @@ Section: net
 Priority: optional
 Architecture: @ARCH@
 Maintainer: batako <2323213+batako@users.noreply.github.com>
-Depends: ctx, hydra, wordlists
+Depends: ctx (>= 1.4.0), hydra, wordlists
 Description: ctx-aware Hydra wrapper
  Run Hydra against HTTP, SSH, FTP, and SMB authentication and save credentials to ctx.
