@@ -113,6 +113,7 @@ keys:
   web.directory.max-requests maximum directory requests per automatic run
   web.file.max-requests maximum file requests per automatic run
   password.max-requests maximum password requests per automatic run
+  dns.max-queries      maximum DNS queries per automatic run
 
 options:
   -h, --help        show this help`

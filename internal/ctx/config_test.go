@@ -33,11 +33,12 @@ func TestConfigValueProjectRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListConfigValues() error = %v", err)
 	}
-	if len(entries) != 5 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want || entries[0].DefaultValue != "-" ||
+	if len(entries) != 6 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want || entries[0].DefaultValue != "-" ||
 		entries[1].Key != ConfigKeyDirectoryMaxRequests || entries[1].Value != "1000000" || entries[1].DefaultValue != "1000000" ||
 		entries[2].Key != ConfigKeyFileMaxRequests || entries[2].Value != "200000" || entries[2].DefaultValue != "200000" ||
 		entries[3].Key != ConfigKeyPasswordMaxRequests || entries[3].Value != "10000" || entries[3].DefaultValue != "10000" ||
-		entries[4].Key != ConfigKeyTLSVerify || entries[4].Value != "true" || entries[4].DefaultValue != "true" {
+		entries[4].Key != ConfigKeyDNSMaxQueries || entries[4].Value != "10000" || entries[4].DefaultValue != "10000" ||
+		entries[5].Key != ConfigKeyTLSVerify || entries[5].Value != "true" || entries[5].DefaultValue != "true" {
 		t.Fatalf("ListConfigValues() = %+v, want project.root and request limits", entries)
 	}
 }
@@ -73,6 +74,14 @@ func TestConfigValueRequestLimits(t *testing.T) {
 	got, err = SetConfigValue(ConfigKeyFileMaxRequests, "100")
 	if err != nil || got != "100" {
 		t.Fatalf("SetConfigValue(file request limit) = %q, %v", got, err)
+	}
+	got, err = SetConfigValue(ConfigKeyDNSMaxQueries, "5000")
+	if err != nil || got != "5000" {
+		t.Fatalf("SetConfigValue(DNS query limit) = %q, %v", got, err)
+	}
+	got, err = GetConfigValue(ConfigKeyDNSMaxQueries)
+	if err != nil || got != "5000" {
+		t.Fatalf("GetConfigValue(DNS query limit) = %q, %v", got, err)
 	}
 }
 
