@@ -9,20 +9,22 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
 var (
-	Version = "1.0.0"
+	Version = "1.1.0"
 )
 
-const usageText = `usage: xssh [credential-id|username]
+const usageText = `usage: xssh [credential-id|username|key]
 
 Connect to the current ctx target using a stored SSH credential when available.
 
 arguments:
+  key            prepare a command to register the local SSH public key
   credential-id  use a credential by ID
   username       use a credential by username
 
@@ -107,10 +109,12 @@ func New(runner commandRunner, stdin io.Reader, stdout, stderr io.Writer) *App {
 func (app *App) Run(args []string) error {
 	commandArgs := args[1:]
 	if len(commandArgs) > 1 {
-		return app.errorf("usage: xssh [credential-id|username]")
+		return app.errorf("usage: xssh [credential-id|username|key]")
 	}
 	if len(commandArgs) == 1 {
 		switch commandArgs[0] {
+		case "key":
+			return app.prepareKey()
 		case "-h", "--help":
 			_, err := fmt.Fprintln(app.stdout, usageText)
 			return err
@@ -331,6 +335,43 @@ func readSelectionLine(reader *bufio.Reader) (string, error) {
 		}
 		input.WriteByte(character)
 	}
+}
+
+func (app *App) prepareKey() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return app.errorf("cannot determine home directory: %v", err)
+	}
+	publicKeyPath := filepath.Join(home, ".ssh", "id_ed25519.pub")
+	if _, err := os.Stat(publicKeyPath); errors.Is(err, os.ErrNotExist) {
+		if err := app.runner.Run("ssh-keygen", []string{"-t", "ed25519"}, nil, app.stdin, app.stdout, app.stderr); err != nil {
+			return app.errorf("ssh-keygen failed: %v", err)
+		}
+	} else if err != nil {
+		return app.errorf("cannot access %s: %v", publicKeyPath, err)
+	}
+
+	data, err := os.ReadFile(publicKeyPath)
+	if err != nil {
+		return app.errorf("cannot read %s: %v", publicKeyPath, err)
+	}
+	publicKey := strings.TrimSpace(string(data))
+	if publicKey == "" {
+		return app.errorf("public key is empty: %s", publicKeyPath)
+	}
+	_, _ = fmt.Fprintln(app.stdout, "Run the following command on the target:")
+	_, _ = fmt.Fprintln(app.stdout, sshAuthorizedKeyCommand(publicKey))
+	return nil
+}
+
+func sshAuthorizedKeyCommand(publicKey string) string {
+	quotedKey := shellQuote(publicKey)
+	authorizedKeys := `"$HOME/.ssh/authorized_keys"`
+	return fmt.Sprintf("mkdir -p \"$HOME/.ssh\" && chmod 700 \"$HOME/.ssh\" && touch %s && chmod 600 %s && (grep -qxF %s %s || printf '%%s\\n' %s >> %s)", authorizedKeys, authorizedKeys, quotedKey, authorizedKeys, quotedKey, authorizedKeys)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func (app *App) connect(credential *Credential, targetIP string, port int, stdout, stderr io.Writer) error {
