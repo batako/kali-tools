@@ -42,6 +42,9 @@ jobs:
       - name: Check xssh version
         run: ./scripts/check-version.sh xssh
 
+      - name: Check xscp version
+        run: ./scripts/check-version.sh xscp
+
       - name: Check xftp version
         run: ./scripts/check-version.sh xftp
 
@@ -62,6 +65,8 @@ jobs:
           ./scripts/build-deb.sh ctx arm64
           ./scripts/build-deb.sh xssh amd64
           ./scripts/build-deb.sh xssh arm64
+          ./scripts/build-deb.sh xscp amd64
+          ./scripts/build-deb.sh xscp arm64
           ./scripts/build-deb.sh xftp amd64
           ./scripts/build-deb.sh xftp arm64
           ./scripts/build-deb.sh xsmb amd64

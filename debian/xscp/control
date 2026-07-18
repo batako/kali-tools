@@ -1,0 +1,8 @@
+Package: xscp
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), openssh-client, sshpass
+Description: Transfer files to and from ctx targets over SSH
