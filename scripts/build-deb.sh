@@ -6,7 +6,7 @@ PACKAGE_NAME="req"
 
 if [ "$#" -gt 0 ]; then
   case "$1" in
-    req|ctx|xssh|xftp|xsmb|xgobuster|xffuf|xwebshell)
+    req|ctx|xssh|xftp|xsmb|xgobuster|xffuf|xwebshell|xhydra)
       PACKAGE_NAME="$1"
       shift
       ;;
@@ -112,6 +112,13 @@ if [ "${PACKAGE_NAME}" = "xwebshell" ]; then
   mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
   cp "debian/${PACKAGE_NAME}/xwebshell.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xwebshell"
   cp "debian/${PACKAGE_NAME}/xwebshell.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xwebshell"
+fi
+
+if [ "${PACKAGE_NAME}" = "xhydra" ]; then
+  mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
+  mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
+  cp "debian/${PACKAGE_NAME}/xhydra.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xhydra"
+  cp "debian/${PACKAGE_NAME}/xhydra.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xhydra"
 fi
 
 dpkg-deb --root-owner-group --build "${PKG_ROOT}" "${OUTPUT_DEB}"

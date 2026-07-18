@@ -51,6 +51,9 @@ jobs:
       - name: Check xgobuster version
         run: ./scripts/check-version.sh xgobuster
 
+      - name: Check xhydra version
+        run: ./scripts/check-version.sh xhydra
+
       - name: Build Debian packages
         run: |
           ./scripts/build-deb.sh req amd64
@@ -67,6 +70,8 @@ jobs:
           ./scripts/build-deb.sh xgobuster arm64
           ./scripts/build-deb.sh xwebshell amd64
           ./scripts/build-deb.sh xwebshell arm64
+          ./scripts/build-deb.sh xhydra amd64
+          ./scripts/build-deb.sh xhydra arm64
 
       - name: Restore existing APT repository
         run: |
