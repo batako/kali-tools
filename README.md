@@ -10,6 +10,7 @@ This monorepo manages self-made CLI tools for Kali Linux. Each tool has an indep
 - `xftp`: Connect to the current target over FTP using ctx credentials.
 - `xsmb`: Discover SMB shares and connect to a selected share using ctx credentials.
 - `xgobuster`: Run Gobuster against the current target and save web discoveries to ctx.
+- `xffuf`: Enumerate HTTP virtual hosts with ffuf and ctx calibration.
 
 `xssh`, `xftp`, and `xsmb` are ctx add-ons. They use the ctx JSON API and do not read the ctx SQLite database directly.
 
@@ -32,9 +33,10 @@ sudo apt install xssh
 sudo apt install xftp
 sudo apt install xsmb
 sudo apt install xgobuster
+sudo apt install xffuf
 ```
 
-Dependencies are declared by each Debian package. For example, `xssh` uses `openssh-client` and `sshpass`, `xftp` uses `lftp`, `xsmb` uses `smbclient`, and `xgobuster` uses `gobuster` and `wordlists`.
+Dependencies are declared by each Debian package. For example, `xssh` uses `openssh-client` and `sshpass`, `xftp` uses `lftp`, `xsmb` uses `smbclient`, `xgobuster` uses `gobuster` and `wordlists`, and `xffuf` uses `ffuf` and `seclists`.
 
 ## Usage
 
@@ -69,9 +71,12 @@ Useful commands include `ctx workspace ls`, `ctx workspace rm`, `ctx note`, `ctx
 Discovery integrations use `/usr/share/wordlists` automatically. `xgobuster` selects directory-discovery lists from the installed `dirb`, `dirbuster`, and `seclists` trees. Password, parameter, and fuzzing lists are excluded from normal directory scans.
 
 ```sh
-sudo apt install wordlists seclists dirb dirbuster
+sudo apt install wordlists seclists dirb dirbuster ffuf
 ctx config set web.directory.max-requests 1000000
 ctx config set web.file.max-requests 200000
+ctx config set web.vhost.max-requests 10000
+ctx config set web.vhost.calibration-samples 10
+ctx config set web.vhost.calibration-confidence 90
 ctx config set web.tls.verify false
 ```
 
@@ -106,7 +111,9 @@ Use `-c` or `--cookies` to send cookies with Gobuster requests. Use `--exclude-l
 
 `xgo` is a short alias for `xgobuster`.
 
-For DNS subdomain enumeration, use `xgobuster dns`. If one hostname is registered with `xhost` for the current target it is selected automatically; multiple hostnames are presented for selection. Use `-d` or `--domain` to select a domain without prompting, and `-w` or `--wordlist` for a one-off wordlist. DNS searches use a target-and-domain-specific cache, `--status` shows its progress, `--clear-cache` clears only that DNS cache, `--next` moves to the next wordlist, and `--force` reruns the first one. The default DNS query limit is controlled by `dns.max-queries` and is 100,000. Additional Gobuster DNS options can be passed after the xgobuster options.
+`xffuf vhost` enumerates HTTP virtual hosts with ffuf. It selects the HTTP service and domain from ctx, calibrates against random hostnames, and proposes a stable response filter. A normal run applies the filter automatically when the configured confidence threshold is met. After `xffuf vhost --suggest` displays its calibration statistics, it asks whether to test the proposed filter against a real wordlist. The optional trial does not create command logs, cache progress, or register hosts. The same trial can be started directly with `xffuf vhost --trial -fw 125`. Manual ffuf filters such as `-fw`, `-fs`, `-fl`, `-fc`, and `-fr` are supported. Only a completed normal run registers results in `xhost` and updates the wordlist cache. Results that are unusually numerous are kept out of automatic registration and cache updates.
+
+For DNS subdomain enumeration, use `xgobuster dns`. If one hostname is registered with `xhost` for the current target it is selected automatically; multiple hostnames are presented for selection. Use `-d` or `--domain` to select a domain without prompting, and `-w` or `--wordlist` for a one-off wordlist. DNS searches use a target-and-domain-specific cache, `--status` shows its progress, `--clear-cache` clears only that DNS cache, `--next` moves to the next wordlist, and `--force` reruns the first one. The default DNS query limit is controlled by `dns.max-queries` and is 10,000. Additional Gobuster DNS options can be passed after the xgobuster options.
 
 The `xgobuster` package installs bash and zsh completion files for both commands. Start a new shell, or reload your shell completion system after installation.
 
@@ -165,6 +172,8 @@ Build and install one package locally:
 ./scripts/install-deb.sh xssh
 ./scripts/install-deb.sh xftp
 ./scripts/install-deb.sh xsmb
+./scripts/install-deb.sh xgobuster
+./scripts/install-deb.sh xffuf
 ```
 
 Build a package directly for either supported architecture:

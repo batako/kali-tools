@@ -9,22 +9,31 @@ import (
 )
 
 type Config struct {
-	ProjectRoot          string
-	DirectoryMaxRequests int
-	FileMaxRequests      int
-	PasswordMaxRequests  int
-	DNSMaxQueries        int
-	TLSVerify            bool
+	ProjectRoot                string
+	DirectoryMaxRequests       int
+	FileMaxRequests            int
+	VHostMaxRequests           int
+	VHostCalibrationSamples    int
+	VHostCalibrationConfidence int
+	PasswordMaxRequests        int
+	DNSMaxQueries              int
+	TLSVerify                  bool
 }
 
 const ConfigKeyProjectRoot = "project.root"
 const ConfigKeyDirectoryMaxRequests = "web.directory.max-requests"
 const ConfigKeyFileMaxRequests = "web.file.max-requests"
+const ConfigKeyVHostMaxRequests = "web.vhost.max-requests"
+const ConfigKeyVHostCalibrationSamples = "web.vhost.calibration-samples"
+const ConfigKeyVHostCalibrationConfidence = "web.vhost.calibration-confidence"
 const ConfigKeyPasswordMaxRequests = "password.max-requests"
 const ConfigKeyDNSMaxQueries = "dns.max-queries"
 const ConfigKeyTLSVerify = "web.tls.verify"
 const DefaultDirectoryMaxRequests = 1000000
 const DefaultFileMaxRequests = 200000
+const DefaultVHostMaxRequests = 10000
+const DefaultVHostCalibrationSamples = 10
+const DefaultVHostCalibrationConfidence = 90
 const DefaultPasswordMaxRequests = 10000
 const DefaultDNSMaxQueries = 10000
 
@@ -42,13 +51,13 @@ func LoadConfig() (*Config, error) {
 	path := configPath()
 	content, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &Config{DirectoryMaxRequests: DefaultDirectoryMaxRequests, FileMaxRequests: DefaultFileMaxRequests, PasswordMaxRequests: DefaultPasswordMaxRequests, DNSMaxQueries: DefaultDNSMaxQueries, TLSVerify: true}, nil
+		return &Config{DirectoryMaxRequests: DefaultDirectoryMaxRequests, FileMaxRequests: DefaultFileMaxRequests, VHostMaxRequests: DefaultVHostMaxRequests, VHostCalibrationSamples: DefaultVHostCalibrationSamples, VHostCalibrationConfidence: DefaultVHostCalibrationConfidence, PasswordMaxRequests: DefaultPasswordMaxRequests, DNSMaxQueries: DefaultDNSMaxQueries, TLSVerify: true}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config %s: %w", path, err)
 	}
 
-	config := Config{DirectoryMaxRequests: DefaultDirectoryMaxRequests, FileMaxRequests: DefaultFileMaxRequests, PasswordMaxRequests: DefaultPasswordMaxRequests, DNSMaxQueries: DefaultDNSMaxQueries, TLSVerify: true}
+	config := Config{DirectoryMaxRequests: DefaultDirectoryMaxRequests, FileMaxRequests: DefaultFileMaxRequests, VHostMaxRequests: DefaultVHostMaxRequests, VHostCalibrationSamples: DefaultVHostCalibrationSamples, VHostCalibrationConfidence: DefaultVHostCalibrationConfidence, PasswordMaxRequests: DefaultPasswordMaxRequests, DNSMaxQueries: DefaultDNSMaxQueries, TLSVerify: true}
 	section := ""
 	for _, rawLine := range strings.Split(string(content), "\n") {
 		line := strings.TrimSpace(rawLine)
@@ -59,7 +68,7 @@ func LoadConfig() (*Config, error) {
 			section = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "["), "]"))
 			continue
 		}
-		if section != "project" && section != "web.directory" && section != "web.file" && section != "password" && section != "dns" && section != "web.tls" {
+		if section != "project" && section != "web.directory" && section != "web.file" && section != "web.vhost" && section != "password" && section != "dns" && section != "web.tls" {
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
@@ -85,6 +94,24 @@ func LoadConfig() (*Config, error) {
 				return nil, fmt.Errorf("invalid file request limit in %s", path)
 			}
 			config.FileMaxRequests = limit
+		case section == "web.vhost" && strings.TrimSpace(key) == "max-requests":
+			limit, parseErr := strconv.Atoi(parsed)
+			if parseErr != nil || limit < 1 {
+				return nil, fmt.Errorf("invalid vhost request limit in %s", path)
+			}
+			config.VHostMaxRequests = limit
+		case section == "web.vhost" && strings.TrimSpace(key) == "calibration-samples":
+			limit, parseErr := strconv.Atoi(parsed)
+			if parseErr != nil || limit < 1 || limit > 100 {
+				return nil, fmt.Errorf("invalid vhost calibration sample count in %s", path)
+			}
+			config.VHostCalibrationSamples = limit
+		case section == "web.vhost" && strings.TrimSpace(key) == "calibration-confidence":
+			confidence, parseErr := strconv.Atoi(parsed)
+			if parseErr != nil || confidence < 50 || confidence > 100 {
+				return nil, fmt.Errorf("invalid vhost calibration confidence in %s", path)
+			}
+			config.VHostCalibrationConfidence = confidence
 		case section == "password" && strings.TrimSpace(key) == "max-requests":
 			limit, parseErr := strconv.Atoi(parsed)
 			if parseErr != nil || limit < 1 {
@@ -122,6 +149,19 @@ func SaveConfig(config *Config) error {
 	if config.FileMaxRequests > 0 && config.FileMaxRequests != DefaultFileMaxRequests {
 		content += "\n[web.file]\nmax-requests = " + strconv.Quote(strconv.Itoa(config.FileMaxRequests)) + "\n"
 	}
+	vhostConfig := ""
+	if config.VHostMaxRequests > 0 && config.VHostMaxRequests != DefaultVHostMaxRequests {
+		vhostConfig += "max-requests = " + strconv.Quote(strconv.Itoa(config.VHostMaxRequests)) + "\n"
+	}
+	if config.VHostCalibrationSamples > 0 && config.VHostCalibrationSamples != DefaultVHostCalibrationSamples {
+		vhostConfig += "calibration-samples = " + strconv.Quote(strconv.Itoa(config.VHostCalibrationSamples)) + "\n"
+	}
+	if config.VHostCalibrationConfidence > 0 && config.VHostCalibrationConfidence != DefaultVHostCalibrationConfidence {
+		vhostConfig += "calibration-confidence = " + strconv.Quote(strconv.Itoa(config.VHostCalibrationConfidence)) + "\n"
+	}
+	if vhostConfig != "" {
+		content += "\n[web.vhost]\n" + vhostConfig
+	}
 	if config.PasswordMaxRequests > 0 && config.PasswordMaxRequests != DefaultPasswordMaxRequests {
 		content += "\n[password]\nmax-requests = " + strconv.Quote(strconv.Itoa(config.PasswordMaxRequests)) + "\n"
 	}
@@ -149,6 +189,12 @@ func GetConfigValue(key string) (string, error) {
 		return strconv.Itoa(config.DirectoryMaxRequests), nil
 	case ConfigKeyFileMaxRequests:
 		return strconv.Itoa(config.FileMaxRequests), nil
+	case ConfigKeyVHostMaxRequests:
+		return strconv.Itoa(config.VHostMaxRequests), nil
+	case ConfigKeyVHostCalibrationSamples:
+		return strconv.Itoa(config.VHostCalibrationSamples), nil
+	case ConfigKeyVHostCalibrationConfidence:
+		return strconv.Itoa(config.VHostCalibrationConfidence), nil
 	case ConfigKeyPasswordMaxRequests:
 		return strconv.Itoa(config.PasswordMaxRequests), nil
 	case ConfigKeyDNSMaxQueries:
@@ -176,12 +222,22 @@ func SetConfigValue(key, value string) (string, error) {
 			return "", err
 		}
 		return root, nil
-	case ConfigKeyDirectoryMaxRequests, ConfigKeyFileMaxRequests, ConfigKeyPasswordMaxRequests, ConfigKeyDNSMaxQueries:
+	case ConfigKeyDirectoryMaxRequests, ConfigKeyFileMaxRequests, ConfigKeyVHostMaxRequests, ConfigKeyVHostCalibrationSamples, ConfigKeyVHostCalibrationConfidence, ConfigKeyPasswordMaxRequests, ConfigKeyDNSMaxQueries:
 		limit, err := strconv.Atoi(strings.TrimSpace(value))
 		if err != nil || limit < 1 {
 			return "", fmt.Errorf("request limit must be a positive integer")
 		}
-		if key == ConfigKeyDirectoryMaxRequests {
+		if key == ConfigKeyVHostCalibrationConfidence {
+			if limit < 50 || limit > 100 {
+				return "", fmt.Errorf("vhost calibration confidence must be between 50 and 100")
+			}
+			config.VHostCalibrationConfidence = limit
+		} else if key == ConfigKeyVHostCalibrationSamples {
+			if limit > 100 {
+				return "", fmt.Errorf("vhost calibration samples must be between 1 and 100")
+			}
+			config.VHostCalibrationSamples = limit
+		} else if key == ConfigKeyDirectoryMaxRequests {
 			config.DirectoryMaxRequests = limit
 		} else if key == ConfigKeyFileMaxRequests {
 			config.FileMaxRequests = limit
@@ -218,6 +274,9 @@ func ListConfigValues() ([]ConfigEntry, error) {
 		{Key: ConfigKeyProjectRoot, Value: config.ProjectRoot, DefaultValue: "-"},
 		{Key: ConfigKeyDirectoryMaxRequests, Value: strconv.Itoa(config.DirectoryMaxRequests), DefaultValue: strconv.Itoa(DefaultDirectoryMaxRequests)},
 		{Key: ConfigKeyFileMaxRequests, Value: strconv.Itoa(config.FileMaxRequests), DefaultValue: strconv.Itoa(DefaultFileMaxRequests)},
+		{Key: ConfigKeyVHostMaxRequests, Value: strconv.Itoa(config.VHostMaxRequests), DefaultValue: strconv.Itoa(DefaultVHostMaxRequests)},
+		{Key: ConfigKeyVHostCalibrationSamples, Value: strconv.Itoa(config.VHostCalibrationSamples), DefaultValue: strconv.Itoa(DefaultVHostCalibrationSamples)},
+		{Key: ConfigKeyVHostCalibrationConfidence, Value: strconv.Itoa(config.VHostCalibrationConfidence), DefaultValue: strconv.Itoa(DefaultVHostCalibrationConfidence)},
 		{Key: ConfigKeyPasswordMaxRequests, Value: strconv.Itoa(config.PasswordMaxRequests), DefaultValue: strconv.Itoa(DefaultPasswordMaxRequests)},
 		{Key: ConfigKeyDNSMaxQueries, Value: strconv.Itoa(config.DNSMaxQueries), DefaultValue: strconv.Itoa(DefaultDNSMaxQueries)},
 		{Key: ConfigKeyTLSVerify, Value: strconv.FormatBool(config.TLSVerify), DefaultValue: "true"},

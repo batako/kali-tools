@@ -112,6 +112,9 @@ keys:
   project.root       project root directory
   web.directory.max-requests maximum directory requests per automatic run
   web.file.max-requests maximum file requests per automatic run
+  web.vhost.max-requests maximum vhost requests per automatic run
+  web.vhost.calibration-samples number of vhost calibration requests
+  web.vhost.calibration-confidence minimum vhost calibration confidence percentage
   password.max-requests maximum password requests per automatic run
   dns.max-queries      maximum DNS queries per automatic run
 

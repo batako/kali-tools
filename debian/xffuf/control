@@ -1,0 +1,8 @@
+Package: xffuf
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), ffuf, seclists
+Description: Enumerate HTTP virtual hosts with ffuf and ctx integration

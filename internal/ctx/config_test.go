@@ -33,12 +33,15 @@ func TestConfigValueProjectRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListConfigValues() error = %v", err)
 	}
-	if len(entries) != 6 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want || entries[0].DefaultValue != "-" ||
+	if len(entries) != 9 || entries[0].Key != ConfigKeyProjectRoot || entries[0].Value != want || entries[0].DefaultValue != "-" ||
 		entries[1].Key != ConfigKeyDirectoryMaxRequests || entries[1].Value != "1000000" || entries[1].DefaultValue != "1000000" ||
 		entries[2].Key != ConfigKeyFileMaxRequests || entries[2].Value != "200000" || entries[2].DefaultValue != "200000" ||
-		entries[3].Key != ConfigKeyPasswordMaxRequests || entries[3].Value != "10000" || entries[3].DefaultValue != "10000" ||
-		entries[4].Key != ConfigKeyDNSMaxQueries || entries[4].Value != "10000" || entries[4].DefaultValue != "10000" ||
-		entries[5].Key != ConfigKeyTLSVerify || entries[5].Value != "true" || entries[5].DefaultValue != "true" {
+		entries[3].Key != ConfigKeyVHostMaxRequests || entries[3].Value != "10000" || entries[3].DefaultValue != "10000" ||
+		entries[4].Key != ConfigKeyVHostCalibrationSamples || entries[4].Value != "10" || entries[4].DefaultValue != "10" ||
+		entries[5].Key != ConfigKeyVHostCalibrationConfidence || entries[5].Value != "90" || entries[5].DefaultValue != "90" ||
+		entries[6].Key != ConfigKeyPasswordMaxRequests || entries[6].Value != "10000" || entries[6].DefaultValue != "10000" ||
+		entries[7].Key != ConfigKeyDNSMaxQueries || entries[7].Value != "10000" || entries[7].DefaultValue != "10000" ||
+		entries[8].Key != ConfigKeyTLSVerify || entries[8].Value != "true" || entries[8].DefaultValue != "true" {
 		t.Fatalf("ListConfigValues() = %+v, want project.root and request limits", entries)
 	}
 }
@@ -74,6 +77,18 @@ func TestConfigValueRequestLimits(t *testing.T) {
 	got, err = SetConfigValue(ConfigKeyFileMaxRequests, "100")
 	if err != nil || got != "100" {
 		t.Fatalf("SetConfigValue(file request limit) = %q, %v", got, err)
+	}
+	got, err = SetConfigValue(ConfigKeyVHostMaxRequests, "7500")
+	if err != nil || got != "7500" {
+		t.Fatalf("SetConfigValue(vhost request limit) = %q, %v", got, err)
+	}
+	got, err = SetConfigValue(ConfigKeyVHostCalibrationSamples, "12")
+	if err != nil || got != "12" {
+		t.Fatalf("SetConfigValue(vhost calibration samples) = %q, %v", got, err)
+	}
+	got, err = SetConfigValue(ConfigKeyVHostCalibrationConfidence, "95")
+	if err != nil || got != "95" {
+		t.Fatalf("SetConfigValue(vhost calibration confidence) = %q, %v", got, err)
 	}
 	got, err = SetConfigValue(ConfigKeyDNSMaxQueries, "5000")
 	if err != nil || got != "5000" {

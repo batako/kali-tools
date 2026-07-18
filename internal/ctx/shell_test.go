@@ -76,7 +76,7 @@ func TestCompletionScriptsIncludeAllConfigKeys(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
 		}
-		for _, want := range []string{"project.root", "web.directory.max-requests", "web.file.max-requests", "password.max-requests", "dns.max-queries", "web.tls.verify"} {
+		for _, want := range []string{"project.root", "web.directory.max-requests", "web.file.max-requests", "web.vhost.max-requests", "web.vhost.calibration-samples", "web.vhost.calibration-confidence", "password.max-requests", "dns.max-queries", "web.tls.verify"} {
 			if !strings.Contains(script, want) {
 				t.Errorf("CompletionScript(%s) missing config key %q", shell, want)
 			}

@@ -6,7 +6,7 @@ PACKAGE_NAME="req"
 
 if [ "$#" -gt 0 ]; then
   case "$1" in
-    req|ctx|xssh|xftp|xsmb|xgobuster|xwebshell)
+    req|ctx|xssh|xftp|xsmb|xgobuster|xffuf|xwebshell)
       PACKAGE_NAME="$1"
       shift
       ;;
@@ -91,6 +91,13 @@ if [ "${PACKAGE_NAME}" = "xgobuster" ]; then
   cp "debian/${PACKAGE_NAME}/xgobuster.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xgobuster"
   cp "debian/${PACKAGE_NAME}/xgobuster.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xgobuster"
   cp "debian/${PACKAGE_NAME}/xgo.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xgo"
+fi
+
+if [ "${PACKAGE_NAME}" = "xffuf" ]; then
+  mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
+  mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
+  cp "debian/${PACKAGE_NAME}/xffuf.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xffuf"
+  cp "debian/${PACKAGE_NAME}/xffuf.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xffuf"
 fi
 
 if [ "${PACKAGE_NAME}" = "xwebshell" ]; then
