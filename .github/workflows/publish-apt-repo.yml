@@ -54,6 +54,9 @@ jobs:
       - name: Check xgobuster version
         run: ./scripts/check-version.sh xgobuster
 
+      - name: Check xffuf version
+        run: ./scripts/check-version.sh xffuf
+
       - name: Check xhydra version
         run: ./scripts/check-version.sh xhydra
 
@@ -73,6 +76,8 @@ jobs:
           ./scripts/build-deb.sh xsmb arm64
           ./scripts/build-deb.sh xgobuster amd64
           ./scripts/build-deb.sh xgobuster arm64
+          ./scripts/build-deb.sh xffuf amd64
+          ./scripts/build-deb.sh xffuf arm64
           ./scripts/build-deb.sh xwebshell amd64
           ./scripts/build-deb.sh xwebshell arm64
           ./scripts/build-deb.sh xhydra amd64
