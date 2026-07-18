@@ -10,6 +10,7 @@ on:
       - xftp/v*
       - xsmb/v*
       - xgobuster/v*
+      - xffuf/v*
       - xwebshell/v*
       - xhydra/v*
 
@@ -48,6 +49,7 @@ jobs:
             xftp/v*) application="xftp"; version="${tag#xftp/v}" ;;
             xsmb/v*) application="xsmb"; version="${tag#xsmb/v}" ;;
             xgobuster/v*) application="xgobuster"; version="${tag#xgobuster/v}" ;;
+            xffuf/v*) application="xffuf"; version="${tag#xffuf/v}" ;;
             xwebshell/v*) application="xwebshell"; version="${tag#xwebshell/v}" ;;
             xhydra/v*) application="xhydra"; version="${tag#xhydra/v}" ;;
             *)
@@ -74,7 +76,7 @@ jobs:
           set -eu
 
           case "${APPLICATION}" in
-            ctx|req|xssh|xscp|xftp|xsmb|xgobuster|xwebshell|xhydra) ;;
+            ctx|req|xssh|xscp|xftp|xsmb|xgobuster|xffuf|xwebshell|xhydra) ;;
             *)
               echo "unsupported application: ${APPLICATION}" >&2
               exit 1
