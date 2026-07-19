@@ -159,6 +159,33 @@ func TestParseOptionsSupportsExcludedResponseLengths(t *testing.T) {
 	}
 }
 
+func TestParseOptionsSupportsExcludedResponseStatuses(t *testing.T) {
+	options, err := parseOptions([]string{"--exclude-status", "401,403"})
+	if err != nil || options.ExcludeStatus != "401,403" {
+		t.Fatalf("exclude status options = %+v, %v", options, err)
+	}
+	if got := strings.Join(effectiveExtra(options), " "); got != "--status-codes-blacklist 404,401,403" {
+		t.Fatalf("effectiveExtra() = %q", got)
+	}
+
+	options, err = parseOptions([]string{"--exclude-status=404,401"})
+	if err != nil || options.ExcludeStatus != "404,401" {
+		t.Fatalf("exclude status equals option = %+v, %v", options, err)
+	}
+	if got := strings.Join(effectiveExtra(options), " "); got != "--status-codes-blacklist 404,401" {
+		t.Fatalf("effectiveExtra() with explicit 404 = %q", got)
+	}
+}
+
+func TestResponseExclusionsChangeSearchSignature(t *testing.T) {
+	base := searchSignature(parsedOptions{})
+	status := searchSignature(parsedOptions{ExcludeStatus: "401"})
+	length := searchSignature(parsedOptions{ExcludeLength: "0"})
+	if base == status || base == length || status == length {
+		t.Fatalf("search signatures are not distinct: base=%q status=%q length=%q", base, status, length)
+	}
+}
+
 func TestEffectiveExtraAddsInsecureTLSFlag(t *testing.T) {
 	got := effectiveExtra(parsedOptions{Insecure: true})
 	if strings.Join(got, " ") != "-k" {

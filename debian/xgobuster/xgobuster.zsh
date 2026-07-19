@@ -52,6 +52,7 @@ _xgobuster() {
     '--ip[use the target IP instead of an xhost hostname]' \
     '--service[select a web service by number]:service:_xgobuster_services' \
     '(-c --cookies)'{-c,--cookies}'[send cookies with requests]:cookie:' \
+    '--exclude-status[exclude responses with these status codes]:status code:' \
     '--exclude-length[exclude responses with these body sizes]:size:' \
     '(-k --no-tls-validation)'{-k,--no-tls-validation}'[disable TLS certificate validation]' \
     '--tls-verify[verify TLS certificates for this run]' \

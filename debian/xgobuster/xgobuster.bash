@@ -26,8 +26,12 @@ _xgobuster_completion() {
       '))
       return
       ;;
-    -w|--wordlist|-u|--url|--host|-c|--cookies|--exclude-length)
+    -w|--wordlist|-u|--url|--host|-c|--cookies)
       COMPREPLY=($(compgen -f -- "${cur}"))
+      return
+      ;;
+    --exclude-status|--exclude-length)
+      COMPREPLY=()
       return
       ;;
   esac
@@ -37,7 +41,7 @@ _xgobuster_completion() {
     return
   fi
 
-  COMPREPLY=($(compgen -W "dns -w --wordlist -u --url --host --ip --service -c --cookies --exclude-length -k --no-tls-validation --tls-verify --preset --profile --status --clear-cache --sitemap --next --force -h --help -V --version" -- "${cur}"))
+  COMPREPLY=($(compgen -W "dns -w --wordlist -u --url --host --ip --service -c --cookies --exclude-status --exclude-length -k --no-tls-validation --tls-verify --preset --profile --status --clear-cache --sitemap --next --force -h --help -V --version" -- "${cur}"))
 }
 
 complete -F _xgobuster_completion xgobuster xgo

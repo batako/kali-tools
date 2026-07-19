@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	Version = "1.2.0"
+	Version = "1.3.0"
 )
 
 const usageText = `usage: xgobuster [dns] [gobuster-options]
@@ -45,6 +45,7 @@ options:
   --ip                   use the target IP instead of an xhost hostname
   --service <number>     select a web service by its displayed number
   -c, --cookies <value>   send cookies with requests
+  --exclude-status <code> exclude responses with these status codes
   --exclude-length <size> exclude responses with these body sizes
   -k, --no-tls-validation disable TLS certificate validation
   --tls-verify           verify TLS certificates for this run
@@ -172,7 +173,7 @@ func (app *App) Run(args []string) error {
 		if options.Next && options.Wordlist != "" {
 			return app.errorf("usage: xgobuster dns --next cannot be combined with --wordlist")
 		}
-		if options.Sitemap || options.Profile != "" || options.Preset != "" || options.URL != "" || options.Host != "" || options.IP || options.Service != 0 || options.Cookie != "" || options.ExcludeLength != "" || options.Insecure || options.VerifyTLS {
+		if options.Sitemap || options.Profile != "" || options.Preset != "" || options.URL != "" || options.Host != "" || options.IP || options.Service != 0 || options.Cookie != "" || options.ExcludeStatus != "" || options.ExcludeLength != "" || options.Insecure || options.VerifyTLS {
 			return app.errorf("dns mode accepts -d, -w, --status, --next, --force, and Gobuster DNS options only")
 		}
 		hosts, hostErr := ctx.ListHosts(workspace)
@@ -1204,10 +1205,23 @@ func effectiveExtra(options parsedOptions) []string {
 	if options.Cookie != "" {
 		extra = append(extra, "--cookies", options.Cookie)
 	}
+	if options.ExcludeStatus != "" {
+		extra = append(extra, "--status-codes-blacklist", excludedStatusCodes(options.ExcludeStatus))
+	}
 	if options.ExcludeLength != "" {
 		extra = append(extra, "--exclude-length", options.ExcludeLength)
 	}
 	return extra
+}
+
+func excludedStatusCodes(value string) string {
+	value = strings.TrimSpace(value)
+	for _, item := range strings.Split(value, ",") {
+		if strings.TrimSpace(item) == "404" {
+			return value
+		}
+	}
+	return "404," + value
 }
 
 func searchSignature(options parsedOptions) string {
@@ -1625,6 +1639,7 @@ type parsedOptions struct {
 	IP               bool
 	Service          int
 	Cookie           string
+	ExcludeStatus    string
 	ExcludeLength    string
 	Insecure         bool
 	VerifyTLS        bool
@@ -1721,6 +1736,12 @@ func parseOptions(args []string) (parsedOptions, error) {
 			}
 			options.ExcludeLength = args[i+1]
 			i++
+		case "--exclude-status":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
+			}
+			options.ExcludeStatus = args[i+1]
+			i++
 		case "-k", "--no-tls-validation":
 			options.Insecure = true
 		case "--tls-verify":
@@ -1775,6 +1796,13 @@ func parseOptions(args []string) (parsedOptions, error) {
 			if strings.HasPrefix(args[i], "--exclude-length=") {
 				options.ExcludeLength = strings.TrimPrefix(args[i], "--exclude-length=")
 				if options.ExcludeLength == "" {
+					return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
+				}
+				continue
+			}
+			if strings.HasPrefix(args[i], "--exclude-status=") {
+				options.ExcludeStatus = strings.TrimPrefix(args[i], "--exclude-status=")
+				if options.ExcludeStatus == "" {
 					return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
 				}
 				continue
