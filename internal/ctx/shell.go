@@ -265,6 +265,7 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
     command="${invocation#x}"
     subcommand="${COMP_WORDS[1]}"
     root_command="${COMP_WORDS[2]}"
+    root_move_source_position=3
   fi`,
 			new: `  elif [[ ${invocation} == x ]]; then
     command=x
@@ -272,6 +273,7 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
     command=project
     subcommand="${COMP_WORDS[1]}"
     root_command="${COMP_WORDS[2]}"
+    root_move_source_position=3
   elif [[ ${invocation} == ta ]]; then
     command=target
     subcommand="${COMP_WORDS[1]}"
@@ -285,6 +287,7 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
     command="${invocation#x}"
     subcommand="${COMP_WORDS[1]}"
     root_command="${COMP_WORDS[2]}"
+    root_move_source_position=3
   fi`,
 		},
 		{
@@ -294,7 +297,7 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
       ;;
     root)
       if [[ ${command} == project ]]; then
-        COMPREPLY=($(compgen -W "add use ls rm" -- "${cur}"))
+        COMPREPLY=($(compgen -W "add use ls rm move" -- "${cur}"))
         return
       fi
       ;;
@@ -309,7 +312,7 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
       ;;
     root)
       if [[ ${command} == project ]]; then
-        COMPREPLY=($(compgen -W "add use ls rm" -- "${cur}"))
+        COMPREPLY=($(compgen -W "add use ls rm move" -- "${cur}"))
         return
       fi
       ;;
@@ -469,10 +472,17 @@ _ctx_project_root_commands=(
   'use:switch the active project root'
   'ls:list registered project roots'
   'rm:unregister an inactive project root'
+  'move:move all ctx projects between registered roots'
 )
 
 _ctx_project_root_options=(
   '--name:override the name derived from the path'
+)
+
+_ctx_project_root_move_options=(
+  '--dry-run:show the move plan without changing files or data'
+  '-y:skip move confirmation'
+  '--yes:skip move confirmation'
 )
 
 _ctx_target_commands=(
@@ -675,6 +685,10 @@ _ctx() {
         _describe 'project root command' _ctx_project_root_commands
       elif [[ ${subcommand} == root && (${root_command} == use || ${root_command} == rm) ]] && (( CURRENT == command_position + 3 )); then
         _ctx_dynamic_descriptions project-root
+      elif [[ ${subcommand} == root && ${root_command} == move ]] && (( CURRENT == command_position + 3 || CURRENT == command_position + 4 )); then
+        _ctx_dynamic_descriptions project-root
+      elif [[ ${subcommand} == root && ${root_command} == move ]]; then
+        _describe 'project root move option' _ctx_project_root_move_options
       elif [[ ${subcommand} == root && ${root_command} == add ]] && (( CURRENT == command_position + 3 )); then
         _directories
       elif [[ ${subcommand} == root && ${root_command} == add && ${previous} == --name ]]; then
@@ -801,7 +815,7 @@ const bashCompletionScript = `_ctx_complete_values() {
 }
 
 _ctx_completion() {
-  local cur prev invocation command subcommand root_command
+  local cur prev invocation command subcommand root_command root_move_source_position
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -811,16 +825,26 @@ _ctx_completion() {
     command="${COMP_WORDS[1]}"
     subcommand="${COMP_WORDS[2]}"
     root_command="${COMP_WORDS[3]}"
+    root_move_source_position=4
   elif [[ ${invocation} == x ]]; then
     command=x
   else
     command="${invocation#x}"
     subcommand="${COMP_WORDS[1]}"
     root_command="${COMP_WORDS[2]}"
+    root_move_source_position=3
   fi
 
   if [[ ${command} == project && ${subcommand} == root && (${root_command} == use || ${root_command} == rm) && ${prev} == "${root_command}" ]]; then
     _ctx_complete_values project-root "${cur}"
+    return
+  fi
+  if [[ ${command} == project && ${subcommand} == root && ${root_command} == move ]]; then
+    if (( COMP_CWORD == root_move_source_position || COMP_CWORD == root_move_source_position + 1 )); then
+      _ctx_complete_values project-root "${cur}"
+    else
+      COMPREPLY=($(compgen -W "--dry-run -y --yes" -- "${cur}"))
+    fi
     return
   fi
   if [[ ${command} == project && ${subcommand} == root && ${root_command} == add ]]; then
@@ -881,7 +905,7 @@ _ctx_completion() {
       ;;
     root)
       if [[ ${command} == project ]]; then
-        COMPREPLY=($(compgen -W "add use ls rm" -- "${cur}"))
+        COMPREPLY=($(compgen -W "add use ls rm move" -- "${cur}"))
         return
       fi
       ;;

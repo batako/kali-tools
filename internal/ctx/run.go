@@ -144,6 +144,8 @@ commands:
   root use <name>         switch the active project root
   root ls                 list registered project roots
   root rm <name>          unregister an inactive project root
+  root move <from> <to> [--dry-run] [-y|--yes]
+                           move all ctx projects between registered roots
   new <name>              create a project and initialize a workspace
   ls                      list ctx projects under the configured root
   rm <id|name> [-y|--yes] remove a project directory
@@ -1308,9 +1310,36 @@ func runProjectRoot(args []string, stdout io.Writer) error {
 		}
 		_, err = fmt.Fprintf(stdout, "removed project root: %s %s\n", root.Name, root.Path)
 		return err
+	case "move":
+		source, target, dryRun, yes, err := parseProjectRootMoveArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		plan, err := PlanProjectRootMove(source, target)
+		if err != nil {
+			return err
+		}
+		if err := printProjectRootMovePlan(stdout, plan); err != nil {
+			return err
+		}
+		if dryRun {
+			_, err = fmt.Fprintln(stdout, "dry run; no changes made")
+			return err
+		}
+		if !yes {
+			ok, err := confirmProjectRootMove(stdout, bufio.NewScanner(workspaceStdin), plan)
+			if err != nil || !ok {
+				return err
+			}
+		}
+		if err := MoveProjectRootProjects(plan); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "moved %d project(s) from %s to %s\n", len(plan.Projects), source, target)
+		return err
 	default:
 		if len(args) != 1 {
-			return errors.New("usage: ctx project root [path] | <add|use|ls|rm>")
+			return errors.New("usage: ctx project root [path] | <add|use|ls|rm|move>")
 		}
 		root, err := SetProjectRoot(args[0])
 		if err != nil {
@@ -1319,6 +1348,84 @@ func runProjectRoot(args []string, stdout io.Writer) error {
 		_, err = fmt.Fprintln(stdout, root)
 		return err
 	}
+}
+
+func parseProjectRootMoveArgs(args []string) (string, string, bool, bool, error) {
+	var source, target string
+	var dryRun, yes bool
+	for _, arg := range args {
+		switch arg {
+		case "--dry-run":
+			if dryRun {
+				return "", "", false, false, errors.New("usage: ctx project root move <from> <to> [--dry-run] [-y|--yes]")
+			}
+			dryRun = true
+		case "-y", "--yes":
+			if yes {
+				return "", "", false, false, errors.New("usage: ctx project root move <from> <to> [--dry-run] [-y|--yes]")
+			}
+			yes = true
+		default:
+			if strings.HasPrefix(arg, "-") || target != "" {
+				return "", "", false, false, errors.New("usage: ctx project root move <from> <to> [--dry-run] [-y|--yes]")
+			}
+			if source == "" {
+				source = arg
+			} else {
+				target = arg
+			}
+		}
+	}
+	if source == "" || target == "" || dryRun && yes {
+		return "", "", false, false, errors.New("usage: ctx project root move <from> <to> [--dry-run] [-y|--yes]")
+	}
+	return source, target, dryRun, yes, nil
+}
+
+func printProjectRootMovePlan(stdout io.Writer, plan *ProjectRootMovePlan) error {
+	if _, err := fmt.Fprintf(stdout, "Move ctx projects from %s to %s:\n\n", plan.Source.Name, plan.Target.Name); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tw, "PROJECT\tSOURCE\tDESTINATION"); err != nil {
+		return err
+	}
+	for _, project := range plan.Projects {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", project.Name, project.SourcePath, project.TargetPath); err != nil {
+			return err
+		}
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if plan.SwitchActive {
+		_, err := fmt.Fprintf(stdout, "\nThe active project root will switch to %s.\n", plan.Target.Name)
+		return err
+	}
+	return nil
+}
+
+func confirmProjectRootMove(stdout io.Writer, scanner *bufio.Scanner, plan *ProjectRootMovePlan) (bool, error) {
+	if _, err := fmt.Fprintf(stdout, "\nMove %d project(s)? [y/N]: ", len(plan.Projects)); err != nil {
+		return false, err
+	}
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return false, fmt.Errorf("failed to read confirmation: %w", err)
+		}
+		if _, err := fmt.Fprintln(stdout, "\ncancelled"); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+	if answer != "y" && answer != "yes" {
+		if _, err := fmt.Fprintln(stdout, "cancelled"); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func parseProjectRootAddArgs(args []string) (string, string, error) {

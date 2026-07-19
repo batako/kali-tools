@@ -2,6 +2,7 @@ package ctx
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,6 +143,171 @@ func TestNamedProjectRootsSwitchAndKeepProjectsSeparated(t *testing.T) {
 	}
 	if _, err := os.Stat(thmPath); err != nil {
 		t.Fatalf("removed root directory was modified: %v", err)
+	}
+}
+
+func TestProjectRootMoveMovesProjectsAndPreservesWorkspaceData(t *testing.T) {
+	base := t.TempDir()
+	ctxHome := filepath.Join(t.TempDir(), ".ctx")
+	t.Setenv("CTX_HOME", ctxHome)
+	sourcePath := filepath.Join(base, "thm")
+	targetPath := filepath.Join(base, "hackthebox")
+	if _, err := AddProjectRoot(sourcePath, "thm"); err != nil {
+		t.Fatalf("AddProjectRoot(thm) error = %v", err)
+	}
+	if _, err := AddProjectRoot(targetPath, "hackthebox"); err != nil {
+		t.Fatalf("AddProjectRoot(hackthebox) error = %v", err)
+	}
+	for _, name := range []string{"room-two", "room-one"} {
+		if _, err := CreateProject(name); err != nil {
+			t.Fatalf("CreateProject(%s) error = %v", name, err)
+		}
+	}
+	recordsBefore, err := ListWorkspaceRecords()
+	if err != nil {
+		t.Fatalf("ListWorkspaceRecords() before move error = %v", err)
+	}
+	beforeByUUID := make(map[string]WorkspaceRecord, len(recordsBefore))
+	for _, record := range recordsBefore {
+		beforeByUUID[record.UUID] = record
+		if _, err := os.Stat(filepath.Join(ctxHome, "workspaces", record.UUID)); err != nil {
+			t.Fatalf("workspace data before move Stat() error = %v", err)
+		}
+	}
+	chdirForTest(t, t.TempDir())
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "project", "root", "move", "thm", "hackthebox", "--dry-run"}, &out); err != nil {
+		t.Fatalf("Run(project root move --dry-run) error = %v", err)
+	}
+	if !strings.Contains(out.String(), "dry run; no changes made") {
+		t.Fatalf("dry-run output = %q", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(sourcePath, "room-one")); err != nil {
+		t.Fatalf("dry run changed source project: %v", err)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "project", "root", "move", "thm", "hackthebox", "--yes"}, &out); err != nil {
+		t.Fatalf("Run(project root move --yes) error = %v", err)
+	}
+	if !strings.Contains(out.String(), "moved 2 project(s) from thm to hackthebox") {
+		t.Fatalf("move output = %q", out.String())
+	}
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if config.ActiveProjectRoot != "hackthebox" || config.ProjectRoot != targetPath {
+		t.Fatalf("active project root = %q %q, want hackthebox %q", config.ActiveProjectRoot, config.ProjectRoot, targetPath)
+	}
+
+	recordsAfter, err := ListWorkspaceRecords()
+	if err != nil {
+		t.Fatalf("ListWorkspaceRecords() after move error = %v", err)
+	}
+	if len(recordsAfter) != len(recordsBefore) {
+		t.Fatalf("workspace count after move = %d, want %d", len(recordsAfter), len(recordsBefore))
+	}
+	for _, record := range recordsAfter {
+		before, ok := beforeByUUID[record.UUID]
+		if !ok || before.ID != record.ID {
+			t.Fatalf("workspace identity changed after move: before=%+v after=%+v", before, record)
+		}
+		wantPath := filepath.Join(targetPath, filepath.Base(before.RootPath))
+		if record.RootPath != wantPath {
+			t.Fatalf("workspace path = %q, want %q", record.RootPath, wantPath)
+		}
+		if _, err := os.Stat(filepath.Join(record.RootPath, MarkerFile)); err != nil {
+			t.Fatalf("moved workspace marker Stat() error = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(ctxHome, "workspaces", record.UUID)); err != nil {
+			t.Fatalf("workspace data after move Stat() error = %v", err)
+		}
+		if _, err := os.Stat(before.RootPath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("old project path still exists or Stat failed unexpectedly: %v", err)
+		}
+	}
+}
+
+func TestProjectRootMoveRejectsDestinationCollisionBeforeMoving(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	sourcePath := filepath.Join(base, "source")
+	targetPath := filepath.Join(base, "target")
+	if _, err := AddProjectRoot(sourcePath, "source"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddProjectRoot(targetPath, "target"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateProject("alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(targetPath, "alpha"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	chdirForTest(t, t.TempDir())
+
+	_, err := PlanProjectRootMove("source", "target")
+	if err == nil || !strings.Contains(err.Error(), "destination already exists") {
+		t.Fatalf("PlanProjectRootMove() error = %v, want destination collision", err)
+	}
+	if _, err := os.Stat(filepath.Join(sourcePath, "alpha", MarkerFile)); err != nil {
+		t.Fatalf("source project changed after rejected plan: %v", err)
+	}
+}
+
+func TestProjectRootMoveRollsBackFilesystemAndDatabase(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	sourcePath := filepath.Join(base, "source")
+	targetPath := filepath.Join(base, "target")
+	if _, err := AddProjectRoot(sourcePath, "source"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddProjectRoot(targetPath, "target"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"alpha", "beta"} {
+		if _, err := CreateProject(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chdirForTest(t, t.TempDir())
+	plan, err := PlanProjectRootMove("source", "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	originalRename := renameProjectRootPath
+	calls := 0
+	renameProjectRootPath = func(oldPath, newPath string) error {
+		calls++
+		if calls == 2 {
+			return errors.New("injected move failure")
+		}
+		return os.Rename(oldPath, newPath)
+	}
+	t.Cleanup(func() { renameProjectRootPath = originalRename })
+	if err := MoveProjectRootProjects(plan); err == nil || !strings.Contains(err.Error(), "injected move failure") {
+		t.Fatalf("MoveProjectRootProjects() error = %v, want injected failure", err)
+	}
+
+	records, err := ListWorkspaceRecords()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if filepath.Dir(record.RootPath) != sourcePath {
+			t.Fatalf("workspace path after rollback = %q, want source root %q", record.RootPath, sourcePath)
+		}
+		if _, err := os.Stat(filepath.Join(record.RootPath, MarkerFile)); err != nil {
+			t.Fatalf("source project missing after rollback: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(targetPath, filepath.Base(record.RootPath))); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("destination remains after rollback: %v", err)
+		}
 	}
 }
 

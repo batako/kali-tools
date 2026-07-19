@@ -64,10 +64,16 @@ func TestCompletionScriptsIncludeProjectHelpers(t *testing.T) {
 			`cd "${project_path}"`,
 			`project-root`,
 			`--name`,
+			`move`,
+			`--dry-run`,
+			`--yes`,
 		} {
 			if !strings.Contains(script, want) {
 				t.Errorf("CompletionScript(%s) missing %q", shell, want)
 			}
+		}
+		if shell == "zsh" && !strings.Contains(script, `move:move all ctx projects between registered roots`) {
+			t.Errorf("CompletionScript(zsh) missing project root move description")
 		}
 	}
 }
