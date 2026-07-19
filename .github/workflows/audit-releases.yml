@@ -102,6 +102,18 @@ jobs:
                 continue
               fi
 
+              if [ "${architecture}" = "amd64" ]; then
+                extract_dir="$(mktemp -d)"
+                dpkg-deb -x "${deb_path}" "${extract_dir}"
+                if [ "$("${extract_dir}/usr/local/bin/${package}" -V)" != "${package} ${version}" ]; then
+                  echo "::error title=Invalid packaged executable version::${relative_deb}"
+                  failures=$((failures + 1))
+                  rm -rf "${extract_dir}"
+                  continue
+                fi
+                rm -rf "${extract_dir}"
+              fi
+
               if [ ! -f "${index_file}" ] ||
                  ! check_index "${index_file}" "${package}" "${version}" "${architecture}" "${relative_deb}"; then
                 echo "::error title=Package missing from APT index::${tag} (${architecture})"
@@ -184,6 +196,14 @@ jobs:
                [ "$(jq -r '.isDraft' <<<"${release_json}")" = "true" ] ||
                ! jq -e '(.body // "") | test("\\S")' <<<"${release_json}" >/dev/null; then
               echo "::error title=Invalid GitHub Release::${tag} is mismatched, draft, or empty"
+              failures=$((failures + 1))
+              continue
+            fi
+
+            expected_body="$(cat "releases/${application}/${version}.md")"
+            actual_body="$(jq -r '.body // ""' <<<"${release_json}")"
+            if [ "${actual_body}" != "${expected_body}" ]; then
+              echo "::error title=GitHub Release notes mismatch::${tag} does not match releases/${application}/${version}.md"
               failures=$((failures + 1))
               continue
             fi
