@@ -211,4 +211,4 @@ git push origin <tool>/v<version>
 
 ## ドキュメント
 
-カスタムコマンドをctxへ連携する場合は[ctx連携ガイド](docs/integration.ja.md)を参照してください。開発フロー、ctxの詳細仕様、アーキテクチャ、データベース、JSON API、アドオンの説明は `docs/` にあります。CLIの最新の構文は各コマンドの `--help` で確認します。
+カスタムコマンドをctxへ連携する場合は[ctx連携ガイド](docs/integration.ja.md)を参照してください。開発フロー、データベース、JSON API、アドオンの説明は`docs/`にあります。CLIの最新の構文は各コマンドの`--help`で確認します。
