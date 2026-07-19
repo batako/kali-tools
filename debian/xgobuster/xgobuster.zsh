@@ -42,7 +42,6 @@ _xgobuster() {
     '--preset[select a technology preset]:preset:(php wordpress aspnet java node static)' \
     '--status[show wordlist search status]' \
     '--clear-cache[clear DNS search cache]' \
-    '--sitemap[show collected paths as a site map]' \
     '--next[continue with the next automatic wordlist]' \
     '--force[rerun an already completed wordlist]' \
     '--profile[limit automatic selection to a profile]:profile:(web-quick web-standard web-deep)' \

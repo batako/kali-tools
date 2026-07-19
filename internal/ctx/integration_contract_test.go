@@ -42,7 +42,7 @@ func TestPublicIntegrationContractJSON(t *testing.T) {
 			t.Fatalf("response = %+v, want successful format 1.0", response)
 		}
 		formats := responseDataMap(t, response)["formats"].(map[string]any)
-		for _, name := range []string{"credential", "formats", "log", "prompt", "service"} {
+		for _, name := range []string{"credential", "formats", "log", "prompt", "service", "web"} {
 			versions, ok := formats[name].([]any)
 			if !ok || len(versions) != 1 || versions[0] != "1.0" {
 				t.Fatalf("formats[%q] = %#v, want [1.0]", name, formats[name])

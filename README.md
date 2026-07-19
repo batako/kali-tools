@@ -90,6 +90,7 @@ xftp ftpuser
 xsmb
 xgo
 xgo dns
+xweb
 xffuf vhost --suggest
 xhydra --help
 xwebshell ls

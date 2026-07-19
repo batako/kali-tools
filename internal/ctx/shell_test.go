@@ -92,6 +92,22 @@ func TestCompletionScriptsIncludeAllConfigKeys(t *testing.T) {
 	}
 }
 
+func TestCompletionScriptsIncludeWebClear(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell)
+		if err != nil {
+			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
+		}
+		want := `COMPREPLY=($(compgen -W "ls clear -h --help"`
+		if shell == "zsh" {
+			want = `clear:clear paths and xgobuster progress after confirmation`
+		}
+		if !strings.Contains(script, want) {
+			t.Errorf("CompletionScript(%s) missing web clear completion %q", shell, want)
+		}
+	}
+}
+
 func TestCompletionScriptsIncludeExtraShortcutsWhenRequested(t *testing.T) {
 	for _, shell := range []string{"zsh", "bash"} {
 		script, err := CompletionScript(shell, CompletionOptions{ExtraShortcuts: true})
@@ -111,7 +127,7 @@ func TestCompletionScriptsIncludeExtraShortcutsWhenRequested(t *testing.T) {
 				"elif [[ ${invocation} == ta ]]",
 				"elif [[ ${invocation} == cr ]]",
 				"elif [[ ${invocation} == sv ]]",
-				"compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv",
+				"compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv",
 			)
 		} else {
 			wants = append(wants,

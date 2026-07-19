@@ -54,7 +54,6 @@ options:
   -x, --extensions <list> pass extensions to Gobuster (for example php,html,js)
   --status               show wordlist search status
   --clear-cache          clear DNS search cache without running Gobuster
-  --sitemap              show collected paths as a site map
   --next                 continue with the next automatic wordlist
   --force                rerun an already completed automatic wordlist
   -h, --help             show this help
@@ -138,9 +137,6 @@ func (app *App) Run(args []string) error {
 	if options.Status || options.ClearCache {
 		commands = nil
 	}
-	if options.Sitemap {
-		commands = nil
-	}
 	if err := app.requireCommands(commands...); err != nil {
 		return err
 	}
@@ -173,7 +169,7 @@ func (app *App) Run(args []string) error {
 		if options.Next && options.Wordlist != "" {
 			return app.errorf("usage: xgobuster dns --next cannot be combined with --wordlist")
 		}
-		if options.Sitemap || options.Profile != "" || options.Preset != "" || options.URL != "" || options.Host != "" || options.IP || options.Service != 0 || options.Cookie != "" || options.ExcludeStatus != "" || options.ExcludeLength != "" || options.Insecure || options.VerifyTLS {
+		if options.Profile != "" || options.Preset != "" || options.URL != "" || options.Host != "" || options.IP || options.Service != 0 || options.Cookie != "" || options.ExcludeStatus != "" || options.ExcludeLength != "" || options.Insecure || options.VerifyTLS {
 			return app.errorf("dns mode accepts -d, -w, --status, --next, --force, and Gobuster DNS options only")
 		}
 		hosts, hostErr := ctx.ListHosts(workspace)
@@ -190,12 +186,6 @@ func (app *App) Run(args []string) error {
 
 	if options.Status && options.Wordlist != "" {
 		return app.errorf("usage: xgobuster --status [--profile <name>] [--preset <name>] [-x <list>] [--url <url>]")
-	}
-	if options.Sitemap {
-		if options.Status {
-			return app.errorf("usage: xgobuster --sitemap cannot be combined with --status")
-		}
-		return app.showSitemap(workspace, target)
 	}
 	config, configErr := ctx.LoadConfig()
 	if configErr != nil {
@@ -904,101 +894,6 @@ func (app *App) showStatus(workspace *ctx.Workspace, target *ctx.Target, url str
 	return nil
 }
 
-func (app *App) showSitemap(workspace *ctx.Workspace, target *ctx.Target) error {
-	discoveries, err := ctx.ListWebDiscoveries(workspace, target)
-	if err != nil {
-		return app.errorf("failed to load web discoveries: %s", err)
-	}
-	if len(discoveries) == 0 {
-		_, err := fmt.Fprintln(app.stdout, "no web discoveries")
-		return err
-	}
-
-	type siteEntry struct {
-		URL        string
-		Path       string
-		StatusCode int
-	}
-	entriesByURL := make(map[string]siteEntry)
-	for _, discovery := range discoveries {
-		key := discovery.URL
-		path := discovery.Path
-		if parsedURL, parseErr := url.Parse(discovery.URL); parseErr == nil && parsedURL.Path != "" {
-			path = parsedURL.Path
-		}
-		entriesByURL[key] = siteEntry{URL: discovery.URL, Path: path, StatusCode: discovery.StatusCode}
-	}
-	entries := make([]siteEntry, 0, len(entriesByURL))
-	for _, entry := range entriesByURL {
-		entries = append(entries, entry)
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		originI := siteMapOrigin(entries[i].URL)
-		originJ := siteMapOrigin(entries[j].URL)
-		if originI != originJ {
-			return originI < originJ
-		}
-		if entries[i].StatusCode != entries[j].StatusCode {
-			return entries[i].StatusCode < entries[j].StatusCode
-		}
-		return entries[i].URL < entries[j].URL
-	})
-
-	_, _ = fmt.Fprintln(app.stdout, "Site map")
-	useColor := colorOutputEnabled(app.stdout)
-	lastOrigin := ""
-	for _, entry := range entries {
-		origin := siteMapOrigin(entry.URL)
-		if origin != lastOrigin {
-			if lastOrigin != "" {
-				_, _ = fmt.Fprintln(app.stdout)
-			}
-			_, _ = fmt.Fprintln(app.stdout, origin)
-			lastOrigin = origin
-		}
-		_, _ = fmt.Fprintf(app.stdout, "  %s %s\n", colorizeStatusCode(entry.StatusCode, useColor), entry.Path)
-	}
-	return nil
-}
-
-func siteMapOrigin(rawURL string) string {
-	if parsed, err := url.Parse(rawURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
-		return parsed.Scheme + "://" + parsed.Host
-	}
-	return rawURL
-}
-
-func colorOutputEnabled(writer io.Writer) bool {
-	if os.Getenv("NO_COLOR") != "" {
-		return false
-	}
-	file, ok := writer.(*os.File)
-	if !ok {
-		return false
-	}
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
-func colorizeStatusCode(statusCode int, enabled bool) string {
-	value := fmt.Sprintf("%d", statusCode)
-	if !enabled {
-		return value
-	}
-	color := "\033[36m"
-	switch {
-	case statusCode >= 200 && statusCode < 300:
-		color = "\033[32m"
-	case statusCode >= 300 && statusCode < 400:
-		color = "\033[33m"
-	case statusCode >= 400 && statusCode < 500:
-		color = "\033[31m"
-	case statusCode >= 500:
-		color = "\033[35m"
-	}
-	return color + value + "\033[0m"
-}
-
 func filterWordlists(candidates []ctx.WordlistSelection, profile string) []ctx.WordlistSelection {
 	if profile == "" {
 		return candidates
@@ -1652,7 +1547,6 @@ type parsedOptions struct {
 	Force            bool
 	Status           bool
 	ClearCache       bool
-	Sitemap          bool
 }
 
 func parseOptions(args []string) (parsedOptions, error) {
@@ -1674,8 +1568,6 @@ func parseOptions(args []string) (parsedOptions, error) {
 			options.Status = true
 		case "--clear-cache":
 			options.ClearCache = true
-		case "--sitemap":
-			options.Sitemap = true
 		case "--profile":
 			if i+1 >= len(args) || args[i+1] == "" {
 				return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")

@@ -63,6 +63,7 @@ func TestFormatsJSON(t *testing.T) {
 		"log":        "1.0",
 		"prompt":     "1.0",
 		"service":    "1.0",
+		"web":        "1.0",
 	}
 	if len(formats) != len(wantFormats) {
 		t.Fatalf("formats = %#v, want exactly %#v", formats, wantFormats)
@@ -175,6 +176,40 @@ func TestServiceJSONListsEmptyAndValues(t *testing.T) {
 	}
 }
 
+func TestWebJSONListsAggregatedDiscoveries(t *testing.T) {
+	workspace := initXTestWorkspace(t)
+	target, err := SetPrimaryTargetIP(workspace, "10.10.10.10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, discovery := range []WebDiscovery{
+		{URL: "https://example.test/admin", Path: "/admin", StatusCode: 301, SourceTool: "gobuster", Wordlist: "one"},
+		{URL: "https://example.test/admin", Path: "/admin", StatusCode: 200, ContentLength: 512, ContentLengthValid: true, SourceTool: "ffuf", Wordlist: "two"},
+	} {
+		if _, err := SaveWebDiscovery(workspace, target, discovery); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "web", "ls", "--format", "json", "--format-version", "1"}, &out); err != nil {
+		t.Fatalf("Run(web json) error = %v", err)
+	}
+	response := decodeAPIResponse(t, out.Bytes())
+	discoveries, ok := responseDataMap(t, response)["discoveries"].([]any)
+	if !ok || len(discoveries) != 1 {
+		t.Fatalf("discoveries = %#v, want one aggregated item", response.Data)
+	}
+	item := discoveries[0].(map[string]any)
+	if item["path"] != "/admin" || item["status_code"] != float64(200) || item["content_length"] != float64(512) {
+		t.Fatalf("web discovery = %#v", item)
+	}
+	sources, ok := item["sources"].([]any)
+	if !ok || len(sources) != 2 || sources[0] != "ffuf" || sources[1] != "gobuster" {
+		t.Fatalf("sources = %#v, want ffuf and gobuster", item["sources"])
+	}
+}
+
 func TestJSONUnsupportedVersionReturnsJSONAndExitCode2(t *testing.T) {
 	var out bytes.Buffer
 	err := Run([]string{"ctx", "formats", "--format", "json", "--format-version", "9"}, &out)
@@ -207,6 +242,7 @@ func TestJSONInvalidArgumentsUseCommonEnvelopeAndExitCode2(t *testing.T) {
 		{name: "credential extra scope", args: []string{"ctx", "credential", "ls", "ssh", "extra", "--format", "json"}},
 		{name: "credential unsupported operation", args: []string{"ctx", "credential", "set", "ssh", "root", "--format", "json"}},
 		{name: "service missing target", args: []string{"ctx", "service", "ls", "--target", "--format", "json"}},
+		{name: "web missing target", args: []string{"ctx", "web", "ls", "--target", "--format", "json"}},
 		{name: "log unknown operation", args: []string{"ctx", "log", "unknown", "--format", "json"}},
 		{name: "log start extra argument", args: []string{"ctx", "log", "start", "extra", "--format", "json"}, input: `{}`},
 		{name: "log finish missing id", args: []string{"ctx", "log", "finish", "--format", "json"}, input: `{}`},

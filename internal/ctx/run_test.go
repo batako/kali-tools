@@ -47,6 +47,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 			"xhost":       "ctx host",
 			"xhosts":      "ctx hosts",
 			"xscan":       "ctx scan",
+			"xweb":        "ctx web",
 			"xnote":       "ctx note",
 			"xlog":        "ctx log",
 			"x":           "ctx x",
@@ -68,6 +69,7 @@ func TestRunTopLevelHelp(t *testing.T) {
 		for _, detail := range []string{
 			"scan     run nmap and save service information",
 			"service  show saved service information",
+			"web      show discovered web paths",
 			"credential  manage stored credentials",
 			"prompt   print shell prompt data",
 			"formats  list supported JSON outputs and format versions",
@@ -200,6 +202,7 @@ func TestRunSubcommandHelpDoesNotRequireWorkspace(t *testing.T) {
 		{[]string{"ctx", "hosts", "-h"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "hosts", "sync", "--help"}, "usage: ctx hosts <command> [options]"},
 		{[]string{"ctx", "scan", "--help"}, "usage: ctx scan [ip] [options]"},
+		{[]string{"ctx", "web", "clear", "--help"}, "usage: ctx web <command> [options]"},
 		{[]string{"ctx", "credential", "--help"}, "usage: ctx credential [<scope> <username> [password] | <command>] [options]"},
 		{[]string{"ctx", "note", "--help"}, "usage: ctx note <text> [options]"},
 		{[]string{"ctx", "log", "--help"}, "usage: ctx log [id] [options]"},
@@ -246,8 +249,8 @@ func TestRunFormatsListsSupportedOutputsAndVersions(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 6 {
-		t.Fatalf("formats output = %q, want 6 lines", out.String())
+	if len(lines) != 7 {
+		t.Fatalf("formats output = %q, want 7 lines", out.String())
 	}
 
 	header := strings.Fields(lines[0])
@@ -261,6 +264,7 @@ func TestRunFormatsListsSupportedOutputsAndVersions(t *testing.T) {
 		"log":        "1.0",
 		"prompt":     "1.0",
 		"service":    "1.0",
+		"web":        "1.0",
 	}
 	for _, line := range lines[1:] {
 		fields := strings.Fields(line)

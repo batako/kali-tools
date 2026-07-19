@@ -45,6 +45,7 @@ commands:
   hosts    show, sync, or clean /etc/hosts entries
   scan     run nmap and save service information
   service  show saved service information
+  web      show discovered web paths
   credential  manage stored credentials
   note     add a note to the workspace timeline
   log      show the workspace timeline
@@ -73,6 +74,7 @@ shortcuts (requires ctx init-shell):
   xhosts       ctx hosts
   xscan        ctx scan
   xservice     ctx service
+  xweb         ctx web
   xcredential  ctx credential
   xnote        ctx note
   xlog         ctx log
@@ -250,6 +252,20 @@ options:
   --format-version <version> select JSON format version
   -h, --help                show this help`
 
+const webUsageText = `usage: ctx web <command> [options]
+
+View or clear web paths discovered for the primary or selected target.
+
+commands:
+  ls     list discovered web paths
+  clear  clear paths and xgobuster progress after confirmation
+
+options:
+  --target <name>            select a target by name
+  --format <shell|json>      select ls output format
+  --format-version <version> select ls JSON format version
+  -h, --help                 show this help`
+
 const credentialUsageText = `usage: ctx credential [<scope> <username> [password] | <command>] [options]
 
 Manage credentials for the current workspace.
@@ -411,6 +427,8 @@ func runWithCurrentInput(args []string, stdout, stderr io.Writer) error {
 		return nil
 	case "service":
 		return runService(args[2:], stdout)
+	case "web":
+		return runWeb(args[2:], stdout)
 	case "credential":
 		return runCredential(args[2:], stdout)
 	case "note":
@@ -964,7 +982,7 @@ func runFormats(args []string, stdout io.Writer) error {
 		if _, err := fmt.Fprintln(table, "OUTPUT\tVERSIONS"); err != nil {
 			return err
 		}
-		for _, endpoint := range []string{"credential", "formats", "log", "prompt", "service"} {
+		for _, endpoint := range []string{"credential", "formats", "log", "prompt", "service", "web"} {
 			versions := append([]string(nil), apiSupportedVersions[endpoint]...)
 			sort.Slice(versions, func(i, j int) bool { return compareAPIVersion(versions[i], versions[j]) < 0 })
 			if _, err := fmt.Fprintf(table, "%s\t%s\n", endpoint, strings.Join(versions, ",")); err != nil {

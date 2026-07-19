@@ -46,6 +46,7 @@ var apiSupportedVersions = map[string][]string{
 	"credential": {"1.0"},
 	"log":        {"1.0"},
 	"service":    {"1.0"},
+	"web":        {"1.0"},
 }
 
 var apiVersionPattern = regexp.MustCompile(`^\d+(\.\d+)?$`)

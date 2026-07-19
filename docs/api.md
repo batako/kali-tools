@@ -219,6 +219,7 @@ prompt
 credential
 log
 service
+web
 ```
 
 ## `formats`
@@ -238,6 +239,7 @@ formats      1.0
 log          1.0
 prompt       1.0
 service      1.0
+web          1.0
 ```
 
 Add-ons can use this output to verify that the required JSON outputs and versions are available.
@@ -251,7 +253,8 @@ The `data` object has the following structure:
     "formats": ["1.0"],
     "log": ["1.0"],
     "prompt": ["1.0"],
-    "service": ["1.0"]
+    "service": ["1.0"],
+    "web": ["1.0"]
   }
 }
 ```
@@ -469,6 +472,54 @@ Ordering:
 
 ```text
 protocol ASC, port ASC, id ASC
+```
+
+## `web`
+
+Returns web paths discovered for the selected target.
+
+```bash
+ctx web ls --format json --format-version 1.0
+ctx web ls --target web --format json --format-version 1.0
+```
+
+Without `--target`, discoveries for the primary target are returned. Repeated observations of the same URL are combined: response fields come from the latest observation and `sources` contains every tool that discovered the URL.
+
+Example `data` object:
+
+```json
+{
+  "discoveries": [
+    {
+      "url": "https://example.test/admin",
+      "origin": "https://example.test",
+      "path": "/admin",
+      "status_code": 301,
+      "content_length": 169,
+      "redirect_url": "/admin/",
+      "sources": ["ffuf", "gobuster"],
+      "last_seen": "2026-07-20T00:00:00Z"
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `discoveries` | array of objects | Deduplicated web discoveries for the selected target; `[]` when none exist |
+| `discoveries[].url` | string | Complete discovered URL |
+| `discoveries[].origin` | string | URL scheme and authority |
+| `discoveries[].path` | string | Path relative to the origin |
+| `discoveries[].status_code` | integer | HTTP response status code from the latest observation |
+| `discoveries[].content_length` | integer \| null | Response body length when available |
+| `discoveries[].redirect_url` | string \| null | Redirect destination when available |
+| `discoveries[].sources` | array of strings | Tools that discovered the URL, sorted by name |
+| `discoveries[].last_seen` | string | Time of the latest stored observation |
+
+Ordering:
+
+```text
+origin ASC, status_code ASC, path ASC, url ASC
 ```
 
 ## Compatibility

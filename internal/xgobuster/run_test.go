@@ -233,25 +233,6 @@ func TestParseDNSHosts(t *testing.T) {
 	}
 }
 
-func TestParseOptionsSupportsSitemap(t *testing.T) {
-	options, err := parseOptions([]string{"--sitemap"})
-	if err != nil {
-		t.Fatalf("parseOptions() error = %v", err)
-	}
-	if !options.Sitemap {
-		t.Fatalf("options = %+v, want sitemap", options)
-	}
-}
-
-func TestColorizeStatusCode(t *testing.T) {
-	if got := colorizeStatusCode(200, true); got != "\033[32m200\033[0m" {
-		t.Fatalf("colorizeStatusCode(200) = %q", got)
-	}
-	if got := colorizeStatusCode(404, false); got != "404" {
-		t.Fatalf("colorizeStatusCode(404, false) = %q", got)
-	}
-}
-
 func TestParseOptionsSupportsProfile(t *testing.T) {
 	options, err := parseOptions([]string{"--status", "--profile=web-quick"})
 	if err != nil {
@@ -411,6 +392,50 @@ func TestSearchedWordStateIsPersisted(t *testing.T) {
 	}
 	if len(seen) != 2 {
 		t.Fatalf("seen = %#v, want two words", seen)
+	}
+}
+
+func TestClearWebDiscoveryDataRemovesXgobusterSearchState(t *testing.T) {
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	workspace, err := ctx.InitWorkspace(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := ctx.SetPrimaryTargetIP(workspace, "10.10.10.10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "http://10.10.10.10/"
+	if _, err := ctx.SaveWebDiscovery(workspace, target, ctx.WebDiscovery{URL: url + "admin", Path: "/admin", StatusCode: 200, SourceTool: "gobuster"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ctx.StartWebWordlistRun(workspace, target, url, "wordlists", "web-quick", "", "/usr/share/dirb/wordlists/common.txt", "2026-07-20T00:00:00Z", 0); err != nil {
+		t.Fatal(err)
+	}
+	statePath, err := searchedBaseWordsPath(workspace, target.ID, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appendSearchedWords(statePath, []string{"admin", "login"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cleared, err := ctx.ClearWebDiscoveryData(workspace, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Discoveries != 1 || cleared.WordlistRuns != 1 || !cleared.CachePresent {
+		t.Fatalf("cleared summary = %+v", cleared)
+	}
+	if _, err := os.Stat(filepath.Dir(filepath.Dir(statePath))); !os.IsNotExist(err) {
+		t.Fatalf("xgobuster target cache stat error = %v, want not exist", err)
+	}
+	runs, err := ctx.ListWebWordlistRunsForTarget(workspace, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("wordlist runs = %d, want 0", len(runs))
 	}
 }
 
