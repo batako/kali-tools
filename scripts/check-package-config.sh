@@ -90,6 +90,7 @@ for required_file in \
   scripts/check-release.sh \
   .github/workflows/test.yml \
   .github/workflows/release.yml \
+  .github/workflows/repair-release.yml \
   .github/workflows/audit-releases.yml; do
   check_file "required project file" "${required_file}"
 done

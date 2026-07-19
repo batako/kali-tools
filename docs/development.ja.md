@@ -119,6 +119,7 @@ flowchart TB
     branchPush["dev / mainへpush"]
     tagPush["リリースタグをpush"]
     manualAudit["Actions画面から手動実行"]
+    manualRepair["Actions画面から修復を実行"]
 
     subgraph scripts["scripts/"]
         install["install-deb.sh"]
@@ -134,6 +135,7 @@ flowchart TB
     subgraph workflows[".github/workflows/"]
         test["test.yml"]
         release["release.yml"]
+        repair["repair-release.yml"]
         audit["audit-releases.yml"]
     end
 
@@ -164,10 +166,12 @@ flowchart TB
     developer --> branchPush
     developer --> tagPush
     developer --> manualAudit
+    developer --> manualRepair
     localTag --> tagPush
     branchPush -.-> test
     tagPush -.-> release
     manualAudit -.-> audit
+    manualRepair -.-> repair
 
     test --> checkConfig
     test --> checkVersion
@@ -176,6 +180,10 @@ flowchart TB
     buildRepo --> repoDir
     release -->|push| aptRepo
     release --> githubRelease
+    repair --> buildDeb
+    repair --> buildRepo
+    repair -->|修復| aptRepo
+    repair -->|本文を更新| githubRelease
     audit --> aptRepo
     audit --> githubRelease
 ```
@@ -248,6 +256,19 @@ release.yml
 
 公開処理は同時実行されないよう直列化されています。同じファイル名の`.deb`が既に存在し、その内容が異なる場合はAPTを更新せず失敗します。
 
+### `repair-release.yml`
+
+[`.github/workflows/repair-release.yml`](../.github/workflows/repair-release.yml)は、既存リリースのAPTパッケージまたはGitHub Release本文を修復する手動Workflowです。通常のリリースには使用しません。
+
+Actions画面で修復対象として`apt-repository`または`release-notes`を選択し、既存のタグを`xgobuster/v1.1.0`の形式で入力します。公開内容の置換を許可する確認項目も有効にする必要があります。
+
+- APT修復は既存タグのソースから`amd64`・`arm64`パッケージを再生成し、対象ファイルを置換してAPTインデックスを更新する
+- リリースノート修復は`main`の`releases/<tool>/<version>.md`を使って、既存GitHub Releaseの本文だけを更新する
+- タグ、GitHub Releaseの添付ファイル、対象外バージョンは変更しない
+- 指定タグが存在しない場合、タグが`main`に含まれない場合、VERSIONが一致しない場合は失敗する
+
+通常リリースとAPT修復は同じ排他制御を使用するため、APTリポジトリを同時に更新しません。
+
 ### `audit-releases.yml`
 
 [`.github/workflows/audit-releases.yml`](../.github/workflows/audit-releases.yml)はActions画面からのみ起動する監査Workflowです。公開状態を変更しません。
@@ -256,9 +277,10 @@ release.yml
 
 - `apt-repo`に`amd64`・`arm64`の`.deb`が存在する
 - Debianパッケージのメタデータがタグと一致する
+- `amd64`パッケージ内の実行ファイルがタグのバージョンを返す
 - APTの`Packages`にパッケージが登録されている
 - リポジトリに英語・日本語リリースノートがある
-- GitHub Releaseが公開済みで本文がある
+- GitHub Releaseが公開済みで、本文が英語リリースノートと一致する
 
 ## 新しいツールを追加するとき
 
@@ -277,4 +299,4 @@ releases/<tool>/<version>.ja.md
 
 production Goコードが`internal/ctx`、`internal/ctxapi`、`internal/ctxexec`のいずれかをimportする場合、`debian/<tool>/control`の`Depends`へ`ctx`を含める必要があります。`check-package-config.sh`はこの対応をローカルと`test.yml`の両方で検査します。
 
-ただし、ツール固有の処理をWorkflowへ追加する必要がある設計変更を行った場合は、`test.yml`、`release.yml`、`audit-releases.yml`のすべてを確認します。
+ただし、ツール固有の処理をWorkflowへ追加する必要がある設計変更を行った場合は、`test.yml`、`release.yml`、`repair-release.yml`、`audit-releases.yml`のすべてを確認します。

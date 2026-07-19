@@ -1,0 +1,209 @@
+name: repair-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Content to repair
+        required: true
+        type: choice
+        options:
+          - apt-repository
+          - release-notes
+      tag:
+        description: Existing release tag, for example xgobuster/v1.1.0
+        required: true
+        type: string
+      confirm:
+        description: Allow replacement of published content
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apt-repository-publish
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main and tags
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          path: automation
+
+      - name: Resolve and validate existing release
+        id: release
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+
+          if [ "${INPUT_CONFIRM}" != "true" ]; then
+            echo "confirm must be enabled" >&2
+            exit 1
+          fi
+
+          tag="${INPUT_TAG}"
+          if [[ ! "${tag}" =~ ^([a-z0-9][a-z0-9+.-]*)/v([0-9]+(\.[0-9]+)+)$ ]]; then
+            echo "invalid release tag: ${tag}" >&2
+            exit 1
+          fi
+          tool="${BASH_REMATCH[1]}"
+          version="${BASH_REMATCH[2]}"
+
+          if ! commit="$(git -C automation rev-parse -q --verify "refs/tags/${tag}^{commit}")"; then
+            echo "release tag does not exist: ${tag}" >&2
+            exit 1
+          fi
+          if ! git -C automation merge-base --is-ancestor "${commit}" origin/main; then
+            echo "release tag is not contained in main: ${tag}" >&2
+            exit 1
+          fi
+          if ! git -C automation cat-file -e "${tag}:cmd/${tool}/main.go" ||
+             ! git -C automation cat-file -e "${tag}:debian/${tool}/VERSION"; then
+            echo "release tag does not contain package files for ${tool}" >&2
+            exit 1
+          fi
+
+          package_version="$(git -C automation show "${tag}:debian/${tool}/VERSION" | tr -d '[:space:]')"
+          if [ "${package_version}" != "${version}" ]; then
+            echo "tag version ${version} does not match package version ${package_version}" >&2
+            exit 1
+          fi
+
+          if [ "${INPUT_TARGET}" = "release-notes" ]; then
+            if [ ! -s "automation/releases/${tool}/${version}.md" ]; then
+              echo "English release notes are missing on main: releases/${tool}/${version}.md" >&2
+              exit 1
+            fi
+          fi
+
+          {
+            echo "APPLICATION=${tool}"
+            echo "VERSION=${version}"
+            echo "RELEASE_TAG=${tag}"
+          } >> "${GITHUB_ENV}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout release source
+        if: inputs.target == 'apt-repository'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+          path: source
+
+      - name: Checkout APT repository
+        if: inputs.target == 'apt-repository'
+        uses: actions/checkout@v4
+        with:
+          ref: apt-repo
+          fetch-depth: 1
+          path: apt-repo
+
+      - name: Setup Go
+        if: inputs.target == 'apt-repository'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: source/go.mod
+
+      - name: Install Debian packaging tools
+        if: inputs.target == 'apt-repository'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev
+
+      - name: Rebuild tagged Debian packages
+        if: inputs.target == 'apt-repository'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf source/dist
+          source_date_epoch="$(git -C source show -s --format=%ct HEAD)"
+          (
+            cd source
+            SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" amd64
+            SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" arm64
+          )
+
+      - name: Validate rebuilt Debian packages
+        if: inputs.target == 'apt-repository'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for arch in amd64 arm64; do
+            deb="source/dist/${APPLICATION}_${VERSION}_${arch}.deb"
+            contents="$(mktemp)"
+            test -f "${deb}"
+            test "$(dpkg-deb -f "${deb}" Package)" = "${APPLICATION}"
+            test "$(dpkg-deb -f "${deb}" Version)" = "${VERSION}"
+            test "$(dpkg-deb -f "${deb}" Architecture)" = "${arch}"
+            dpkg-deb -c "${deb}" > "${contents}"
+            grep -q "./usr/local/bin/${APPLICATION}$" "${contents}"
+          done
+
+          extract_dir="$(mktemp -d)"
+          dpkg-deb -x "source/dist/${APPLICATION}_${VERSION}_amd64.deb" "${extract_dir}"
+          test "$("${extract_dir}/usr/local/bin/${APPLICATION}" -V)" = "${APPLICATION} ${VERSION}"
+
+      - name: Rebuild APT repository indexes
+        if: inputs.target == 'apt-repository'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p source/repo
+          git -C apt-repo archive HEAD | tar -x -C source/repo
+          (
+            cd source
+            ../automation/scripts/build-apt-repo.sh
+          )
+
+      - name: Publish repaired APT repository
+        if: inputs.target == 'apt-repository'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          find apt-repo -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R source/repo/. apt-repo/
+
+          git -C apt-repo config user.name "github-actions[bot]"
+          git -C apt-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C apt-repo add --all
+
+          if git -C apt-repo diff --cached --quiet; then
+            echo "APT repository already contains the rebuilt package."
+          else
+            git -C apt-repo commit -m "Repair ${RELEASE_TAG} APT package"
+            git -C apt-repo push origin HEAD:apt-repo
+          fi
+
+      - name: Update GitHub Release notes
+        if: inputs.target == 'release-notes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "GitHub Release does not exist: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          gh release edit "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --notes-file "automation/releases/${APPLICATION}/${VERSION}.md"
