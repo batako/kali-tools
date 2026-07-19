@@ -173,57 +173,40 @@ docker-compose exec -w /tools kali gofmt -w cmd internal
 Build and install one package locally:
 
 ```sh
-./scripts/install-deb.sh ctx
-./scripts/install-deb.sh req
-./scripts/install-deb.sh xssh
-./scripts/install-deb.sh xftp
-./scripts/install-deb.sh xsmb
-./scripts/install-deb.sh xgobuster
-./scripts/install-deb.sh xffuf
+./scripts/install-deb.sh <tool>
 ```
 
 Build a package directly for either supported architecture:
 
 ```sh
-./scripts/build-deb.sh xssh amd64
-./scripts/build-deb.sh xssh arm64
+./scripts/build-deb.sh <tool> amd64
+./scripts/build-deb.sh <tool> arm64
 ```
 
 The output is `dist/<tool>_<version>_<architecture>.deb`. `scripts/build-apt-repo.sh` copies packages from `dist/` and regenerates `Packages` and `Packages.gz` for each architecture.
 
 ## Automation
 
-`.github/workflows/test.yml` runs on every push and checks module tidiness, tests, and tool/package version consistency.
+`.github/workflows/test.yml` runs for pushes to `dev` and `main`. It checks formatting, module tidiness, tests, package structure, and every tool/package version pair. It does not publish packages.
 
-`.github/workflows/publish-apt-repo.yml` runs only for pushes to `main`. It runs the same checks, builds `amd64` and `arm64` packages for all tools, regenerates the APT repository, and force-pushes only `repo/` contents to `apt-repo`. A failed check prevents publication.
+`.github/workflows/release.yml` is the only publication workflow. A `<tool>/v<version>` tag must point to a commit contained in `main`. The workflow validates the tag and release notes, builds reproducible `amd64` and `arm64` packages from that exact commit, updates `apt-repo`, and creates the GitHub Release. An existing package version is never overwritten with different content.
 
-`.github/workflows/publish-release.yml` runs for version tags such as:
+`.github/workflows/audit-releases.yml` is manual-only. It audits every release tag against the APT repository, local English and Japanese release notes, and published GitHub Releases.
 
-```text
-ctx/v<version>
-xssh/v<version>
-xscp/v<version>
-xftp/v<version>
-xgobuster/v<version>
-xsmb/v<version>
-req/v<version>
-xwebshell/v<version>
-```
-
-It verifies `releases/<tool>/<version>.md`, collects the matching packages from `apt-repo`, and creates the GitHub Release. The Japanese notes use the corresponding `.ja.md` file.
-
-For local checks:
+After validating a package with `install-deb.sh`, use this release flow:
 
 ```sh
-./scripts/check-version.sh xssh
-./scripts/check-version.sh xscp
-./scripts/check-version.sh xgobuster
-./scripts/check-release.sh xssh
-./scripts/check-published.sh xssh
+./scripts/check-release.sh <tool>
+git push origin dev
+
+# After merging dev into main and pushing main:
+git switch main
+./scripts/tag-release.sh <tool>
+git push origin <tool>/v<version>
 ```
 
-`check-release.sh` performs the heavier local Debian/APT installation checks. `check-published.sh` verifies the public APT metadata and package files after publication.
+`check-release.sh` is non-destructive: it runs tests and builds both architectures but does not install or remove packages. After publication, `check-published.sh <tool>` verifies the public APT metadata and package files. See [`docs/development.ja.md`](docs/development.ja.md) for the complete development flow and script responsibilities.
 
 ## Documentation
 
-See `docs/` for detailed ctx architecture, database, API, and add-on documentation. Run each command with `--help` for its current CLI syntax.
+See `docs/` for the development workflow, ctx architecture, database, API, and add-on documentation. Run each command with `--help` for its current CLI syntax.

@@ -2,7 +2,12 @@
 
 set -u
 
-PACKAGE_NAME="${1:-ctx}"
+if [ "$#" -ne 1 ]; then
+  echo "usage: $0 <tool>" >&2
+  exit 1
+fi
+
+PACKAGE_NAME="$1"
 VERSION_FILE="debian/${PACKAGE_NAME}/VERSION"
 REPOSITORY_URL="${APT_REPOSITORY_URL:-https://offsec.batako.net}"
 TMP_DIR="$(mktemp -d)"

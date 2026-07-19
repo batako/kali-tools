@@ -1,0 +1,204 @@
+name: audit-releases
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apt-repository:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source and tags
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          path: source
+
+      - name: Checkout APT repository
+        uses: actions/checkout@v4
+        with:
+          ref: apt-repo
+          fetch-depth: 1
+          path: apt-repo
+
+      - name: Check tagged packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tags=()
+          while IFS= read -r tag; do
+            tags+=("${tag}")
+          done < <(git -C source tag --list '*/v*' --sort=version:refname)
+
+          if [ "${#tags[@]}" -eq 0 ]; then
+            echo "No release tags found." >&2
+            exit 1
+          fi
+
+          check_index() {
+            local index_file="$1"
+            local package="$2"
+            local version="$3"
+            local architecture="$4"
+            local filename="$5"
+
+            awk \
+              -v package="${package}" \
+              -v version="${version}" \
+              -v architecture="${architecture}" \
+              -v filename="${filename}" '
+                BEGIN { RS = ""; FS = "\n"; found = 0 }
+                {
+                  package_match = 0
+                  version_match = 0
+                  architecture_match = 0
+                  filename_match = 0
+
+                  for (i = 1; i <= NF; i++) {
+                    if ($i == "Package: " package) package_match = 1
+                    if ($i == "Version: " version) version_match = 1
+                    if ($i == "Architecture: " architecture) architecture_match = 1
+                    if ($i == "Filename: " filename) filename_match = 1
+                  }
+
+                  if (package_match && version_match && architecture_match && filename_match) {
+                    found = 1
+                  }
+                }
+                END { exit(found ? 0 : 1) }
+              ' "${index_file}"
+          }
+
+          failures=0
+          checked=0
+
+          for tag in "${tags[@]}"; do
+            package="${tag%%/v*}"
+            version="${tag#*/v}"
+            prefix="${package:0:1}"
+
+            for architecture in amd64 arm64; do
+              deb_file="${package}_${version}_${architecture}.deb"
+              relative_deb="pool/main/${prefix}/${package}/${deb_file}"
+              deb_path="apt-repo/${relative_deb}"
+              index_file="apt-repo/dists/stable/main/binary-${architecture}/Packages"
+
+              if [ ! -f "${deb_path}" ]; then
+                echo "::error title=Missing Debian package::${tag}: ${relative_deb}"
+                failures=$((failures + 1))
+                continue
+              fi
+
+              if [ "$(dpkg-deb -f "${deb_path}" Package)" != "${package}" ] ||
+                 [ "$(dpkg-deb -f "${deb_path}" Version)" != "${version}" ] ||
+                 [ "$(dpkg-deb -f "${deb_path}" Architecture)" != "${architecture}" ]; then
+                echo "::error title=Invalid Debian metadata::${relative_deb}"
+                failures=$((failures + 1))
+                continue
+              fi
+
+              if [ ! -f "${index_file}" ] ||
+                 ! check_index "${index_file}" "${package}" "${version}" "${architecture}" "${relative_deb}"; then
+                echo "::error title=Package missing from APT index::${tag} (${architecture})"
+                failures=$((failures + 1))
+                continue
+              fi
+
+              echo "OK   ${tag} (${architecture})"
+              checked=$((checked + 1))
+            done
+          done
+
+          {
+            echo "## APT repository audit"
+            echo
+            echo "- Release tags: ${#tags[@]}"
+            echo "- Valid package files: ${checked}"
+            echo "- Failures: ${failures}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          test "${failures}" -eq 0
+
+  github-releases:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source and tags
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check release notes and GitHub Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          tags=()
+          while IFS= read -r tag; do
+            tags+=("${tag}")
+          done < <(git tag --list '*/v*' --sort=version:refname)
+
+          if [ "${#tags[@]}" -eq 0 ]; then
+            echo "No release tags found." >&2
+            exit 1
+          fi
+
+          failures=0
+          checked_files=0
+          checked_releases=0
+
+          for tag in "${tags[@]}"; do
+            application="${tag%%/v*}"
+            version="${tag#*/v}"
+
+            for suffix in md ja.md; do
+              release_notes="releases/${application}/${version}.${suffix}"
+              if [ ! -s "${release_notes}" ]; then
+                echo "::error file=${release_notes},title=Missing release notes::${tag}: ${release_notes} is missing or empty"
+                failures=$((failures + 1))
+              else
+                echo "OK   ${tag}: ${release_notes}"
+                checked_files=$((checked_files + 1))
+              fi
+            done
+
+            if ! release_json="$(
+              gh release view "${tag}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --json body,isDraft,tagName 2>&1
+            )"; then
+              echo "::error title=Missing GitHub Release::${tag}: ${release_json}"
+              failures=$((failures + 1))
+              continue
+            fi
+
+            if [ "$(jq -r '.tagName' <<<"${release_json}")" != "${tag}" ] ||
+               [ "$(jq -r '.isDraft' <<<"${release_json}")" = "true" ] ||
+               ! jq -e '(.body // "") | test("\\S")' <<<"${release_json}" >/dev/null; then
+              echo "::error title=Invalid GitHub Release::${tag} is mismatched, draft, or empty"
+              failures=$((failures + 1))
+              continue
+            fi
+
+            echo "OK   ${tag}: GitHub Release"
+            checked_releases=$((checked_releases + 1))
+          done
+
+          {
+            echo "## GitHub Release audit"
+            echo
+            echo "- Release tags: ${#tags[@]}"
+            echo "- Valid release note files: ${checked_files}"
+            echo "- Valid GitHub Releases: ${checked_releases}"
+            echo "- Failures: ${failures}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          test "${failures}" -eq 0

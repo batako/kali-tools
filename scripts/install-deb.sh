@@ -3,20 +3,24 @@
 set -eu
 
 if [ "$#" -ne 1 ]; then
-  echo "usage: $0 <req|ctx|xssh|xscp|xftp|xsmb|xgobuster|xffuf|xwebshell|xhydra>" >&2
+  echo "usage: $0 <tool>" >&2
   exit 1
 fi
 
 PACKAGE_NAME="$1"
 case "${PACKAGE_NAME}" in
-  req|ctx|xssh|xscp|xftp|xsmb|xgobuster|xffuf|xwebshell|xhydra)
-    ;;
-  *)
-    echo "unsupported package: ${PACKAGE_NAME}" >&2
-    echo "usage: $0 <req|ctx|xssh|xscp|xftp|xsmb|xgobuster|xffuf|xwebshell|xhydra>" >&2
+  *[!a-z0-9+.-]* | "")
+    echo "invalid package name: ${PACKAGE_NAME}" >&2
     exit 1
     ;;
 esac
+
+if [ ! -d "cmd/${PACKAGE_NAME}" ] ||
+  [ ! -f "debian/${PACKAGE_NAME}/VERSION" ] ||
+  [ ! -f "debian/${PACKAGE_NAME}/control" ]; then
+  echo "missing package configuration for ${PACKAGE_NAME}" >&2
+  exit 1
+fi
 
 VERSION="$(sed -n '1{s/[[:space:]]//g;p;q;}' "debian/${PACKAGE_NAME}/VERSION")"
 ARCH="$(dpkg --print-architecture)"

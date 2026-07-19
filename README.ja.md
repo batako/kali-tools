@@ -173,57 +173,42 @@ docker-compose exec -w /tools kali gofmt -w cmd internal
 ローカルでパッケージをビルドしてインストールする場合:
 
 ```sh
-./scripts/install-deb.sh ctx
-./scripts/install-deb.sh req
-./scripts/install-deb.sh xssh
-./scripts/install-deb.sh xftp
-./scripts/install-deb.sh xsmb
-./scripts/install-deb.sh xgobuster
-./scripts/install-deb.sh xffuf
+./scripts/install-deb.sh <tool>
 ```
 
 対応アーキテクチャを指定したDebianパッケージの生成:
 
 ```sh
-./scripts/build-deb.sh xssh amd64
-./scripts/build-deb.sh xssh arm64
+./scripts/build-deb.sh <tool> amd64
+./scripts/build-deb.sh <tool> arm64
 ```
 
 生成物は `dist/<tool>_<version>_<architecture>.deb` です。`scripts/build-apt-repo.sh` は `dist/` のパッケージを `repo/pool/` へコピーし、アーキテクチャごとの `Packages` と `Packages.gz` を再生成します。
 
 ## 自動化
 
-`.github/workflows/test.yml` はpushごとに、Go moduleの整合性、テスト、ツールとパッケージのバージョン整合性を確認します。
+`.github/workflows/test.yml` は`dev`と`main`へのpushで実行します。Goのフォーマット、moduleの整合性、テスト、パッケージ構造、全ツールのバージョン整合性を確認し、パッケージは公開しません。
 
-`.github/workflows/publish-apt-repo.yml` は `main` へのpushでのみ実行します。テスト後、全ツールの `amd64` と `arm64` パッケージを生成し、APTリポジトリを再生成して、`repo/` の内容だけを `apt-repo` へforce pushします。チェックに失敗した場合は公開しません。
+`.github/workflows/release.yml` が唯一の公開Workflowです。`<tool>/v<version>`タグは`main`に含まれるコミットを指す必要があります。タグとリリースノートを検証し、そのコミットから再現可能な`amd64`・`arm64`パッケージを生成して、APTリポジトリとGitHub Releaseを公開します。公開済みの同一バージョンを異なる内容で上書きすることはありません。
 
-`.github/workflows/publish-release.yml` は次の形式のタグで実行します。
+`.github/workflows/audit-releases.yml` は手動実行専用です。全タグについて、APTリポジトリ、英語・日本語のリリースノート、GitHub Releaseを監査します。
 
-```text
-ctx/v<version>
-xssh/v<version>
-xscp/v<version>
-xftp/v<version>
-xgobuster/v<version>
-xsmb/v<version>
-req/v<version>
-xwebshell/v<version>
-```
+## リリース手順
 
-`releases/<tool>/<version>.md` の存在を確認し、`apt-repo` の対応パッケージを収集してGitHub Releaseを作成します。日本語版は対応する `.ja.md` です。
-
-## ローカル検証
+`install-deb.sh`による動作確認が完了した後は、次の順で進めます。
 
 ```sh
-./scripts/check-version.sh xssh
-./scripts/check-version.sh xscp
-./scripts/check-version.sh xgobuster
-./scripts/check-release.sh xssh
-./scripts/check-published.sh xssh
+./scripts/check-release.sh <tool>
+git push origin dev
+
+# devをmainへマージしてmainをpushした後
+git switch main
+./scripts/tag-release.sh <tool>
+git push origin <tool>/v<version>
 ```
 
-`check-release.sh` はローカルKaliへのDebian/APTインストールを含む重い検証を行います。`check-published.sh` は公開後のAPTメタデータとパッケージを確認します。
+`check-release.sh`は非破壊です。テストと両アーキテクチャのビルドを行いますが、パッケージのインストールや削除は行いません。公開後は`check-published.sh <tool>`でAPTメタデータとパッケージを確認します。開発フローと各スクリプトの役割は[`docs/development.ja.md`](docs/development.ja.md)を参照してください。
 
 ## ドキュメント
 
-ctxの詳細仕様、アーキテクチャ、データベース、API、アドオンの説明は `docs/` を参照してください。CLIの最新の構文は各コマンドの `--help` で確認します。
+開発フロー、ctxの詳細仕様、アーキテクチャ、データベース、API、アドオンの説明は `docs/` を参照してください。CLIの最新の構文は各コマンドの `--help` で確認します。

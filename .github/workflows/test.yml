@@ -2,6 +2,9 @@ name: test
 
 on:
   push:
+    branches:
+      - dev
+      - main
 
 jobs:
   go-test:
@@ -17,27 +20,19 @@ jobs:
           go-version-file: go.mod
 
       - name: Check go mod tidy
-        run: |
-          go mod tidy
-          git diff --exit-code
+        run: go mod tidy -diff
+
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l cmd internal)"
 
       - name: Run tests
         run: go test ./...
 
-      - name: Check ctx version
-        run: ./scripts/check-version.sh ctx
+      - name: Check package configuration
+        run: ./scripts/check-package-config.sh
 
-      - name: Check xssh version
-        run: ./scripts/check-version.sh xssh
-
-      - name: Check xscp version
-        run: ./scripts/check-version.sh xscp
-
-      - name: Check xftp version
-        run: ./scripts/check-version.sh xftp
-
-      - name: Check xsmb version
-        run: ./scripts/check-version.sh xsmb
-
-      - name: Check xgobuster version
-        run: ./scripts/check-version.sh xgobuster
+      - name: Check package versions
+        run: |
+          for command_dir in cmd/*; do
+            ./scripts/check-version.sh "$(basename "${command_dir}")"
+          done

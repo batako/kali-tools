@@ -2,30 +2,14 @@
 
 set -eu
 
-PACKAGE_NAME="req"
-
-if [ "$#" -gt 0 ]; then
-  case "$1" in
-    req|ctx|xssh|xscp|xftp|xsmb|xgobuster|xffuf|xwebshell|xhydra)
-      PACKAGE_NAME="$1"
-      shift
-      ;;
-  esac
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+  echo "usage: $0 <tool> [amd64|arm64]" >&2
+  exit 1
 fi
 
-ARCH="${1:-$(dpkg --print-architecture)}"
-VERSION="$(cat "debian/${PACKAGE_NAME}/VERSION")"
+PACKAGE_NAME="$1"
+ARCH="${2:-$(dpkg --print-architecture)}"
 GOARCH=""
-OUTPUT_DIR="dist"
-OUTPUT_DEB="${OUTPUT_DIR}/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
-BUILD_ROOT="$(mktemp -d)"
-PKG_ROOT="${BUILD_ROOT}/${PACKAGE_NAME}_${VERSION}_${ARCH}"
-
-cleanup() {
-  rm -rf "${BUILD_ROOT}"
-}
-
-trap cleanup EXIT INT TERM
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -51,10 +35,46 @@ case "${ARCH}" in
     ;;
 esac
 
+case "${PACKAGE_NAME}" in
+  *[!a-z0-9+.-]* | "")
+    echo "invalid package name: ${PACKAGE_NAME}" >&2
+    exit 1
+    ;;
+esac
+
 if [ ! -d "cmd/${PACKAGE_NAME}" ]; then
   echo "missing command entrypoint: cmd/${PACKAGE_NAME}" >&2
   exit 1
 fi
+
+if [ ! -f "debian/${PACKAGE_NAME}/VERSION" ]; then
+  echo "missing package version: debian/${PACKAGE_NAME}/VERSION" >&2
+  exit 1
+fi
+
+if [ ! -f "debian/${PACKAGE_NAME}/control" ]; then
+  echo "missing package control: debian/${PACKAGE_NAME}/control" >&2
+  exit 1
+fi
+
+VERSION="$(cat "debian/${PACKAGE_NAME}/VERSION")"
+case "${VERSION}" in
+  *[!0-9.]* | "" | .* | *.)
+    echo "invalid package version: ${VERSION}" >&2
+    exit 1
+    ;;
+esac
+
+OUTPUT_DIR="dist"
+OUTPUT_DEB="${OUTPUT_DIR}/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
+BUILD_ROOT="$(mktemp -d)"
+PKG_ROOT="${BUILD_ROOT}/${PACKAGE_NAME}_${VERSION}_${ARCH}"
+
+cleanup() {
+  rm -rf "${BUILD_ROOT}"
+}
+
+trap cleanup EXIT INT TERM
 
 mkdir -p "${PKG_ROOT}/DEBIAN"
 mkdir -p "${PKG_ROOT}/usr/local/bin"
@@ -76,6 +96,8 @@ build_binary() {
   binary_name="$1"
   package_path="$2"
   CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build \
+    -trimpath \
+    -buildvcs=false \
     -ldflags "-X req/internal/${PACKAGE_NAME}.Version=${VERSION}" \
     -o "${PKG_ROOT}/usr/local/bin/${binary_name}" \
     "${package_path}"

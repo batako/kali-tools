@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-var Version = "dev"
+var Version = "1.0.0"
 
 const usageText = "usage: req [-S|--https] [-k|--no-tls-validation] [--tls-verify] <REQ_FILE>\n\noptions:\n  -S, --https  force https when the request file does not imply a scheme\n  -k, --no-tls-validation  disable TLS certificate validation\n  --tls-verify  verify TLS certificates for this run\n  -h, --help   show this help\n  -V, --version  show version"
 

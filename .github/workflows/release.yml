@@ -1,0 +1,154 @@
+name: release
+
+on:
+  push:
+    tags:
+      - '**/v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apt-repository-publish
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Debian packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev
+
+      - name: Resolve and validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          application="${tag%%/v*}"
+          version="${tag#*/v}"
+
+          if [ "${tag}" != "${application}/v${version}" ] ||
+             [[ ! "${application}" =~ ^[a-z0-9][a-z0-9+.-]*$ ]] ||
+             [[ ! "${version}" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+            echo "invalid release tag: ${tag}" >&2
+            exit 1
+          fi
+
+          if [ ! -d "cmd/${application}" ] ||
+             [ ! -f "debian/${application}/VERSION" ]; then
+            echo "unknown application in release tag: ${application}" >&2
+            exit 1
+          fi
+
+          package_version="$(sed -n '1{s/[[:space:]]//g;p;q;}' "debian/${application}/VERSION")"
+          if [ "${package_version}" != "${version}" ]; then
+            echo "tag version ${version} does not match package version ${package_version}" >&2
+            exit 1
+          fi
+
+          git fetch origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "release tag must point to a commit contained in main" >&2
+            exit 1
+          fi
+
+          source_date_epoch="$(git show -s --format=%ct "${GITHUB_SHA}")"
+          {
+            echo "APPLICATION=${application}"
+            echo "VERSION=${version}"
+            echo "RELEASE_TAG=${tag}"
+            echo "SOURCE_DATE_EPOCH=${source_date_epoch}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Run release checks
+        run: ./scripts/check-release.sh "${APPLICATION}"
+
+      - name: Ensure GitHub Release does not exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "GitHub Release already exists: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Restore existing APT repository
+        run: |
+          mkdir -p repo
+          if git ls-remote --exit-code --heads origin apt-repo >/dev/null 2>&1; then
+            restore_dir="$(mktemp -d)"
+            git fetch origin apt-repo:refs/remotes/origin/apt-repo
+            git archive origin/apt-repo | tar -x -C "${restore_dir}"
+            cp -R "${restore_dir}/." repo/
+          fi
+
+      - name: Protect published package versions
+        run: |
+          set -eu
+
+          prefix="$(printf '%s' "${APPLICATION}" | cut -c 1)"
+          package_dir="repo/pool/main/${prefix}/${APPLICATION}"
+
+          for arch in amd64 arm64; do
+            deb_file="${APPLICATION}_${VERSION}_${arch}.deb"
+            built_deb="dist/${deb_file}"
+            published_deb="${package_dir}/${deb_file}"
+
+            if [ -f "${published_deb}" ] && ! cmp -s "${built_deb}" "${published_deb}"; then
+              echo "refusing to overwrite published package with different content: ${published_deb}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Build APT repository
+        run: ./scripts/build-apt-repo.sh
+
+      - name: Publish APT repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          publish_dir="$(mktemp -d)"
+          cp -R repo/. "${publish_dir}/"
+          cd "${publish_dir}"
+          git init -b apt-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Publish ${RELEASE_TAG}"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin HEAD:apt-repo
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+
+          assets_dir="$(mktemp -d)"
+          cp "dist/${APPLICATION}_${VERSION}_amd64.deb" "${assets_dir}/"
+          cp "dist/${APPLICATION}_${VERSION}_arm64.deb" "${assets_dir}/"
+          (
+            cd "${assets_dir}"
+            sha256sum *.deb > checksums.txt
+          )
+
+          gh release create "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${APPLICATION} v${VERSION}" \
+            --notes-file "releases/${APPLICATION}/${VERSION}.md" \
+            "${assets_dir}"/*.deb \
+            "${assets_dir}/checksums.txt"
