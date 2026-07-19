@@ -29,7 +29,7 @@ The database schema version is managed independently from the application versio
 
 The application checks the current schema version when opening the database and automatically applies any required migrations before normal operation.
 
-The current source tree has migration version `3`. Do not infer the schema version from the ctx application version. Query the database itself:
+Do not infer the schema version from the ctx application version. Query the database itself:
 
 ```sh
 DB="${CTX_HOME:-$HOME/.ctx}/db.sqlite"

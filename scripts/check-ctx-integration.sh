@@ -40,8 +40,6 @@ for path in \
   docs/api.ja.md \
   docs/integration.md \
   docs/integration.ja.md \
-  docs/integration-inventory.md \
-  docs/integration-inventory.ja.md \
   docs/registration.md \
   docs/registration.ja.md \
   docs/database.md \

@@ -4,8 +4,6 @@
 
 This guide explains how to choose an integration level. It does not require a specific programming language, SDK, or add-on framework.
 
-The current implementation dependencies of the bundled commands are listed separately in the [ctx Integration Inventory](integration-inventory.md).
-
 ## Choose an Integration Level
 
 | Need | Integration | Use when |

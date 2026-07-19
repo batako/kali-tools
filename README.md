@@ -12,8 +12,8 @@ This monorepo manages self-made CLI tools for Kali Linux. Each tool has an indep
 - `xsmb`: Discover SMB shares and connect to a selected share using ctx credentials.
 - `xgobuster`: Run Gobuster against the current target and save web discoveries to ctx.
 - `xffuf`: Enumerate HTTP virtual hosts with ffuf and ctx calibration.
-
-`xssh`, `xscp`, `xftp`, and `xsmb` are ctx add-ons. They use the ctx JSON API and do not read the ctx SQLite database directly.
+- `xhydra`: Assist Hydra credential discovery and save successful results to ctx.
+- `xwebshell`: Select and export Kali Linux web shell templates.
 
 ## Installation
 
@@ -36,9 +36,9 @@ sudo apt install xftp
 sudo apt install xsmb
 sudo apt install xgobuster
 sudo apt install xffuf
+sudo apt install xhydra
+sudo apt install xwebshell
 ```
-
-Dependencies are declared by each Debian package. For example, `xssh` and `xscp` use `openssh-client` and `sshpass`, `xftp` uses `lftp`, `xsmb` uses `smbclient`, `xgobuster` uses `gobuster` and `wordlists`, and `xffuf` uses `ffuf` and `seclists`.
 
 ## Usage
 
@@ -48,11 +48,9 @@ Replay a raw HTTP request. The request method, path, host, headers, and body are
 
 ```sh
 req login.req
-req -S login.req
-req -k login.req
 ```
 
-`-S`/`--https` forces HTTPS when the request file does not determine a scheme. Use `-k`/`--no-tls-validation` for test targets with expired or self-signed certificates; `--tls-verify` explicitly keeps validation enabled. `-h`/`--help` and `-V`/`--version` are also available. `Accept-Encoding` and `Content-Length` from the request file are not sent; Go's `net/http` handles gzip response decompression. `req` is distributed as the standalone `req` Debian package.
+Run `req --help` for HTTPS and TLS validation options.
 
 ### ctx
 
@@ -68,19 +66,7 @@ ctx service ls
 ctx log
 ```
 
-Useful commands include `ctx workspace ls`, `ctx workspace rm`, `ctx note`, `ctx prompt`, `ctx reset`, and `ctx x <command> [args...]`. Run `ctx --help` for the complete command reference.
-
-Discovery integrations use `/usr/share/wordlists` automatically. `xgobuster` selects directory-discovery lists from the installed `dirb`, `dirbuster`, and `seclists` trees. Password, parameter, and fuzzing lists are excluded from normal directory scans.
-
-```sh
-sudo apt install wordlists seclists dirb dirbuster ffuf
-ctx config set web.directory.max-requests 1000000
-ctx config set web.file.max-requests 200000
-ctx config set web.vhost.max-requests 10000
-ctx config set web.vhost.calibration-samples 10
-ctx config set web.vhost.calibration-confidence 90
-ctx config set web.tls.verify false
-```
+Run `ctx --help` and `ctx config ls` for the complete command and configuration references.
 
 Install shell integration when using the `x` helpers:
 
@@ -90,9 +76,9 @@ ctx completion bash
 ctx init-shell
 ```
 
-### Add-ons
+### ctx-integrated tools
 
-Each add-on accepts an optional credential ID or username. With multiple credentials or service ports, it displays a selection. When no matching credential is registered, the underlying client is used with the supplied username or without a username.
+Common connection, transfer, and discovery operations:
 
 ```sh
 xssh
@@ -102,33 +88,14 @@ xscp download /tmp/remote.txt ./local.txt
 xftp
 xftp ftpuser
 xsmb
-xsmb smbuser
+xgo
+xgo dns
+xffuf vhost --suggest
+xhydra --help
+xwebshell ls
 ```
 
-The add-ons save connection start/end times, status, exit code, sanitized command, stdout, and stderr to ctx logs. Review them with `xlog`. Passwords are not stored in the command log.
-
-`xsmb` lists disk shares, excludes `IPC$`, and lets you select the share before connecting. `xssh` defaults to port 22, `xftp` to port 21, and `xsmb` to port 445 when ctx has no matching service record.
-
-`xscp upload` copies a local file to the target and `xscp download` copies a remote file locally. Both commands use the same SSH credential and service selection as `xssh`.
-
-`xgobuster` selects a web service on the current target and runs `gobuster dir`. When `xhost` has manually registered hostnames for the target, one hostname is used automatically; if multiple hostnames exist, `xgobuster` prompts for a hostname or the target IP. Use `--host <hostname>` for a deterministic registered-host selection, `--ip` to force the target IP, or `-u`/`--url` to provide a complete URL. It automatically selects directory wordlists under `/usr/share/wordlists` and continues while the configured request limit allows. `web.directory.max-requests` defaults to 1,000,000 and `web.file.max-requests` defaults to 200,000. File requests include the selected extensions in the count. `web-quick`, `web-standard`, and `web-deep` are search intensities shared by directory and file searches. Use `--next` to move to the next intensity, `--force` to rerun a completed wordlist, and `--status` to show the current search state. A `--preset` or `-x` option switches to file search; explicit `-x` extensions override the preset. Gobuster checks the extensionless path together with each extension, so extensionless paths are shared with directory-search history and are not requested twice. An explicit `-w` or `--wordlist` performs a one-off search. Parsed discoveries are saved for later review through ctx logs and discovery data.
-
-Use `-c` or `--cookies` to send cookies with Gobuster requests. Use `--exclude-length <size>` to ignore common response bodies such as wildcard 403 pages. Use `xgo --sitemap` to display the deduplicated paths collected for the current target, grouped by origin and sorted by URL. HTTP status codes are colorized in terminal output. For test targets with expired or self-signed certificates, pass `-k` or `--no-tls-validation` to disable TLS certificate validation.
-
-`xgo` is a short alias for `xgobuster`.
-
-`xffuf vhost` enumerates HTTP virtual hosts with ffuf. It selects the HTTP service and domain from ctx, calibrates against random hostnames, and proposes a stable response filter. A normal run applies the filter automatically when the configured confidence threshold is met. After `xffuf vhost --suggest` displays its calibration statistics, it asks whether to test the proposed filter against a real wordlist. The optional trial does not create command logs, cache progress, or register hosts. The same trial can be started directly with `xffuf vhost --trial -fw 125`. Manual ffuf filters such as `-fw`, `-fs`, `-fl`, `-fc`, and `-fr` are supported. Only a completed normal run registers results in `xhost` and updates the wordlist cache. Results that are unusually numerous are kept out of automatic registration and cache updates.
-
-For DNS subdomain enumeration, use `xgobuster dns`. If one hostname is registered with `xhost` for the current target it is selected automatically; multiple hostnames are presented for selection. Use `-d` or `--domain` to select a domain without prompting, and `-w` or `--wordlist` for a one-off wordlist. DNS searches use a target-and-domain-specific cache, `--status` shows its progress, `--clear-cache` clears only that DNS cache, `--next` moves to the next wordlist, and `--force` reruns the first one. The default DNS query limit is controlled by `dns.max-queries` and is 10,000. Additional Gobuster DNS options can be passed after the xgobuster options.
-
-The `xgobuster` package installs bash and zsh completion files for both commands. Start a new shell, or reload your shell completion system after installation.
-
-Limit status or automatic escalation to one profile when needed:
-
-```sh
-xgobuster --status --profile web-quick
-xgobuster --next --profile web-standard
-```
+These tools use ctx targets, services, credentials, and other saved context as needed. Run each command with `--help` for its available operations and options.
 
 ## Repository Layout
 
@@ -176,37 +143,11 @@ Build and install one package locally:
 ./scripts/install-deb.sh <tool>
 ```
 
-Build a package directly for either supported architecture:
-
-```sh
-./scripts/build-deb.sh <tool> amd64
-./scripts/build-deb.sh <tool> arm64
-```
-
-The output is `dist/<tool>_<version>_<architecture>.deb`. `scripts/build-apt-repo.sh` copies packages from `dist/` and regenerates `Packages` and `Packages.gz` for each architecture.
-
-## Automation
-
-`.github/workflows/test.yml` runs for pushes to `dev` and `main`. It checks formatting, module tidiness, tests, package structure, and every tool/package version pair. It does not publish packages.
-
-`.github/workflows/release.yml` is the only publication workflow. A `<tool>/v<version>` tag must point to a commit contained in `main`. The workflow validates the tag and release notes, builds reproducible `amd64` and `arm64` packages from that exact commit, updates `apt-repo`, and creates the GitHub Release. An existing package version is never overwritten with different content.
-
-`.github/workflows/audit-releases.yml` is manual-only. It audits every release tag against the APT repository, local English and Japanese release notes, and published GitHub Releases.
-
-After validating a package with `install-deb.sh`, use this release flow:
-
-```sh
-./scripts/check-release.sh <tool>
-git push origin dev
-
-# After merging dev into main and pushing main:
-git switch main
-./scripts/tag-release.sh <tool>
-git push origin <tool>/v<version>
-```
-
-`check-release.sh` is non-destructive: it runs tests and builds both architectures but does not install or remove packages. After publication, `check-published.sh <tool>` verifies the public APT metadata and package files. See [`docs/development.ja.md`](docs/development.ja.md) for the complete development flow and script responsibilities.
-
 ## Documentation
 
-See the [ctx integration guide](docs/integration.md) when connecting custom commands to ctx. The remaining documents in `docs/` cover the development workflow, database, JSON API, and add-ons. Run each command with `--help` for its current CLI syntax.
+- CLI syntax: run each command with `--help`.
+- Development, validation, and release flow: [Development Guide](docs/development.ja.md)
+- Custom command integration: [ctx Integration Guide](docs/integration.md)
+- JSON API: [ctx JSON API](docs/api.md)
+- Database: [Database Design](docs/database.md)
+- Registration commands: [ctx Registration Commands](docs/registration.md)
