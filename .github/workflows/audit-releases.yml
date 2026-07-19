@@ -12,14 +12,14 @@ jobs:
 
     steps:
       - name: Checkout source and tags
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
           path: source
 
       - name: Checkout APT repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: apt-repo
           fetch-depth: 1
@@ -141,7 +141,7 @@ jobs:
 
     steps:
       - name: Checkout source and tags
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0

@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout main and tags
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
@@ -98,7 +98,7 @@ jobs:
 
       - name: Checkout release source
         if: inputs.target == 'apt-repository'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.release.outputs.tag }}
           fetch-depth: 0
@@ -106,7 +106,7 @@ jobs:
 
       - name: Checkout APT repository
         if: inputs.target == 'apt-repository'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: apt-repo
           fetch-depth: 1
@@ -114,7 +114,7 @@ jobs:
 
       - name: Setup Go
         if: inputs.target == 'apt-repository'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: source/go.mod
 
