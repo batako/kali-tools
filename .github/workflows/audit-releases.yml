@@ -200,8 +200,8 @@ jobs:
               continue
             fi
 
-            expected_body="$(cat "releases/${application}/${version}.md")"
-            actual_body="$(jq -r '.body // ""' <<<"${release_json}")"
+            expected_body="$(sed 's/\r$//' "releases/${application}/${version}.md")"
+            actual_body="$(jq -r '.body // ""' <<<"${release_json}" | sed 's/\r$//')"
             if [ "${actual_body}" != "${expected_body}" ]; then
               echo "::error title=GitHub Release notes mismatch::${tag} does not match releases/${application}/${version}.md"
               failures=$((failures + 1))
