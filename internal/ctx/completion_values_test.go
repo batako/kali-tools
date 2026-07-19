@@ -134,6 +134,35 @@ func TestCompletionValuesReturnAllWorkspaceIDs(t *testing.T) {
 	}
 }
 
+func TestCompletionValuesReturnProjectRoots(t *testing.T) {
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	if _, err := AddProjectRoot(t.TempDir(), "thm"); err != nil {
+		t.Fatalf("AddProjectRoot(thm) error = %v", err)
+	}
+	if _, err := AddProjectRoot(t.TempDir(), "hackthebox"); err != nil {
+		t.Fatalf("AddProjectRoot(hackthebox) error = %v", err)
+	}
+	if _, err := UseProjectRoot("thm"); err != nil {
+		t.Fatalf("UseProjectRoot(thm) error = %v", err)
+	}
+
+	values, err := completionValues("project-root")
+	if err != nil {
+		t.Fatalf("completionValues(project-root) error = %v", err)
+	}
+	if !reflect.DeepEqual(values, []string{"hackthebox", "thm"}) {
+		t.Fatalf("completionValues(project-root) = %v", values)
+	}
+	descriptions, err := completionDescriptions("project-root")
+	if err != nil {
+		t.Fatalf("completionDescriptions(project-root) error = %v", err)
+	}
+	joined := strings.Join(descriptions, "\n")
+	if len(descriptions) != 2 || !strings.Contains(joined, "thm:") || !strings.Contains(joined, "(active)") {
+		t.Fatalf("completionDescriptions(project-root) = %v", descriptions)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

@@ -2,10 +2,33 @@ package ctx
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestLoadConfigMigratesLegacyProjectRoot(t *testing.T) {
+	ctxHome := filepath.Join(t.TempDir(), ".ctx")
+	t.Setenv("CTX_HOME", ctxHome)
+	legacyRoot := filepath.Join(t.TempDir(), "projects")
+	if err := os.MkdirAll(ctxHome, 0755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	content := "[project]\nroot = " + strconv.Quote(legacyRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(ctxHome, "config.toml"), []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile(config.toml) error = %v", err)
+	}
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if config.ActiveProjectRoot != "default" || config.ProjectRoot != legacyRoot || config.ProjectRoots["default"] != legacyRoot {
+		t.Fatalf("LoadConfig() project roots = active %q, root %q, roots %v", config.ActiveProjectRoot, config.ProjectRoot, config.ProjectRoots)
+	}
+}
 
 func TestConfigValueProjectRoot(t *testing.T) {
 	base := t.TempDir()

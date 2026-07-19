@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	Version = "1.4.0"
+	Version = "1.5.0"
 
 	hostsFilePath                = "/etc/hosts"
 	syncHostsFileFunc            = SyncHostsFile
@@ -139,9 +139,13 @@ configured root. Workspaces remain the core feature and can still be initialized
 directly in any directory with ctx workspace init.
 
 commands:
-  root [path]       show or set the projects root
-  new <name>        create a project and initialize a workspace
-  ls                list ctx projects under the configured root
+  root [path]             show or update the active project root
+  root add <path> [--name <name>] register a named project root
+  root use <name>         switch the active project root
+  root ls                 list registered project roots
+  root rm <name>          unregister an inactive project root
+  new <name>              create a project and initialize a workspace
+  ls                      list ctx projects under the configured root
   rm <id|name> [-y|--yes] remove a project directory
 
 options:
@@ -1169,28 +1173,7 @@ func runProject(args []string, stdout io.Writer) error {
 
 	switch args[0] {
 	case "root":
-		switch len(args) {
-		case 1:
-			root, err := GetProjectRoot()
-			if err != nil {
-				return err
-			}
-			if root == "" {
-				_, err = fmt.Fprintln(stdout, projectRootUnsetMessage)
-				return err
-			}
-			_, err = fmt.Fprintln(stdout, root)
-			return err
-		case 2:
-			root, err := SetProjectRoot(args[1])
-			if err != nil {
-				return err
-			}
-			_, err = fmt.Fprintln(stdout, root)
-			return err
-		default:
-			return errors.New("usage: ctx project root [path]")
-		}
+		return runProjectRoot(args[1:], stdout)
 	case "new":
 		if len(args) != 2 {
 			return errors.New("usage: ctx project new <name>")
@@ -1251,6 +1234,103 @@ func runProject(args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown ctx project command: %s", args[0])
 	}
+}
+
+func runProjectRoot(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		root, err := GetProjectRoot()
+		if err != nil {
+			return err
+		}
+		if root == "" {
+			_, err = fmt.Fprintln(stdout, projectRootUnsetMessage)
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, root)
+		return err
+	}
+
+	switch args[0] {
+	case "add":
+		path, name, err := parseProjectRootAddArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		root, err := AddProjectRoot(path, name)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "added project root: %s %s\n", root.Name, root.Path)
+		return err
+	case "use":
+		if len(args) != 2 {
+			return errors.New("usage: ctx project root use <name>")
+		}
+		root, err := UseProjectRoot(args[1])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "active project root: %s %s\n", root.Name, root.Path)
+		return err
+	case "ls":
+		if len(args) != 1 {
+			return errors.New("usage: ctx project root ls")
+		}
+		roots, err := ListProjectRoots()
+		if err != nil {
+			return err
+		}
+		if len(roots) == 0 {
+			_, err = fmt.Fprintln(stdout, "no project roots")
+			return err
+		}
+		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+		if _, err := fmt.Fprintln(tw, "ACTIVE\tNAME\tPATH"); err != nil {
+			return err
+		}
+		for _, root := range roots {
+			active := ""
+			if root.Active {
+				active = "*"
+			}
+			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\n", active, root.Name, root.Path); err != nil {
+				return err
+			}
+		}
+		return tw.Flush()
+	case "rm":
+		if len(args) != 2 {
+			return errors.New("usage: ctx project root rm <name>")
+		}
+		root, err := RemoveProjectRoot(args[1])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "removed project root: %s %s\n", root.Name, root.Path)
+		return err
+	default:
+		if len(args) != 1 {
+			return errors.New("usage: ctx project root [path] | <add|use|ls|rm>")
+		}
+		root, err := SetProjectRoot(args[0])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, root)
+		return err
+	}
+}
+
+func parseProjectRootAddArgs(args []string) (string, string, error) {
+	switch len(args) {
+	case 1:
+		return args[0], "", nil
+	case 3:
+		if args[1] == "--name" && strings.TrimSpace(args[2]) != "" {
+			return args[0], args[2], nil
+		}
+	}
+	return "", "", errors.New("usage: ctx project root add <path> [--name <name>]")
 }
 
 func parseProjectRemoveArgs(args []string) (string, bool, error) {
@@ -1936,6 +2016,17 @@ func runCompletion(args []string, stdout io.Writer) error {
 }
 
 func completionValues(kind string) ([]string, error) {
+	if kind == "project-root" {
+		roots, err := ListProjectRoots()
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(roots))
+		for _, root := range roots {
+			values = append(values, root.Name)
+		}
+		return values, nil
+	}
 	if kind == "workspace" {
 		records, err := ListWorkspaceRecords()
 		if err != nil {
@@ -2007,6 +2098,21 @@ func completionValues(kind string) ([]string, error) {
 }
 
 func completionDescriptions(kind string) ([]string, error) {
+	if kind == "project-root" {
+		roots, err := ListProjectRoots()
+		if err != nil {
+			return nil, err
+		}
+		values := make([]string, 0, len(roots))
+		for _, root := range roots {
+			description := root.Path
+			if root.Active {
+				description += " (active)"
+			}
+			values = append(values, zshCompletionSpec(root.Name, description))
+		}
+		return values, nil
+	}
 	if kind == "workspace" {
 		records, err := ListWorkspaceRecords()
 		if err != nil {

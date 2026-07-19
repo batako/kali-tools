@@ -213,7 +213,7 @@ ctx owns durable data that represents shared investigation context or findings.
 | Data | ctx responsibility | Examples of producers and consumers |
 |---|---|---|
 | Workspace identity and metadata | Resolve the active workspace, maintain its identity, and migrate its database | All integrated commands |
-| Project root and project-to-workspace relationship | Validate project names and associate project directories with workspaces | `ctx project`, shell integration |
+| Project roots and project-to-workspace relationship | Store named roots, select the active root, validate project names, and associate project directories with workspaces | `ctx project`, shell integration |
 | Targets | Maintain target identity, primary selection, IP changes, and related records | `ctx target`, scanners, connection tools |
 | Hosts | Validate and associate hostnames with targets | Manual registration, DNS and vhost discovery tools |
 | Services and scan history | Store normalized ports, protocols, products, versions, and scan provenance | `ctx scan`, service-aware add-ons |
@@ -226,7 +226,7 @@ ctx owns durable data that represents shared investigation context or findings.
 
 A producer does not become the owner of shared data by creating it. For example, a vhost scanner may register a host, but ctx remains responsible for hostname validation, target association, persistence, and migration.
 
-ctx owns the project root setting, workspace marker, and project-to-workspace relationship. It does not own the user's project files or arbitrary files created inside the project directory.
+ctx owns the named project root settings, active-root selection, workspace marker, and project-to-workspace relationship. It does not own the user's project files or arbitrary files created inside the project directory.
 
 Some ctx-owned data does not yet have a public integration command or JSON endpoint. In particular, internal support for web discoveries or wordlist run history is not itself a public API. Custom commands must not infer a stable interface from an exported Go function or database table. A public operation should be added only when a concrete integration needs it.
 

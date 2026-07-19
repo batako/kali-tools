@@ -18,6 +18,11 @@ Run:
 
     ctx project root ~/projects
 
+or register named roots:
+
+    ctx project root add ~/projects/thm
+    ctx project root use thm
+
 or use:
 
     ctx workspace init
@@ -30,6 +35,12 @@ type Project struct {
 	ID   int64
 	Name string
 	Path string
+}
+
+type ProjectRoot struct {
+	Name   string
+	Path   string
+	Active bool
 }
 
 func SetProjectRoot(rawPath string) (string, error) {
@@ -45,6 +56,119 @@ func SetProjectRoot(rawPath string) (string, error) {
 
 func GetProjectRoot() (string, error) {
 	return GetConfigValue(ConfigKeyProjectRoot)
+}
+
+func AddProjectRoot(rawPath, name string) (ProjectRoot, error) {
+	root, err := expandPath(rawPath)
+	if err != nil {
+		return ProjectRoot{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = filepath.Base(filepath.Clean(root))
+		if name == "." || name == string(filepath.Separator) {
+			return ProjectRoot{}, errors.New("project root name cannot be derived from path; use --name")
+		}
+	}
+	if err := validateProjectRootName(name); err != nil {
+		return ProjectRoot{}, err
+	}
+	config, err := LoadConfig()
+	if err != nil {
+		return ProjectRoot{}, err
+	}
+	if _, exists := config.ProjectRoots[name]; exists {
+		return ProjectRoot{}, fmt.Errorf("project root already exists: %s", name)
+	}
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return ProjectRoot{}, fmt.Errorf("failed to create project root %s: %w", root, err)
+	}
+	config.ProjectRoots[name] = root
+	if config.ActiveProjectRoot == "" {
+		config.ActiveProjectRoot = name
+		config.ProjectRoot = root
+	}
+	if err := SaveConfig(config); err != nil {
+		return ProjectRoot{}, err
+	}
+	return ProjectRoot{Name: name, Path: root, Active: config.ActiveProjectRoot == name}, nil
+}
+
+func UseProjectRoot(name string) (ProjectRoot, error) {
+	name = strings.TrimSpace(name)
+	if err := validateProjectRootName(name); err != nil {
+		return ProjectRoot{}, err
+	}
+	config, err := LoadConfig()
+	if err != nil {
+		return ProjectRoot{}, err
+	}
+	root, ok := config.ProjectRoots[name]
+	if !ok {
+		return ProjectRoot{}, fmt.Errorf("project root not found: %s", name)
+	}
+	config.ActiveProjectRoot = name
+	config.ProjectRoot = root
+	if err := SaveConfig(config); err != nil {
+		return ProjectRoot{}, err
+	}
+	return ProjectRoot{Name: name, Path: root, Active: true}, nil
+}
+
+func ListProjectRoots() ([]ProjectRoot, error) {
+	config, err := LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(config.ProjectRoots))
+	for name := range config.ProjectRoots {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	roots := make([]ProjectRoot, 0, len(names))
+	for _, name := range names {
+		roots = append(roots, ProjectRoot{Name: name, Path: config.ProjectRoots[name], Active: name == config.ActiveProjectRoot})
+	}
+	return roots, nil
+}
+
+func RemoveProjectRoot(name string) (ProjectRoot, error) {
+	name = strings.TrimSpace(name)
+	if err := validateProjectRootName(name); err != nil {
+		return ProjectRoot{}, err
+	}
+	config, err := LoadConfig()
+	if err != nil {
+		return ProjectRoot{}, err
+	}
+	root, ok := config.ProjectRoots[name]
+	if !ok {
+		return ProjectRoot{}, fmt.Errorf("project root not found: %s", name)
+	}
+	if name == config.ActiveProjectRoot {
+		return ProjectRoot{}, fmt.Errorf("cannot remove active project root %s; switch roots first", name)
+	}
+	delete(config.ProjectRoots, name)
+	if err := SaveConfig(config); err != nil {
+		return ProjectRoot{}, err
+	}
+	return ProjectRoot{Name: name, Path: root}, nil
+}
+
+func validateProjectRootName(name string) error {
+	if name == "" {
+		return errors.New("project root name must not be empty")
+	}
+	for _, character := range name {
+		if character >= 'a' && character <= 'z' ||
+			character >= 'A' && character <= 'Z' ||
+			character >= '0' && character <= '9' ||
+			character == '-' || character == '_' {
+			continue
+		}
+		return fmt.Errorf("invalid project root name: %s", name)
+	}
+	return nil
 }
 
 func CreateProject(name string) (string, error) {

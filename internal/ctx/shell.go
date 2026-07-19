@@ -264,12 +264,14 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
   else
     command="${invocation#x}"
     subcommand="${COMP_WORDS[1]}"
+    root_command="${COMP_WORDS[2]}"
   fi`,
 			new: `  elif [[ ${invocation} == x ]]; then
     command=x
   elif [[ ${invocation} == pj ]]; then
     command=project
     subcommand="${COMP_WORDS[1]}"
+    root_command="${COMP_WORDS[2]}"
   elif [[ ${invocation} == ta ]]; then
     command=target
     subcommand="${COMP_WORDS[1]}"
@@ -282,12 +284,19 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
   else
     command="${invocation#x}"
     subcommand="${COMP_WORDS[1]}"
+    root_command="${COMP_WORDS[2]}"
   fi`,
 		},
 		{
 			old: `    project|xproject)
       COMPREPLY=($(compgen -W "root new ls rm" -- "${cur}"))
       return
+      ;;
+    root)
+      if [[ ${command} == project ]]; then
+        COMPREPLY=($(compgen -W "add use ls rm" -- "${cur}"))
+        return
+      fi
       ;;
     target|xtarget)
       COMPREPLY=($(compgen -W "set add update use rm ls" -- "${cur}"))
@@ -297,6 +306,12 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
 			new: `    project|xproject|pj)
       COMPREPLY=($(compgen -W "root new ls rm" -- "${cur}"))
       return
+      ;;
+    root)
+      if [[ ${command} == project ]]; then
+        COMPREPLY=($(compgen -W "add use ls rm" -- "${cur}"))
+        return
+      fi
       ;;
     target|xtarget|ta)
       COMPREPLY=($(compgen -W "set add update use rm ls" -- "${cur}"))
@@ -443,10 +458,21 @@ _ctx_workspace_commands=(
 )
 
 _ctx_project_commands=(
-  'root:show or set the projects root'
+  'root:manage project roots'
   'new:create a project and initialize a workspace'
   'ls:list projects'
   'rm:remove a project directory'
+)
+
+_ctx_project_root_commands=(
+  'add:register a project root, deriving its name from the path by default'
+  'use:switch the active project root'
+  'ls:list registered project roots'
+  'rm:unregister an inactive project root'
+)
+
+_ctx_project_root_options=(
+  '--name:override the name derived from the path'
 )
 
 _ctx_target_commands=(
@@ -571,7 +597,7 @@ _ctx_dynamic_descriptions() {
 }
 
 _ctx() {
-  local invocation command command_position subcommand previous
+  local invocation command command_position subcommand previous root_command
   invocation=${words[1]:t}
 
   if [[ ${invocation} == ctx ]]; then
@@ -588,6 +614,7 @@ _ctx() {
     command_position=1
   fi
   subcommand=${words[command_position+1]}
+  root_command=${words[command_position+2]}
   previous=${words[CURRENT-1]}
 
   if [[ ${invocation} == ctx && ( -z ${command} || CURRENT == 2 ) ]]; then
@@ -644,7 +671,17 @@ _ctx() {
       fi
       ;;
     project)
-      if [[ ${subcommand} == rm ]] && (( CURRENT == command_position + 2 )); then
+      if [[ ${subcommand} == root ]] && (( CURRENT == command_position + 2 )); then
+        _describe 'project root command' _ctx_project_root_commands
+      elif [[ ${subcommand} == root && (${root_command} == use || ${root_command} == rm) ]] && (( CURRENT == command_position + 3 )); then
+        _ctx_dynamic_descriptions project-root
+      elif [[ ${subcommand} == root && ${root_command} == add ]] && (( CURRENT == command_position + 3 )); then
+        _directories
+      elif [[ ${subcommand} == root && ${root_command} == add && ${previous} == --name ]]; then
+        _message 'project root name'
+      elif [[ ${subcommand} == root && ${root_command} == add ]]; then
+        _describe 'project root option' _ctx_project_root_options
+      elif [[ ${subcommand} == rm ]] && (( CURRENT == command_position + 2 )); then
         _ctx_dynamic_descriptions project
       else
         _message 'argument'
@@ -764,7 +801,7 @@ const bashCompletionScript = `_ctx_complete_values() {
 }
 
 _ctx_completion() {
-  local cur prev invocation command subcommand
+  local cur prev invocation command subcommand root_command
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -773,11 +810,26 @@ _ctx_completion() {
   if [[ ${invocation} == ctx ]]; then
     command="${COMP_WORDS[1]}"
     subcommand="${COMP_WORDS[2]}"
+    root_command="${COMP_WORDS[3]}"
   elif [[ ${invocation} == x ]]; then
     command=x
   else
     command="${invocation#x}"
     subcommand="${COMP_WORDS[1]}"
+    root_command="${COMP_WORDS[2]}"
+  fi
+
+  if [[ ${command} == project && ${subcommand} == root && (${root_command} == use || ${root_command} == rm) && ${prev} == "${root_command}" ]]; then
+    _ctx_complete_values project-root "${cur}"
+    return
+  fi
+  if [[ ${command} == project && ${subcommand} == root && ${root_command} == add ]]; then
+    if [[ ${prev} == add ]]; then
+      COMPREPLY=($(compgen -d -- "${cur}"))
+    elif [[ ${prev} != --name ]]; then
+      COMPREPLY=($(compgen -W "--name" -- "${cur}"))
+    fi
+    return
   fi
 
   if [[ ${command} == target && (${subcommand} == use || ${subcommand} == rm) && ${prev} == "${subcommand}" ]]; then
@@ -826,6 +878,12 @@ _ctx_completion() {
     project|xproject)
       COMPREPLY=($(compgen -W "root new ls rm" -- "${cur}"))
       return
+      ;;
+    root)
+      if [[ ${command} == project ]]; then
+        COMPREPLY=($(compgen -W "add use ls rm" -- "${cur}"))
+        return
+      fi
       ;;
     target|xtarget)
       COMPREPLY=($(compgen -W "set add update use rm ls" -- "${cur}"))

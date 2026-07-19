@@ -62,6 +62,8 @@ func TestCompletionScriptsIncludeProjectHelpers(t *testing.T) {
 			`xnew() {`,
 			`project_path=$(ctx project new "$@") || return`,
 			`cd "${project_path}"`,
+			`project-root`,
+			`--name`,
 		} {
 			if !strings.Contains(script, want) {
 				t.Errorf("CompletionScript(%s) missing %q", shell, want)

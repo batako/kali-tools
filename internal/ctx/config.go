@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
 
 type Config struct {
 	ProjectRoot                string
+	ActiveProjectRoot          string
+	ProjectRoots               map[string]string
 	DirectoryMaxRequests       int
 	FileMaxRequests            int
 	VHostMaxRequests           int
@@ -51,13 +54,13 @@ func LoadConfig() (*Config, error) {
 	path := configPath()
 	content, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &Config{DirectoryMaxRequests: DefaultDirectoryMaxRequests, FileMaxRequests: DefaultFileMaxRequests, VHostMaxRequests: DefaultVHostMaxRequests, VHostCalibrationSamples: DefaultVHostCalibrationSamples, VHostCalibrationConfidence: DefaultVHostCalibrationConfidence, PasswordMaxRequests: DefaultPasswordMaxRequests, DNSMaxQueries: DefaultDNSMaxQueries, TLSVerify: true}, nil
+		return defaultConfig(), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config %s: %w", path, err)
 	}
 
-	config := Config{DirectoryMaxRequests: DefaultDirectoryMaxRequests, FileMaxRequests: DefaultFileMaxRequests, VHostMaxRequests: DefaultVHostMaxRequests, VHostCalibrationSamples: DefaultVHostCalibrationSamples, VHostCalibrationConfidence: DefaultVHostCalibrationConfidence, PasswordMaxRequests: DefaultPasswordMaxRequests, DNSMaxQueries: DefaultDNSMaxQueries, TLSVerify: true}
+	config := *defaultConfig()
 	section := ""
 	for _, rawLine := range strings.Split(string(content), "\n") {
 		line := strings.TrimSpace(rawLine)
@@ -68,7 +71,7 @@ func LoadConfig() (*Config, error) {
 			section = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "["), "]"))
 			continue
 		}
-		if section != "project" && section != "web.directory" && section != "web.file" && section != "web.vhost" && section != "password" && section != "dns" && section != "web.tls" {
+		if section != "project" && section != "project.roots" && section != "web.directory" && section != "web.file" && section != "web.vhost" && section != "password" && section != "dns" && section != "web.tls" {
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
@@ -82,6 +85,14 @@ func LoadConfig() (*Config, error) {
 		switch {
 		case section == "project" && strings.TrimSpace(key) == "root":
 			config.ProjectRoot = parsed
+		case section == "project" && strings.TrimSpace(key) == "active-root":
+			config.ActiveProjectRoot = parsed
+		case section == "project.roots":
+			name := strings.TrimSpace(key)
+			if err := validateProjectRootName(name); err != nil {
+				return nil, fmt.Errorf("invalid project root in %s: %w", path, err)
+			}
+			config.ProjectRoots[name] = parsed
 		case section == "web.directory" && strings.TrimSpace(key) == "max-requests":
 			limit, parseErr := strconv.Atoi(parsed)
 			if parseErr != nil || limit < 1 {
@@ -132,8 +143,62 @@ func LoadConfig() (*Config, error) {
 			config.TLSVerify = verify
 		}
 	}
+	if err := normalizeProjectRoots(&config); err != nil {
+		return nil, fmt.Errorf("invalid project root configuration in %s: %w", path, err)
+	}
 
 	return &config, nil
+}
+
+func defaultConfig() *Config {
+	return &Config{
+		ProjectRoots:               make(map[string]string),
+		DirectoryMaxRequests:       DefaultDirectoryMaxRequests,
+		FileMaxRequests:            DefaultFileMaxRequests,
+		VHostMaxRequests:           DefaultVHostMaxRequests,
+		VHostCalibrationSamples:    DefaultVHostCalibrationSamples,
+		VHostCalibrationConfidence: DefaultVHostCalibrationConfidence,
+		PasswordMaxRequests:        DefaultPasswordMaxRequests,
+		DNSMaxQueries:              DefaultDNSMaxQueries,
+		TLSVerify:                  true,
+	}
+}
+
+func normalizeProjectRoots(config *Config) error {
+	if config.ProjectRoots == nil {
+		config.ProjectRoots = make(map[string]string)
+	}
+	if len(config.ProjectRoots) == 0 {
+		if config.ProjectRoot == "" {
+			config.ActiveProjectRoot = ""
+			return nil
+		}
+		config.ActiveProjectRoot = "default"
+		config.ProjectRoots[config.ActiveProjectRoot] = config.ProjectRoot
+		return nil
+	}
+	if config.ActiveProjectRoot == "" {
+		for name, root := range config.ProjectRoots {
+			if root == config.ProjectRoot {
+				config.ActiveProjectRoot = name
+				break
+			}
+		}
+	}
+	if config.ActiveProjectRoot == "" {
+		names := make([]string, 0, len(config.ProjectRoots))
+		for name := range config.ProjectRoots {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		config.ActiveProjectRoot = names[0]
+	}
+	root, ok := config.ProjectRoots[config.ActiveProjectRoot]
+	if !ok {
+		return fmt.Errorf("active project root not found: %s", config.ActiveProjectRoot)
+	}
+	config.ProjectRoot = root
+	return nil
 }
 
 func SaveConfig(config *Config) error {
@@ -142,7 +207,22 @@ func SaveConfig(config *Config) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
+	if err := normalizeProjectRoots(config); err != nil {
+		return err
+	}
 	content := "[project]\nroot = " + strconv.Quote(config.ProjectRoot) + "\n"
+	content += "active-root = " + strconv.Quote(config.ActiveProjectRoot) + "\n"
+	if len(config.ProjectRoots) > 0 {
+		names := make([]string, 0, len(config.ProjectRoots))
+		for name := range config.ProjectRoots {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		content += "\n[project.roots]\n"
+		for _, name := range names {
+			content += name + " = " + strconv.Quote(config.ProjectRoots[name]) + "\n"
+		}
+	}
 	if config.DirectoryMaxRequests > 0 && config.DirectoryMaxRequests != DefaultDirectoryMaxRequests {
 		content += "\n[web.directory]\nmax-requests = " + strconv.Quote(strconv.Itoa(config.DirectoryMaxRequests)) + "\n"
 	}
@@ -217,7 +297,13 @@ func SetConfigValue(key, value string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		name := config.ActiveProjectRoot
+		if name == "" {
+			name = "default"
+		}
+		config.ActiveProjectRoot = name
 		config.ProjectRoot = root
+		config.ProjectRoots[name] = root
 		if err := SaveConfig(config); err != nil {
 			return "", err
 		}

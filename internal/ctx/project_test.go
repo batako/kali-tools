@@ -74,6 +74,77 @@ func TestProjectRootUnsetMessages(t *testing.T) {
 	}
 }
 
+func TestNamedProjectRootsSwitchAndKeepProjectsSeparated(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
+	thmPath := filepath.Join(base, "thm")
+	htbPath := filepath.Join(base, "hackthebox")
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "project", "root", "add", thmPath}, &out); err != nil {
+		t.Fatalf("Run(ctx project root add thm) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "project", "root", "add", htbPath, "--name", "hackthebox"}, &out); err != nil {
+		t.Fatalf("Run(ctx project root add hackthebox) error = %v", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "project", "root", "add", filepath.Join(base, "duplicate"), "--name", "thm"}, &out); err == nil || !strings.Contains(err.Error(), "project root already exists: thm") {
+		t.Fatalf("Run(ctx project root add duplicate thm) error = %v, want duplicate-name error", err)
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "project", "root", "use", "thm"}, &out); err != nil {
+		t.Fatalf("Run(ctx project root use thm) error = %v", err)
+	}
+	if _, err := CreateProject("room-one"); err != nil {
+		t.Fatalf("CreateProject(room-one) error = %v", err)
+	}
+	if _, err := UseProjectRoot("hackthebox"); err != nil {
+		t.Fatalf("UseProjectRoot(hackthebox) error = %v", err)
+	}
+	if _, err := CreateProject("machine-one"); err != nil {
+		t.Fatalf("CreateProject(machine-one) error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(thmPath, "room-one", MarkerFile)); err != nil {
+		t.Fatalf("THM project marker missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(htbPath, "machine-one", MarkerFile)); err != nil {
+		t.Fatalf("Hack The Box project marker missing: %v", err)
+	}
+	projects, err := ListProjects()
+	if err != nil {
+		t.Fatalf("ListProjects() error = %v", err)
+	}
+	if len(projects) != 1 || projects[0].Name != "machine-one" {
+		t.Fatalf("ListProjects() = %+v, want only active-root project", projects)
+	}
+
+	out.Reset()
+	if err := Run([]string{"ctx", "project", "root", "ls"}, &out); err != nil {
+		t.Fatalf("Run(ctx project root ls) error = %v", err)
+	}
+	for _, want := range []string{"ACTIVE", "NAME", "PATH", "thm", "hackthebox", "*"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("root ls output = %q, want %q", out.String(), want)
+		}
+	}
+
+	if _, err := RemoveProjectRoot("hackthebox"); err == nil || !strings.Contains(err.Error(), "cannot remove active") {
+		t.Fatalf("RemoveProjectRoot(active) error = %v, want active-root error", err)
+	}
+	removed, err := RemoveProjectRoot("thm")
+	if err != nil {
+		t.Fatalf("RemoveProjectRoot(thm) error = %v", err)
+	}
+	if removed.Path != thmPath {
+		t.Fatalf("RemoveProjectRoot(thm).Path = %q, want %q", removed.Path, thmPath)
+	}
+	if _, err := os.Stat(thmPath); err != nil {
+		t.Fatalf("removed root directory was modified: %v", err)
+	}
+}
+
 func TestProjectNewCreatesDirectoryAndInitializesWorkspace(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
