@@ -1,11 +1,10 @@
 package xscp
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+
+	"req/internal/ctxapi"
 )
 
 type commandLogger interface {
@@ -35,39 +34,17 @@ type logFinishRequest struct {
 }
 
 func (logger ctxCommandLogger) Start(command, expanded, started string) (int64, error) {
-	var response APIResponse[logIDData]
-	if err := logger.run([]string{"log", "start", "--format", "json", "--format-version", "1"}, logStartRequest{command, expanded, started}, &response); err != nil {
+	response, err := ctxapi.CallWithJSON[logIDData](ctxapi.NewV1(logger.runner), logStartRequest{command, expanded, started}, "log", "start")
+	if err != nil {
 		return 0, err
 	}
-	if !response.Success || response.Data == nil {
-		return 0, errors.New("ctx log command failed")
+	if response.Data.ID < 1 {
+		return 0, errors.New("ctx returned an invalid log ID")
 	}
 	return response.Data.ID, nil
 }
 func (logger ctxCommandLogger) Finish(id int64, status string, code int, stdout, stderr, ended string) error {
-	var response APIResponse[logIDData]
-	err := logger.run([]string{"log", "finish", fmt.Sprintf("%d", id), "--format", "json", "--format-version", "1"}, logFinishRequest{status, code, stdout, stderr, ended}, &response)
-	if err != nil {
-		return err
-	}
-	if !response.Success {
-		return errors.New("ctx log command failed")
-	}
-	return nil
-}
-func (logger ctxCommandLogger) run(args []string, request, response any) error {
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return err
-	}
-	var stdout, stderr bytes.Buffer
-	if err := logger.runner.Run("ctx", args, nil, bytes.NewReader(payload), &stdout, &stderr); err != nil {
-		return fmt.Errorf("ctx log command failed: %w", err)
-	}
-	if err := json.Unmarshal(stdout.Bytes(), response); err != nil {
-		if stderr.Len() > 0 {
-			return fmt.Errorf("invalid JSON from ctx: %s", strings.TrimSpace(stderr.String()))
-		}
+	if _, err := ctxapi.CallWithJSON[logIDData](ctxapi.NewV1(logger.runner), logFinishRequest{status, code, stdout, stderr, ended}, "log", "finish", fmt.Sprintf("%d", id)); err != nil {
 		return err
 	}
 	return nil

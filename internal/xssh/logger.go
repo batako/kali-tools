@@ -1,11 +1,10 @@
 package xssh
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+
+	"req/internal/ctxapi"
 )
 
 type commandLogger interface {
@@ -51,12 +50,9 @@ func (logger ctxCommandLogger) Start(command, expandedCommand, startedAt string)
 		ExpandedCommand: expandedCommand,
 		StartedAt:       startedAt,
 	}
-	var response APIResponse[logIDData]
-	if err := logger.run([]string{"log", "start", "--format", "json", "--format-version", "1"}, request, &response); err != nil {
+	response, err := ctxapi.CallWithJSON[logIDData](ctxapi.NewV1(logger.runner), request, "log", "start")
+	if err != nil {
 		return 0, err
-	}
-	if !response.Success || response.Data == nil {
-		return 0, ctxLogResponseError(response.Error)
 	}
 	if response.Data.ID < 1 {
 		return 0, errors.New("ctx returned an invalid log ID")
@@ -72,40 +68,10 @@ func (logger ctxCommandLogger) Finish(id int64, status string, exitCode int, std
 		Stderr:   stderr,
 		EndedAt:  endedAt,
 	}
-	var response APIResponse[logIDData]
-	if err := logger.run([]string{"log", "finish", fmt.Sprintf("%d", id), "--format", "json", "--format-version", "1"}, request, &response); err != nil {
+	if _, err := ctxapi.CallWithJSON[logIDData](ctxapi.NewV1(logger.runner), request, "log", "finish", fmt.Sprintf("%d", id)); err != nil {
 		return err
 	}
-	if !response.Success {
-		return ctxLogResponseError(response.Error)
-	}
 	return nil
-}
-
-func (logger ctxCommandLogger) run(args []string, request any, response any) error {
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("encode ctx log request: %w", err)
-	}
-	var stdout, stderr bytes.Buffer
-	runErr := logger.runner.Run("ctx", args, nil, bytes.NewReader(payload), &stdout, &stderr)
-	if err := json.Unmarshal(stdout.Bytes(), response); err != nil {
-		if stderr.Len() > 0 {
-			return fmt.Errorf("invalid JSON from ctx: %s", strings.TrimSpace(stderr.String()))
-		}
-		return errors.New("invalid JSON from ctx")
-	}
-	if runErr != nil {
-		return fmt.Errorf("ctx log command failed: %w", runErr)
-	}
-	return nil
-}
-
-func ctxLogResponseError(apiError *APIError) error {
-	if apiError != nil && strings.TrimSpace(apiError.Message) != "" {
-		return errors.New(apiError.Message)
-	}
-	return errors.New("ctx log command failed")
 }
 
 func commandExitCode(err error) int {

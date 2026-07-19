@@ -52,6 +52,37 @@ check_control() {
   fi
 }
 
+uses_ctx() {
+  package="$1"
+
+  if [ "${package}" = "ctx" ]; then
+    return 1
+  fi
+
+  find "cmd/${package}" "internal/${package}" \
+    -type f -name '*.go' ! -name '*_test.go' \
+    -exec grep -Eq '"req/internal/(ctx|ctxapi|ctxexec)"' {} +
+}
+
+check_ctx_dependency() {
+  package="$1"
+  control="debian/${package}/control"
+
+  if ! uses_ctx "${package}"; then
+    return
+  fi
+
+  if [ ! -f "${control}" ]; then
+    return
+  fi
+
+  if grep -Eq '^Depends:([^,]*,)*[[:space:]]*ctx([[:space:]]*\([^)]*\))?([[:space:]]*,|[[:space:]]*$)' "${control}"; then
+    ok "ctx Debian dependency"
+  else
+    ng "ctx Debian dependency: ${control} must include ctx"
+  fi
+}
+
 for required_file in \
   scripts/build-deb.sh \
   scripts/install-deb.sh \
@@ -89,6 +120,7 @@ for command_dir in cmd/*; do
   check_file "Debian version" "${package_dir}/VERSION"
   check_file "Debian control" "${package_dir}/control"
   check_control "${package}"
+  check_ctx_dependency "${package}"
 
   if [ -f "${package_dir}/VERSION" ]; then
     version="$(sed -n '1{s/[[:space:]]//g;p;q;}' "${package_dir}/VERSION")"

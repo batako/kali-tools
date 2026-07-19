@@ -143,7 +143,22 @@ Child codes use the parent code as a prefix.
 ```text
 INVALID_REQUEST.FORMAT_VERSION
 NOT_FOUND.WORKSPACE
+NOT_FOUND.TARGET
+NOT_FOUND.LOG
 ```
+
+Current error codes:
+
+| Code | Exit code | Meaning |
+|---|---:|---|
+| `INVALID_REQUEST` | 2 | The arguments or JSON request body are invalid |
+| `INVALID_REQUEST.FORMAT_VERSION` | 2 | The requested format version is invalid or unsupported |
+| `NOT_FOUND.WORKSPACE` | 1 | No active workspace is available |
+| `NOT_FOUND.TARGET` | 1 | The primary or named target does not exist |
+| `NOT_FOUND.LOG` | 1 | The command log does not exist |
+| `INTERNAL_ERROR` | 1 | An unexpected database, filesystem, or implementation failure occurred |
+
+User-correctable input and missing-resource errors are not returned as `INTERNAL_ERROR`.
 
 When an unknown child code is returned, the portion before the first `.` can be treated as the parent code.
 
@@ -160,6 +175,8 @@ When `--format json` is specified, standard output contains JSON only.
 - Warnings, diagnostics, and debug information: standard error
 
 Whenever a JSON response can be generated, errors—including unexpected errors—are returned through the common response format with `success: false`.
+
+After `--format json` has been specified, invalid command arguments also use the common response envelope. Usage information is not emitted outside the JSON response in this case.
 
 ## Missing Values
 
@@ -200,6 +217,7 @@ Initial supported outputs:
 formats
 prompt
 credential
+log
 service
 ```
 
@@ -217,11 +235,33 @@ Without `--format json`, `ctx formats` prints a table of the same information:
 OUTPUT       VERSIONS
 credential   1.0
 formats      1.0
+log          1.0
 prompt       1.0
 service      1.0
 ```
 
 Add-ons can use this output to verify that the required JSON outputs and versions are available.
+
+The `data` object has the following structure:
+
+```json
+{
+  "formats": {
+    "credential": ["1.0"],
+    "formats": ["1.0"],
+    "log": ["1.0"],
+    "prompt": ["1.0"],
+    "service": ["1.0"]
+  }
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `formats` | object | Map from a JSON output name to its supported format versions |
+| `formats.<name>` | array of strings | Supported versions in ascending version order |
+
+The order of keys in the `formats` object is not significant. An unknown output name must not be assumed to exist.
 
 ## `prompt`
 
@@ -251,6 +291,21 @@ Example:
 }
 ```
 
+The `data` object has the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `active` | boolean | Whether the current directory belongs to an active workspace |
+| `workspace_id` | string \| null | Workspace identifier |
+| `workspace_name` | string \| null | Workspace name |
+| `workspace_path` | string \| null | Absolute workspace path |
+| `local_ip` | string \| null | Local callback IP selected by ctx |
+| `local_interface` | string \| null | Interface associated with `local_ip` |
+| `target_name` | string \| null | Primary target name |
+| `target_ip` | string \| null | Primary target IP address |
+
+When `active` is `false`, all other fields are `null`. Fields whose values are not available in an active workspace are also `null`.
+
 ## `credential`
 
 Returns stored credentials.
@@ -261,6 +316,25 @@ ctx credential ls ssh --format json --format-version 1.0
 ```
 
 When a `scope` is specified, only credentials matching that scope are returned.
+
+Example `data` object:
+
+```json
+{
+  "credentials": [
+    {"id": 1, "scope": "ssh", "username": "root", "password": "toor"},
+    {"id": 2, "scope": "ssh", "username": "testuser", "password": null}
+  ]
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `credentials` | array of objects | Credentials stored in the current workspace; `[]` when none match |
+| `credentials[].id` | integer | Credential record ID |
+| `credentials[].scope` | string | Credential scope |
+| `credentials[].username` | string | Username |
+| `credentials[].password` | string \| null | Password, or `null` when no password is stored |
 
 Ordering:
 
@@ -273,6 +347,20 @@ Passwords are returned in plaintext. External tools must avoid exposing retrieve
 ## `log`
 
 Add-ons can create and finish command logs without accessing the ctx database directly. Requests are read as JSON from standard input and responses are written as JSON to standard output.
+
+Both operations require an active workspace. Request fields not listed below are not part of the versioned contract.
+
+### Lifecycle
+
+Call `start` immediately before beginning the operation. ctx creates a log with status `running` and returns its ID. Keep that ID in memory and call `finish` once after the operation reaches one of these terminal states:
+
+```text
+running -> success
+running -> failed
+running -> interrupted
+```
+
+Use `success` only when the operation completed successfully, `failed` for an ordinary failure, and `interrupted` when execution was cancelled or terminated before completion. If a process starts but the add-on exits without calling `finish`, the log remains `running`; callers should finish it as `interrupted` on cancellation whenever possible.
 
 Start a log:
 
@@ -292,6 +380,18 @@ The response contains the new log ID:
 }
 ```
 
+Start request fields:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `command` | string | yes | User-facing command name; must not be blank |
+| `expanded_command` | string | no | Expanded command; defaults to `command` when omitted or blank |
+| `started_at` | string | no | Start time; defaults to the current UTC time in RFC 3339 format when omitted or blank |
+
+The successful `data.id` is an integer containing the new command log ID.
+
+Caller-supplied time strings are stored unchanged. Use an RFC 3339 UTC timestamp so ctx and other tools can order and display the log consistently.
+
 Finish a log by sending its result as JSON. Do not include passwords or `sshpass` arguments in the command or output fields.
 
 ```bash
@@ -299,13 +399,71 @@ printf '%s\n' '{"status":"success","exit_code":0,"stdout":"connected\n","stderr"
   ctx log finish 1 --format json --format-version 1.0
 ```
 
+Finish request fields:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `status` | string | yes | One of `success`, `failed`, or `interrupted` |
+| `exit_code` | integer \| null | no | Process exit code; defaults to `0` when omitted or `null` |
+| `stdout` | string | no | Captured standard output; defaults to an empty string |
+| `stderr` | string | no | Captured standard error; defaults to an empty string |
+| `ended_at` | string | no | End time; defaults to the current UTC time in RFC 3339 format when omitted or blank |
+
+The `<id>` argument must be a positive integer identifying an existing command log. A successful finish returns the same shape as start: `data.id` contains that log ID.
+
+### Secret handling
+
+The command, expanded command, stdout, and stderr are persisted in the workspace database and can be displayed by `ctx log`. Remove passwords, tokens, cookies, authentication headers, and other secrets before sending the request. In particular, do not record password-bearing command arguments such as `sshpass` invocations.
+
 ## `service`
 
 Returns stored service information.
 
 ```bash
 ctx service ls --format json --format-version 1.0
+ctx service ls --target web --format json --format-version 1.0
 ```
+
+Without `--target`, services for the primary target are returned. With `--target <name>`, services for that named target are returned.
+
+Example `data` object:
+
+```json
+{
+  "services": [
+    {
+      "id": 1,
+      "port": 22,
+      "protocol": "tcp",
+      "state": "open",
+      "reason": null,
+      "service_name": "ssh",
+      "product": "OpenSSH",
+      "version": null,
+      "extrainfo": null,
+      "tunnel": null,
+      "cpe": null,
+      "last_seen": "2026-07-13T00:00:00Z"
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `services` | array of objects | Services stored for the selected target; `[]` when none exist |
+| `services[].id` | integer | Service record ID |
+| `services[].port` | integer | Port number |
+| `services[].protocol` | string | Transport protocol |
+| `services[].state` | string \| null | Detected port state |
+| `services[].reason` | string \| null | Detection reason |
+| `services[].service_name` | string \| null | Detected service name |
+| `services[].product` | string \| null | Detected product |
+| `services[].version` | string \| null | Detected product version |
+| `services[].extrainfo` | string \| null | Additional service information |
+| `services[].tunnel` | string \| null | Tunnel type, such as `ssl` |
+| `services[].cpe` | string \| null | Detected CPE value |
+| `services[].last_seen` | string \| null | Time the service was last observed |
 
 Ordering:
 

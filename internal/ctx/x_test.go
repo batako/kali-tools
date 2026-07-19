@@ -106,6 +106,42 @@ func TestRunXPreservesNonZeroExitCode(t *testing.T) {
 	}
 }
 
+func TestRunXPassesStdinToChild(t *testing.T) {
+	workspace := initXTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := RunCLI([]string{"ctx", "x", "sh", "-c", "cat"}, strings.NewReader("from stdin\n"), &stdout, &stderr)
+	if code != 0 || stdout.String() != "from stdin\n" || stderr.String() != "" {
+		t.Fatalf("code = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
+	}
+
+	logs, err := ListCommandLogs(workspace)
+	if err != nil {
+		t.Fatalf("ListCommandLogs() error = %v", err)
+	}
+	if len(logs) != 1 || logs[0].Stdout != "from stdin\n" {
+		t.Fatalf("logs = %+v, want stdin-derived stdout", logs)
+	}
+}
+
+func TestRunXSignalInterruptionReturnsShellExitCodeAndLogsInterrupted(t *testing.T) {
+	workspace := initXTestWorkspace(t)
+
+	var stdout, stderr bytes.Buffer
+	code := RunX([]string{"x", "sh", "-c", "kill -TERM $$"}, &stdout, &stderr)
+	if code != 143 {
+		t.Fatalf("RunX exit code = %d, want 143", code)
+	}
+
+	logs, err := ListCommandLogs(workspace)
+	if err != nil {
+		t.Fatalf("ListCommandLogs() error = %v", err)
+	}
+	if len(logs) != 1 || logs[0].Status != "interrupted" || logs[0].ExitCode != 0 {
+		t.Fatalf("logs = %+v, want interrupted log without stored exit code", logs)
+	}
+}
+
 func TestRunXExpandsPrimaryTargetIP(t *testing.T) {
 	workspace := initXTestWorkspace(t)
 	if _, err := SetPrimaryTargetIP(workspace, "10.10.10.10"); err != nil {

@@ -28,6 +28,22 @@ func responseDataMap(t *testing.T, response APIResponse) map[string]any {
 	return data
 }
 
+func requireAPIError(t *testing.T, err error, output []byte, wantExitCode int, wantErrorCode string) APIResponse {
+	t.Helper()
+	var exitErr ExitCodeError
+	if !errors.As(err, &exitErr) || exitErr.Code != wantExitCode {
+		t.Fatalf("error = %v, want exit code %d", err, wantExitCode)
+	}
+	response := decodeAPIResponse(t, output)
+	if response.Success || response.Data != nil || response.Error == nil {
+		t.Fatalf("response = %+v, want API error", response)
+	}
+	if response.Error.Code != wantErrorCode {
+		t.Fatalf("error code = %q, want %q", response.Error.Code, wantErrorCode)
+	}
+	return response
+}
+
 func TestFormatsJSON(t *testing.T) {
 	var out bytes.Buffer
 	if err := Run([]string{"ctx", "formats", "--format", "json", "--format-version", "1"}, &out); err != nil {
@@ -41,9 +57,20 @@ func TestFormatsJSON(t *testing.T) {
 	if !ok {
 		t.Fatalf("formats data = %#v, want object", response.Data)
 	}
-	for _, key := range []string{"formats", "prompt", "credential", "service"} {
-		if _, ok := formats[key]; !ok {
-			t.Fatalf("formats missing %s: %#v", key, formats)
+	wantFormats := map[string]string{
+		"credential": "1.0",
+		"formats":    "1.0",
+		"log":        "1.0",
+		"prompt":     "1.0",
+		"service":    "1.0",
+	}
+	if len(formats) != len(wantFormats) {
+		t.Fatalf("formats = %#v, want exactly %#v", formats, wantFormats)
+	}
+	for key, wantVersion := range wantFormats {
+		versions, ok := formats[key].([]any)
+		if !ok || len(versions) != 1 || versions[0] != wantVersion {
+			t.Fatalf("formats[%q] = %#v, want [%q]", key, formats[key], wantVersion)
 		}
 	}
 }
@@ -165,4 +192,64 @@ func TestJSONUnsupportedVersionReturnsJSONAndExitCode2(t *testing.T) {
 	if strings.Contains(out.String(), "usage:") {
 		t.Fatalf("JSON output contains usage text: %q", out.String())
 	}
+}
+
+func TestJSONInvalidArgumentsUseCommonEnvelopeAndExitCode2(t *testing.T) {
+	tests := []struct {
+		name  string
+		args  []string
+		input string
+	}{
+		{name: "formats extra argument", args: []string{"ctx", "formats", "extra", "--format", "json"}},
+		{name: "formats missing version", args: []string{"ctx", "formats", "--format", "json", "--format-version"}},
+		{name: "formats conflicting output", args: []string{"ctx", "formats", "--format", "json", "--format", "yaml"}},
+		{name: "prompt unknown option", args: []string{"ctx", "prompt", "--unknown", "--format", "json"}},
+		{name: "credential extra scope", args: []string{"ctx", "credential", "ls", "ssh", "extra", "--format", "json"}},
+		{name: "credential unsupported operation", args: []string{"ctx", "credential", "set", "ssh", "root", "--format", "json"}},
+		{name: "service missing target", args: []string{"ctx", "service", "ls", "--target", "--format", "json"}},
+		{name: "log unknown operation", args: []string{"ctx", "log", "unknown", "--format", "json"}},
+		{name: "log start extra argument", args: []string{"ctx", "log", "start", "extra", "--format", "json"}, input: `{}`},
+		{name: "log finish missing id", args: []string{"ctx", "log", "finish", "--format", "json"}, input: `{}`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := RunWithInput(test.args, strings.NewReader(test.input), &stdout, &stderr)
+			response := requireAPIError(t, err, stdout.Bytes(), 2, "INVALID_REQUEST")
+			if response.FormatVersion == nil || *response.FormatVersion != "1.0" {
+				t.Fatalf("format version = %#v, want 1.0", response.FormatVersion)
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("stderr = %q, want empty", stderr.String())
+			}
+		})
+	}
+}
+
+func TestJSONNotFoundErrorsAreNotInternalErrors(t *testing.T) {
+	initXTestWorkspace(t)
+
+	t.Run("primary target", func(t *testing.T) {
+		var out bytes.Buffer
+		err := Run([]string{"ctx", "service", "ls", "--format", "json"}, &out)
+		requireAPIError(t, err, out.Bytes(), 1, apiErrorNotFoundTarget)
+	})
+
+	t.Run("named target", func(t *testing.T) {
+		var out bytes.Buffer
+		err := Run([]string{"ctx", "service", "ls", "--target", "missing", "--format", "json"}, &out)
+		requireAPIError(t, err, out.Bytes(), 1, apiErrorNotFoundTarget)
+	})
+
+	t.Run("command log", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		input := strings.NewReader(`{"status":"success","exit_code":0}`)
+		err := RunWithInput([]string{"ctx", "log", "finish", "999", "--format", "json"}, input, &stdout, &stderr)
+		requireAPIError(t, err, stdout.Bytes(), 1, apiErrorNotFoundLog)
+		if stderr.Len() != 0 {
+			t.Fatalf("stderr = %q, want empty", stderr.String())
+		}
+	})
+
 }

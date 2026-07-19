@@ -17,6 +17,8 @@ const (
 
 	apiErrorInvalidRequestFormatVersion = "INVALID_REQUEST.FORMAT_VERSION"
 	apiErrorNotFoundWorkspace           = "NOT_FOUND.WORKSPACE"
+	apiErrorNotFoundTarget              = "NOT_FOUND.TARGET"
+	apiErrorNotFoundLog                 = "NOT_FOUND.LOG"
 	apiErrorInternal                    = "INTERNAL_ERROR"
 )
 
@@ -180,6 +182,39 @@ func writeAPIInvalidRequest(stdout io.Writer, version *string, message string) e
 	return ExitCodeError{Code: 2}
 }
 
+func jsonOutputRequested(args []string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--format" && args[i+1] == apiFormatJSON {
+			return true
+		}
+	}
+	return false
+}
+
+func requestedJSONFormatVersion(args []string) string {
+	version := ""
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--format-version" {
+			version = args[i+1]
+		}
+	}
+	return version
+}
+
+func jsonArgumentError(stdout io.Writer, endpoint string, args []string, err error) error {
+	if err == nil || !jsonOutputRequested(args) {
+		return err
+	}
+	return runJSONEndpoint(stdout, endpoint, requestedJSONFormatVersion(args), func(string) (any, error) {
+		return nil, apiRequestError{
+			Code:    "INVALID_REQUEST",
+			Message: err.Error(),
+			Details: map[string]any{},
+			Invalid: true,
+		}
+	})
+}
+
 func writeAPIResponse(stdout io.Writer, response APIResponse) error {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetEscapeHTML(false)
@@ -230,8 +265,13 @@ func runJSONEndpoint(stdout io.Writer, endpoint, requestedVersion string, build 
 }
 
 func apiErrorForError(err error) (string, string) {
-	if errors.Is(err, ErrWorkspaceNotFound) {
+	switch {
+	case errors.Is(err, ErrWorkspaceNotFound):
 		return apiErrorNotFoundWorkspace, "no active workspace"
+	case errors.Is(err, ErrPrimaryTargetNotSet), errors.Is(err, ErrTargetNotFound):
+		return apiErrorNotFoundTarget, "target not found"
+	case errors.Is(err, ErrCommandLogNotFound):
+		return apiErrorNotFoundLog, "command log not found"
 	}
 	return apiErrorInternal, "internal error"
 }

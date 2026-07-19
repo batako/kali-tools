@@ -1,13 +1,58 @@
 package xgobuster
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"req/internal/ctx"
+	"req/internal/ctxexec"
 )
+
+type ctxReadRunner struct {
+	outputs map[string]string
+}
+
+func (runner *ctxReadRunner) LookPath(name string) (string, error) {
+	return name, nil
+}
+
+func (runner *ctxReadRunner) Run(name string, args []string, _ io.Reader, stdout, _ io.Writer) error {
+	if name != ctxexec.ExecutablePath {
+		return errors.New("unexpected executable: " + name)
+	}
+	key := strings.Join(args, " ")
+	output, ok := runner.outputs[key]
+	if !ok {
+		return errors.New("unexpected ctx command: " + key)
+	}
+	_, _ = io.WriteString(stdout, output)
+	return nil
+}
+
+func ctxAPIJSON(data string) string {
+	return `{"success":true,"format_version":"1.0","data":` + data + `,"error":null}`
+}
+
+func TestPromptAndServicesUseSharedJSONClient(t *testing.T) {
+	runner := &ctxReadRunner{outputs: map[string]string{
+		"prompt --format json --format-version 1":     ctxAPIJSON(`{"active":true,"target_ip":"10.0.0.5","workspace_path":"/tmp/workspace"}`),
+		"service ls --format json --format-version 1": ctxAPIJSON(`{"services":[{"port":80,"protocol":"tcp","service_name":"http"}]}`),
+	}}
+	app := New(runner, strings.NewReader(""), io.Discard, io.Discard)
+
+	prompt, err := app.prompt()
+	if err != nil || prompt.TargetIP == nil || *prompt.TargetIP != "10.0.0.5" {
+		t.Fatalf("prompt() = %+v, %v", prompt, err)
+	}
+	services, err := app.services()
+	if err != nil || len(services) != 1 || services[0].Port != 80 {
+		t.Fatalf("services() = %+v, %v", services, err)
+	}
+}
 
 func TestParseOptionsUsesExplicitWordlistAndURL(t *testing.T) {
 	options, err := parseOptions([]string{

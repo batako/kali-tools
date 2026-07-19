@@ -1,6 +1,52 @@
 package xscp
 
-import "testing"
+import (
+	"bytes"
+	"errors"
+	"io"
+	"strings"
+	"testing"
+
+	"req/internal/ctxexec"
+)
+
+type fakeRunner struct {
+	outputs   map[string]string
+	runInputs map[string][]byte
+	runs      []string
+}
+
+func (runner *fakeRunner) LookPath(name string) (string, error) {
+	if name == ctxexec.ExecutablePath || name == "scp" {
+		return name, nil
+	}
+	return "", errors.New("not found")
+}
+
+func (runner *fakeRunner) Run(name string, args []string, _ []string, stdin io.Reader, stdout, _ io.Writer) error {
+	if name == ctxexec.ExecutablePath {
+		name = "ctx"
+	}
+	key := name + " " + strings.Join(args, " ")
+	if name == "ctx" {
+		if stdin != nil {
+			input, _ := io.ReadAll(stdin)
+			runner.runInputs[key] = input
+		}
+		output, ok := runner.outputs[key]
+		if !ok {
+			return errors.New("unexpected ctx command: " + key)
+		}
+		_, _ = io.WriteString(stdout, output)
+		return nil
+	}
+	runner.runs = append(runner.runs, key)
+	return nil
+}
+
+func apiJSON(data string) string {
+	return `{"success":true,"format_version":"1.0","data":` + data + `,"error":null}`
+}
 
 func TestParseOptions(t *testing.T) {
 	options, err := parseOptions([]string{"upload", "./local.txt", "--port", "2222", "--service", "2"})
@@ -58,5 +104,31 @@ func TestSCPLogCommandDoesNotIncludePassword(t *testing.T) {
 	}
 	if command == "secret" {
 		t.Fatalf("scpLogCommand() leaked password")
+	}
+}
+
+func TestRunUsesSharedJSONClientAndRecordsLog(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: map[string]string{
+			"ctx prompt --format json --format-version 1":            apiJSON(`{"active":true,"target_ip":"10.0.0.5"}`),
+			"ctx credential ls ssh --format json --format-version 1": apiJSON(`{"credentials":[]}`),
+			"ctx service ls --format json --format-version 1":        apiJSON(`{"services":[]}`),
+			"ctx log start --format json --format-version 1":         apiJSON(`{"id":42}`),
+			"ctx log finish 42 --format json --format-version 1":     apiJSON(`{"id":42}`),
+		},
+		runInputs: map[string][]byte{},
+	}
+	var stdout, stderr bytes.Buffer
+	app := New(runner, strings.NewReader(""), &stdout, &stderr)
+	app.logger = ctxCommandLogger{runner: runner}
+
+	if err := app.run([]string{"xscp", "upload", "local.txt"}); err != nil {
+		t.Fatalf("run() error = %v, stderr = %q", err, stderr.String())
+	}
+	if len(runner.runs) != 1 || runner.runs[0] != "scp -P 22 local.txt 10.0.0.5:local.txt" {
+		t.Fatalf("runs = %#v", runner.runs)
+	}
+	if len(runner.runInputs["ctx log start --format json --format-version 1"]) == 0 {
+		t.Fatal("log start JSON input was not sent")
 	}
 }

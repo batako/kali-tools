@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
-	"req/internal/ctx"
+	"req/internal/ctxapi"
 )
 
 var (
@@ -347,11 +348,32 @@ func callbackIP(reader *bufio.Reader, stdout io.Writer, fallback string) (string
 }
 
 func detectCallbackIP() string {
-	data, err := ctx.LoadPromptData(".")
+	return detectCallbackIPWithRunner(ctxProcessRunner{})
+}
+
+type ctxProcessRunner struct{}
+
+func (ctxProcessRunner) Run(name string, args []string, env []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	command := exec.Command(name, args...)
+	if len(env) > 0 {
+		command.Env = append(os.Environ(), env...)
+	}
+	command.Stdin = stdin
+	command.Stdout = stdout
+	command.Stderr = stderr
+	return command.Run()
+}
+
+type promptData struct {
+	LocalIP string `json:"local_ip"`
+}
+
+func detectCallbackIPWithRunner(runner ctxapi.Runner) string {
+	result, err := ctxapi.Call[promptData](ctxapi.NewV1(runner), "prompt")
 	if err != nil {
 		return ""
 	}
-	return data.LocalIP
+	return strings.TrimSpace(result.Data.LocalIP)
 }
 
 func findValue(text, expression string) string {

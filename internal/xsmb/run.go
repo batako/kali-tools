@@ -3,7 +3,6 @@ package xsmb
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"req/internal/ctxapi"
+	"req/internal/ctxexec"
 )
 
 var (
@@ -38,9 +40,10 @@ func (err ExitCodeError) Error() string {
 	return fmt.Sprintf("exit code %d", err.Code)
 }
 
+func (err ExitCodeError) ExitCode() int { return err.Code }
+
 type commandRunner interface {
 	LookPath(file string) (string, error)
-	Output(name string, args ...string) ([]byte, []byte, error)
 	Run(name string, args []string, env []string, stdin io.Reader, stdout, stderr io.Writer) error
 }
 
@@ -48,15 +51,6 @@ type realRunner struct{}
 
 func (realRunner) LookPath(file string) (string, error) {
 	return exec.LookPath(file)
-}
-
-func (realRunner) Output(name string, args ...string) ([]byte, []byte, error) {
-	cmd := exec.Command(name, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
 }
 
 func (realRunner) Run(name string, args []string, env []string, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -120,11 +114,14 @@ func (app *App) Run(args []string) error {
 		}
 	}
 
-	if err := app.requireCommands("ctx", "smbclient"); err != nil {
+	if _, err := ctxexec.LookPath(app.runner); err != nil {
+		return app.errorf("ctx is required")
+	}
+	if err := app.requireCommands("smbclient"); err != nil {
 		return err
 	}
 
-	prompt, err := ctxJSON[PromptData](app.runner, "prompt", "--format", "json", "--format-version", "1")
+	prompt, err := ctxJSON[PromptData](app.runner, "prompt")
 	if err != nil {
 		return app.errorf("%s", err.Error())
 	}
@@ -136,7 +133,7 @@ func (app *App) Run(args []string) error {
 	}
 	targetIP := strings.TrimSpace(*prompt.TargetIP)
 
-	credentialData, err := ctxJSON[CredentialData](app.runner, "credential", "ls", "smb", "--format", "json", "--format-version", "1")
+	credentialData, err := ctxJSON[CredentialData](app.runner, "credential", "ls", "smb")
 	if err != nil {
 		return app.errorf("%s", err.Error())
 	}
@@ -146,7 +143,7 @@ func (app *App) Run(args []string) error {
 		return err
 	}
 
-	serviceData, err := ctxJSON[ServiceData](app.runner, "service", "ls", "--format", "json", "--format-version", "1")
+	serviceData, err := ctxJSON[ServiceData](app.runner, "service", "ls")
 	if err != nil {
 		return app.errorf("%s", err.Error())
 	}
@@ -434,19 +431,6 @@ func isDigits(value string) bool {
 	return true
 }
 
-type APIResponse[T any] struct {
-	Success       bool      `json:"success"`
-	FormatVersion *string   `json:"format_version"`
-	Data          *T        `json:"data"`
-	Error         *APIError `json:"error"`
-}
-
-type APIError struct {
-	Code    string         `json:"code"`
-	Message string         `json:"message"`
-	Details map[string]any `json:"details"`
-}
-
 type PromptData struct {
 	Active         bool    `json:"active"`
 	TargetIP       *string `json:"target_ip"`
@@ -481,30 +465,11 @@ type Service struct {
 }
 
 func ctxJSON[T any](runner commandRunner, args ...string) (*T, error) {
-	stdout, stderr, runErr := runner.Output("ctx", args...)
-
-	var response APIResponse[T]
-	if err := json.Unmarshal(stdout, &response); err != nil {
-		message := "invalid JSON from ctx"
-		if runErr != nil && len(stderr) > 0 {
-			message = fmt.Sprintf("%s: %s", message, strings.TrimSpace(string(stderr)))
-		}
-		return nil, errors.New(message)
+	result, err := ctxapi.Call[T](ctxapi.NewV1(runner), args...)
+	if err != nil {
+		return nil, err
 	}
-
-	if !response.Success {
-		if response.Error != nil && strings.TrimSpace(response.Error.Message) != "" {
-			return nil, errors.New(response.Error.Message)
-		}
-		return nil, errors.New("ctx command failed")
-	}
-	if response.FormatVersion == nil || !strings.HasPrefix(*response.FormatVersion, "1.") {
-		return nil, errors.New("unsupported ctx JSON format version")
-	}
-	if response.Data == nil {
-		return nil, errors.New("ctx response missing data")
-	}
-	return response.Data, nil
+	return result.Data, nil
 }
 
 func smbCredentials(credentials []Credential) []Credential {

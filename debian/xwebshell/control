@@ -4,5 +4,5 @@ Section: utils
 Priority: optional
 Architecture: @ARCH@
 Maintainer: batako <2323213+batako@users.noreply.github.com>
-Depends: webshells, seclists
+Depends: ctx, webshells, seclists
 Description: List and prepare Kali web shell templates

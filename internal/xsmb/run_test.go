@@ -3,16 +3,18 @@ package xsmb
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"reflect"
 	"strings"
 	"testing"
+
+	"req/internal/ctxexec"
 )
 
 type fakeRunner struct {
 	paths       map[string]bool
 	outputs     map[string]fakeOutput
+	runInputs   map[string][]byte
 	shareOutput string
 	shareArgs   []string
 	runs        []fakeRun
@@ -60,22 +62,30 @@ func (logger *memoryCommandLogger) Finish(id int64, status string, exitCode int,
 }
 
 func (runner *fakeRunner) LookPath(file string) (string, error) {
+	file = fakeCommandName(file)
 	if runner.paths[file] {
 		return "/fake/" + file, nil
 	}
 	return "", errors.New("not found")
 }
 
-func (runner *fakeRunner) Output(name string, args ...string) ([]byte, []byte, error) {
-	key := name + " " + strings.Join(args, " ")
-	output, ok := runner.outputs[key]
-	if !ok {
-		return nil, nil, fmt.Errorf("unexpected command: %s", key)
-	}
-	return []byte(output.stdout), []byte(output.stderr), output.err
-}
-
 func (runner *fakeRunner) Run(name string, args []string, env []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	name = fakeCommandName(name)
+	key := name + " " + strings.Join(args, " ")
+	if name == "ctx" {
+		if stdin != nil {
+			input, _ := io.ReadAll(stdin)
+			if runner.runInputs == nil {
+				runner.runInputs = map[string][]byte{}
+			}
+			runner.runInputs[key] = input
+		}
+		if output, ok := runner.outputs[key]; ok {
+			_, _ = io.WriteString(stdout, output.stdout)
+			_, _ = io.WriteString(stderr, output.stderr)
+			return output.err
+		}
+	}
 	if name == "smbclient" && containsArg(args, "-g") {
 		runner.shareArgs = append([]string(nil), args...)
 		_, _ = io.WriteString(stdout, runner.shareOutput)
@@ -87,6 +97,13 @@ func (runner *fakeRunner) Run(name string, args []string, env []string, stdin io
 		env:  append([]string(nil), env...),
 	})
 	return nil
+}
+
+func fakeCommandName(name string) string {
+	if name == ctxexec.ExecutablePath {
+		return "ctx"
+	}
+	return name
 }
 
 func newFakeRunner() *fakeRunner {
@@ -338,6 +355,26 @@ func TestRunRecordsSMBLogWithoutPassword(t *testing.T) {
 	}
 	if logger.finishID != 42 || logger.finishStatus != "success" || logger.finishCode != 0 {
 		t.Fatalf("finish log = %+v, want successful log", logger)
+	}
+}
+
+func TestCtxCommandLoggerUsesSharedJSONClient(t *testing.T) {
+	runner := newFakeRunner()
+	startKey := "ctx log start --format json --format-version 1"
+	finishKey := "ctx log finish 42 --format json --format-version 1"
+	runner.outputs[startKey] = fakeOutput{stdout: apiJSON(`{"id":42}`)}
+	runner.outputs[finishKey] = fakeOutput{stdout: apiJSON(`{"id":42}`)}
+	logger := ctxCommandLogger{runner: runner}
+
+	id, err := logger.Start("xsmb", "smbclient //2.3.4.5/public -p 445 -U root", "2026-07-13T00:00:00Z")
+	if err != nil || id != 42 {
+		t.Fatalf("Start() = %d, %v; want ID 42", id, err)
+	}
+	if len(runner.runInputs[startKey]) == 0 {
+		t.Fatal("log start JSON input was not sent")
+	}
+	if err := logger.Finish(id, "success", 0, "connected\n", "", "2026-07-13T00:05:00Z"); err != nil {
+		t.Fatalf("Finish() error = %v", err)
 	}
 }
 

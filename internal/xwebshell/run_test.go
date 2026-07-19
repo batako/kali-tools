@@ -2,9 +2,37 @@ package xwebshell
 
 import (
 	"bufio"
+	"io"
 	"strings"
 	"testing"
+
+	"req/internal/ctxexec"
 )
+
+type promptRunner struct {
+	name string
+	args []string
+}
+
+func (runner *promptRunner) Run(name string, args []string, _ []string, _ io.Reader, stdout, _ io.Writer) error {
+	runner.name = name
+	runner.args = append([]string(nil), args...)
+	_, _ = io.WriteString(stdout, `{"success":true,"format_version":"1.0","data":{"local_ip":"10.10.14.2"},"error":null}`)
+	return nil
+}
+
+func TestDetectCallbackIPUsesPublicPrompt(t *testing.T) {
+	runner := &promptRunner{}
+	if got := detectCallbackIPWithRunner(runner); got != "10.10.14.2" {
+		t.Fatalf("detectCallbackIPWithRunner() = %q", got)
+	}
+	if runner.name != ctxexec.ExecutablePath {
+		t.Fatalf("executable = %q", runner.name)
+	}
+	if strings.Join(runner.args, " ") != "prompt --format json --format-version 1" {
+		t.Fatalf("args = %#v", runner.args)
+	}
+}
 
 func TestCoveredByCatalog(t *testing.T) {
 	known := map[string]catalogEntry{

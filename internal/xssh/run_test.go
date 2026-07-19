@@ -3,13 +3,14 @@ package xssh
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"req/internal/ctxexec"
 )
 
 type fakeRunner struct {
@@ -75,24 +76,17 @@ func (state *memoryCredentialState) Save(id int64) error {
 }
 
 func (runner *fakeRunner) LookPath(file string) (string, error) {
+	file = fakeCommandName(file)
 	if runner.paths[file] {
 		return "/fake/" + file, nil
 	}
 	return "", errors.New("not found")
 }
 
-func (runner *fakeRunner) Output(name string, args ...string) ([]byte, []byte, error) {
-	key := name + " " + strings.Join(args, " ")
-	output, ok := runner.outputs[key]
-	if !ok {
-		return nil, nil, fmt.Errorf("unexpected command: %s", key)
-	}
-	return []byte(output.stdout), []byte(output.stderr), output.err
-}
-
 func (runner *fakeRunner) Run(name string, args []string, env []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	name = fakeCommandName(name)
 	key := name + " " + strings.Join(args, " ")
-	if name == "ctx" {
+	if name == "ctx" && stdin != nil {
 		input, _ := io.ReadAll(stdin)
 		if runner.runInputs == nil {
 			runner.runInputs = map[string][]byte{}
@@ -104,12 +98,24 @@ func (runner *fakeRunner) Run(name string, args []string, env []string, stdin io
 		_, _ = io.WriteString(stderr, output.stderr)
 		return output.err
 	}
+	if output, ok := runner.outputs[key]; ok {
+		_, _ = io.WriteString(stdout, output.stdout)
+		_, _ = io.WriteString(stderr, output.stderr)
+		return output.err
+	}
 	runner.runs = append(runner.runs, fakeRun{
 		name: name,
 		args: append([]string(nil), args...),
 		env:  append([]string(nil), env...),
 	})
 	return nil
+}
+
+func fakeCommandName(name string) string {
+	if name == ctxexec.ExecutablePath {
+		return "ctx"
+	}
+	return name
 }
 
 func newFakeRunner() *fakeRunner {

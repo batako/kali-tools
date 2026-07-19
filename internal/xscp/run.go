@@ -3,7 +3,6 @@ package xscp
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"req/internal/ctxapi"
+	"req/internal/ctxexec"
 )
 
 var (
@@ -50,23 +52,16 @@ type ExitCodeError struct{ CodeValue int }
 
 func (err ExitCodeError) Error() string { return fmt.Sprintf("exit code %d", err.CodeValue) }
 func (err ExitCodeError) Code() int     { return err.CodeValue }
+func (err ExitCodeError) ExitCode() int { return err.CodeValue }
 
 type commandRunner interface {
 	LookPath(string) (string, error)
-	Output(string, ...string) ([]byte, []byte, error)
 	Run(string, []string, []string, io.Reader, io.Writer, io.Writer) error
 }
 
 type realRunner struct{}
 
 func (realRunner) LookPath(name string) (string, error) { return exec.LookPath(name) }
-func (realRunner) Output(name string, args ...string) ([]byte, []byte, error) {
-	cmd := exec.Command(name, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
-}
 func (realRunner) Run(name string, args []string, env []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	cmd := exec.Command(name, args...)
 	if len(env) > 0 {
@@ -116,10 +111,13 @@ func (app *App) run(args []string) error {
 		_, err := fmt.Fprintf(app.stdout, "xscp %s\n", Version)
 		return err
 	}
-	if err := app.requireCommands("ctx", "scp"); err != nil {
+	if _, err := ctxexec.LookPath(app.runner); err != nil {
+		return app.errorf("ctx is required")
+	}
+	if err := app.requireCommands("scp"); err != nil {
 		return err
 	}
-	prompt, err := ctxJSON[PromptData](app.runner, "prompt", "--format", "json", "--format-version", "1")
+	prompt, err := ctxJSON[PromptData](app.runner, "prompt")
 	if err != nil {
 		return app.errorf("%s", err)
 	}
@@ -130,7 +128,7 @@ func (app *App) run(args []string) error {
 		return app.errorf("no primary target")
 	}
 	targetIP := strings.TrimSpace(*prompt.TargetIP)
-	credentialData, err := ctxJSON[CredentialData](app.runner, "credential", "ls", "ssh", "--format", "json", "--format-version", "1")
+	credentialData, err := ctxJSON[CredentialData](app.runner, "credential", "ls", "ssh")
 	if err != nil {
 		return app.errorf("%s", err)
 	}
@@ -138,7 +136,7 @@ func (app *App) run(args []string) error {
 	if err != nil {
 		return err
 	}
-	serviceData, err := ctxJSON[ServiceData](app.runner, "service", "ls", "--format", "json", "--format-version", "1")
+	serviceData, err := ctxJSON[ServiceData](app.runner, "service", "ls")
 	if err != nil {
 		return app.errorf("%s", err)
 	}
@@ -403,15 +401,6 @@ func isDigits(value string) bool {
 	return true
 }
 
-type APIResponse[T any] struct {
-	Success       bool      `json:"success"`
-	FormatVersion *string   `json:"format_version"`
-	Data          *T        `json:"data"`
-	Error         *APIError `json:"error"`
-}
-type APIError struct {
-	Message string `json:"message"`
-}
 type PromptData struct {
 	Active   bool    `json:"active"`
 	TargetIP *string `json:"target_ip"`
@@ -435,24 +424,11 @@ type Service struct {
 }
 
 func ctxJSON[T any](runner commandRunner, args ...string) (*T, error) {
-	stdout, stderr, runErr := runner.Output("ctx", args...)
-	var response APIResponse[T]
-	if err := json.Unmarshal(stdout, &response); err != nil {
-		if len(stderr) > 0 {
-			return nil, fmt.Errorf("invalid JSON from ctx: %s", strings.TrimSpace(string(stderr)))
-		}
-		return nil, errors.New("invalid JSON from ctx")
+	result, err := ctxapi.Call[T](ctxapi.NewV1(runner), args...)
+	if err != nil {
+		return nil, err
 	}
-	if runErr != nil || !response.Success {
-		if response.Error != nil && response.Error.Message != "" {
-			return nil, errors.New(response.Error.Message)
-		}
-		return nil, errors.New("ctx command failed")
-	}
-	if response.FormatVersion == nil || !strings.HasPrefix(*response.FormatVersion, "1.") || response.Data == nil {
-		return nil, errors.New("unsupported ctx response")
-	}
-	return response.Data, nil
+	return result.Data, nil
 }
 
 func sshCredentials(credentials []Credential) []Credential {

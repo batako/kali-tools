@@ -31,6 +31,9 @@ jobs:
       - name: Check package configuration
         run: ./scripts/check-package-config.sh
 
+      - name: Audit ctx integration contract
+        run: ./scripts/check-ctx-integration.sh
+
       - name: Check package versions
         run: |
           for command_dir in cmd/*; do

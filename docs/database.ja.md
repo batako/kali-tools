@@ -29,6 +29,86 @@
 
 データベースを開く際に現在のスキーマバージョンを確認し、必要なマイグレーションを適用した後で通常処理を開始します。
 
+現在のソースツリーのマイグレーションバージョンは`3`です。ctx本体のバージョンからスキーマバージョンを推測せず、データベースを直接確認します。
+
+```sh
+DB="${CTX_HOME:-$HOME/.ctx}/db.sqlite"
+sqlite3 -readonly "$DB" 'SELECT version, dirty FROM schema_migrations;'
+```
+
+`dirty = 0`は、記録されたマイグレーションが完了していることを示します。`schema_migrations`を手動で変更してはいけません。
+
+## データベースの場所
+
+ctxは全workspaceで1つの共有データベースを使用します。
+
+```text
+${CTX_HOME:-$HOME/.ctx}/db.sqlite
+```
+
+`${CTX_HOME:-$HOME/.ctx}/workspaces/<uuid>/`配下はツールの状態やスキャン結果であり、workspaceごとのctxデータベースではありません。`ctx status`は手動確認用に解決済みのデータベースパスを表示しますが、人間向け出力は機械連携仕様の対象ではありません。
+
+`CTX_HOME`を設定するとctxのdata root全体が変わります。継続的な互換性が必要なカスタムコマンドは、この内部パスを組み立てず、文書化されたJSON APIと登録コマンドを利用してください。
+
+## 読み取り専用での確認
+
+SQLite CLIの読み取り専用モードを使用します。確認前に一度ctxを起動し、保留中のマイグレーションを外部スクリプトではなくctx自身に適用させます。
+
+```sh
+DB="${CTX_HOME:-$HOME/.ctx}/db.sqlite"
+ctx status >/dev/null
+sqlite3 -readonly "$DB"
+```
+
+対話操作で利用できる確認コマンド:
+
+```sql
+.tables
+.schema targets
+SELECT version, dirty FROM schema_migrations;
+PRAGMA integrity_check;
+```
+
+読み取り専用queryの例:
+
+```sql
+SELECT w.name AS workspace, t.name AS target, t.ip, t.is_primary
+FROM workspaces AS w
+JOIN targets AS t ON t.workspace_id = w.id
+ORDER BY w.name, t.id;
+
+SELECT w.name AS workspace, t.ip, s.port, s.protocol, s.service_name, s.product, s.version
+FROM services AS s
+JOIN targets AS t ON t.id = s.target_id
+JOIN workspaces AS w ON w.id = t.workspace_id
+ORDER BY w.name, t.id, s.port, s.protocol;
+```
+
+table名、column、constraint、relationは内部実装であり、ctx更新時に変更される可能性があります。あるschema versionで動作するqueryが、別versionでも動作することは保証しません。
+
+## 直接利用前のバックアップ
+
+稼働中のdatabase fileを`cp`せず、SQLiteの整合したbackupを作成します。
+
+```sh
+DB="${CTX_HOME:-$HOME/.ctx}/db.sqlite"
+BACKUP="${DB}.backup-$(date +%Y%m%d-%H%M%S)"
+sqlite3 "$DB" ".backup '$BACKUP'"
+sqlite3 -readonly "$BACKUP" 'PRAGMA integrity_check;'
+```
+
+backupにはcredentialの平文password、command output、Cookie、token、target情報、noteが含まれる可能性があります。機密性のある調査データとして保存・転送してください。
+
+SQLを試す場合は、backupまたは別の使い捨てcopyを開きます。変更した実験用databaseを通常のctxコマンドから利用してはいけません。
+
+## 直接書き込みの警告
+
+直接書き込みは非対応です。ctxの入力検証、target・workspace解決、関連record更新、重複排除規則、command log lifecycle検証、migrationを迂回します。foreign keyやunique constraintだけでは、これらの動作を再現できません。
+
+稼働中のデータベースに対してinsert、update、delete、create、drop、alterを実行しないでください。カスタムコマンドから結果を保存する場合は、既存のctx登録コマンドを使用します。具体的な処理を既存の外部連携仕様で表現できない場合だけ、新しい機械入力操作を検討します。
+
+特に`credentials.password`、`command_logs.stdout`、`command_logs.stderr`は機密情報を含みます。診断出力へ表示したり、query結果をshell historyや通常のlog fileへ保存したりしないでください。
+
 ## 実装方針
 
 `ctx` のデータベース基盤は、次の方針で実装します。

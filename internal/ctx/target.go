@@ -7,6 +7,11 @@ import (
 	"net/netip"
 )
 
+var (
+	ErrPrimaryTargetNotSet = errors.New("primary target not set")
+	ErrTargetNotFound      = errors.New("target not found")
+)
+
 type Target struct {
 	ID        int64
 	Name      string
@@ -206,7 +211,7 @@ func GetPrimaryTarget(workspace *Workspace) (*Target, error) {
 		LIMIT 1
 	`, workspace.ID).Scan(&target.ID, &target.Name, &target.IP, &isPrimary)
 	if err == sql.ErrNoRows {
-		return nil, errors.New("primary target not set")
+		return nil, ErrPrimaryTargetNotSet
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to load primary target: %w", err)
@@ -231,7 +236,7 @@ func GetTargetByName(workspace *Workspace, name string) (*Target, error) {
 		WHERE workspace_id = ? AND name = ?
 	`, workspace.ID, name).Scan(&target.ID, &target.Name, &target.IP, &isPrimary)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("target not found: %s", name)
+		return nil, fmt.Errorf("%w: %s", ErrTargetNotFound, name)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to load target: %w", err)

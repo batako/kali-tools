@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"req/internal/ctx"
+	"req/internal/ctxapi"
+	"req/internal/ctxexec"
 )
 
 var (
@@ -60,25 +62,16 @@ options:
 type ExitCodeError struct{ Code int }
 
 func (err ExitCodeError) Error() string { return fmt.Sprintf("exit code %d", err.Code) }
+func (err ExitCodeError) ExitCode() int { return err.Code }
 
 type commandRunner interface {
 	LookPath(file string) (string, error)
-	Output(name string, args ...string) ([]byte, []byte, error)
 	Run(name string, args []string, stdin io.Reader, stdout, stderr io.Writer) error
 }
 
 type realRunner struct{}
 
 func (realRunner) LookPath(file string) (string, error) { return exec.LookPath(file) }
-
-func (realRunner) Output(name string, args ...string) ([]byte, []byte, error) {
-	command := exec.Command(name, args...)
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-	err := command.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
-}
 
 func (realRunner) Run(name string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	command := exec.Command(name, args...)
@@ -137,12 +130,15 @@ func (app *App) Run(args []string) error {
 		return err
 	}
 
-	commands := []string{"ctx", "gobuster"}
+	if _, err := ctxexec.LookPath(app.runner); err != nil {
+		return app.errorf("ctx is required")
+	}
+	commands := []string{"gobuster"}
 	if options.Status || options.ClearCache {
-		commands = []string{"ctx"}
+		commands = nil
 	}
 	if options.Sitemap {
-		commands = []string{"ctx"}
+		commands = nil
 	}
 	if err := app.requireCommands(commands...); err != nil {
 		return err
@@ -1579,58 +1575,30 @@ func (app *App) requireCommands(commands ...string) error {
 }
 
 func (app *App) prompt() (*PromptData, error) {
-	data, _, err := app.jsonCommand("prompt", "--format", "json", "--format-version", "1")
+	result, err := ctxapi.Call[PromptData](ctxapi.NewV1(ctxRunner{runner: app.runner}), "prompt")
 	if err != nil {
 		return nil, err
 	}
-	var prompt PromptData
-	if err := json.Unmarshal(data, &prompt); err != nil {
-		return nil, app.errorf("invalid prompt response: %s", err)
-	}
-	return &prompt, nil
+	return result.Data, nil
 }
 
 func (app *App) services() ([]Service, error) {
-	data, _, err := app.jsonCommand("service", "ls", "--format", "json", "--format-version", "1")
+	result, err := ctxapi.Call[ServiceData](ctxapi.NewV1(ctxRunner{runner: app.runner}), "service", "ls")
 	if err != nil {
 		return nil, err
 	}
-	var serviceData ServiceData
-	if err := json.Unmarshal(data, &serviceData); err != nil {
-		return nil, app.errorf("invalid service response: %s", err)
-	}
-	return serviceData.Services, nil
+	return result.Data.Services, nil
 }
 
-func (app *App) jsonCommand(args ...string) ([]byte, []byte, error) {
-	stdout, stderr, runErr := app.runner.Output("ctx", args...)
-	var response APIResponse
-	if err := json.Unmarshal(stdout, &response); err != nil {
-		if runErr != nil && len(stderr) > 0 {
-			return nil, stderr, app.errorf("ctx command failed: %s", strings.TrimSpace(string(stderr)))
-		}
-		return nil, stderr, app.errorf("invalid JSON from ctx")
-	}
-	if !response.Success {
-		if response.Error != nil && response.Error.Message != "" {
-			return nil, stderr, app.errorf("%s", response.Error.Message)
-		}
-		return nil, stderr, app.errorf("ctx command failed")
-	}
-	return response.Data, stderr, nil
+type ctxRunner struct {
+	runner commandRunner
+}
+
+func (runner ctxRunner) Run(name string, args []string, _ []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	return runner.runner.Run(name, args, stdin, stdout, stderr)
 }
 
 func (app *App) errorf(format string, args ...any) error { return fmt.Errorf(format, args...) }
-
-type APIResponse struct {
-	Success bool            `json:"success"`
-	Data    json.RawMessage `json:"data"`
-	Error   *APIError       `json:"error"`
-}
-
-type APIError struct {
-	Message string `json:"message"`
-}
 
 type PromptData struct {
 	Active        bool    `json:"active"`

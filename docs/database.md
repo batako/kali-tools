@@ -29,6 +29,86 @@ The database schema version is managed independently from the application versio
 
 The application checks the current schema version when opening the database and automatically applies any required migrations before normal operation.
 
+The current source tree has migration version `3`. Do not infer the schema version from the ctx application version. Query the database itself:
+
+```sh
+DB="${CTX_HOME:-$HOME/.ctx}/db.sqlite"
+sqlite3 -readonly "$DB" 'SELECT version, dirty FROM schema_migrations;'
+```
+
+`dirty = 0` indicates that the recorded migration completed. Do not edit `schema_migrations` manually.
+
+## Database Location
+
+ctx uses one shared database for all workspaces:
+
+```text
+${CTX_HOME:-$HOME/.ctx}/db.sqlite
+```
+
+The workspace-specific files under `${CTX_HOME:-$HOME/.ctx}/workspaces/<uuid>/` are tool state and scan artifacts, not separate ctx databases. `ctx status` prints the resolved database path for manual inspection, but its human-readable output is not a machine integration contract.
+
+`CTX_HOME` changes the entire ctx data root. A custom command that needs stable compatibility should use the documented JSON and registration commands instead of deriving this internal path.
+
+## Read-Only Inspection
+
+Prefer the SQLite CLI's read-only mode. Start ctx once before inspection so pending migrations are applied by ctx rather than by an external script.
+
+```sh
+DB="${CTX_HOME:-$HOME/.ctx}/db.sqlite"
+ctx status >/dev/null
+sqlite3 -readonly "$DB"
+```
+
+Useful interactive commands:
+
+```sql
+.tables
+.schema targets
+SELECT version, dirty FROM schema_migrations;
+PRAGMA integrity_check;
+```
+
+Example read-only queries:
+
+```sql
+SELECT w.name AS workspace, t.name AS target, t.ip, t.is_primary
+FROM workspaces AS w
+JOIN targets AS t ON t.workspace_id = w.id
+ORDER BY w.name, t.id;
+
+SELECT w.name AS workspace, t.ip, s.port, s.protocol, s.service_name, s.product, s.version
+FROM services AS s
+JOIN targets AS t ON t.id = s.target_id
+JOIN workspaces AS w ON w.id = t.workspace_id
+ORDER BY w.name, t.id, s.port, s.protocol;
+```
+
+Table names, columns, constraints, and relationships are internal implementation details and may change in any ctx update. Queries that work with one schema version are not guaranteed to work with another.
+
+## Backup Before Direct Use
+
+Create a consistent SQLite backup instead of copying the live database file with `cp`:
+
+```sh
+DB="${CTX_HOME:-$HOME/.ctx}/db.sqlite"
+BACKUP="${DB}.backup-$(date +%Y%m%d-%H%M%S)"
+sqlite3 "$DB" ".backup '$BACKUP'"
+sqlite3 -readonly "$BACKUP" 'PRAGMA integrity_check;'
+```
+
+The backup can contain plaintext credential passwords, command output, cookies, tokens, target data, and notes. Store and transfer it as sensitive investigation data.
+
+For experimental SQL, open the backup or another disposable copy. Do not point normal ctx commands at a modified experiment database.
+
+## Direct Write Warning
+
+Direct writes are unsupported. They bypass ctx validation, target and workspace resolution, related-record updates, deduplication rules, command-log lifecycle checks, and migrations. Foreign keys or unique constraints alone do not reproduce these behaviors.
+
+Do not insert, update, delete, create, drop, or alter objects in the live database. If a custom command needs to save a result, use an existing ctx registration command. Propose a new machine-readable operation only when no existing public contract can represent a concrete workflow.
+
+The `credentials.password`, `command_logs.stdout`, and `command_logs.stderr` fields are especially sensitive. Avoid printing them in diagnostics or storing query output in shell history and ordinary log files.
+
 ## Implementation Policy
 
 The `ctx` database layer follows these implementation rules.

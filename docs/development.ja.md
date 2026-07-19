@@ -197,7 +197,8 @@ flowchart TB
 | --- | --- | --- | --- |
 | [`scripts/build-deb.sh`](../scripts/build-deb.sh) | 1ツール・1アーキテクチャの`.deb`を生成 | `install-deb.sh`、`check-release.sh`（`release.yml`からも間接実行） | `dist/` |
 | [`scripts/build-apt-repo.sh`](../scripts/build-apt-repo.sh) | `dist/*.deb`からAPTインデックスを再生成 | `release.yml` | `repo/` |
-| [`scripts/check-package-config.sh`](../scripts/check-package-config.sh) | 全ツールの構成とリリースノートを検査 | `test.yml`、`check-release.sh`（`release.yml`からも間接実行） | なし |
+| [`scripts/check-package-config.sh`](../scripts/check-package-config.sh) | 全ツールの構成、リリースノート、ctx利用パッケージのDebian依存を検査 | `test.yml`、`check-release.sh`（`release.yml`からも間接実行） | なし |
+| [`scripts/check-ctx-integration.sh`](../scripts/check-ctx-integration.sh) | ctx外部連携仕様の日英文書、固定実行パス、共通JSONクライアント、Debian依存、連携仕様テストを一括監査 | `test.yml` | なし |
 | [`scripts/check-version.sh`](../scripts/check-version.sh) | GoソースとDebian VERSIONを照合 | `test.yml`、`check-release.sh`（`release.yml`からも間接実行） | なし |
 
 内部スクリプトは障害調査や個別確認のために直接実行できますが、通常の開発で順番にすべて実行する必要はありません。
@@ -206,6 +207,7 @@ flowchart TB
 ./scripts/build-deb.sh <tool> [amd64|arm64]
 ./scripts/build-apt-repo.sh
 ./scripts/check-package-config.sh
+./scripts/check-ctx-integration.sh
 ./scripts/check-version.sh <tool>
 ```
 
@@ -221,6 +223,7 @@ test.yml
 ├── go mod tidy -diff
 ├── go test ./...
 ├── check-package-config.sh
+├── check-ctx-integration.sh
 └── check-version.sh（cmd/*の全ツール）
 ```
 
@@ -271,5 +274,7 @@ releases/<tool>/<version>.ja.md
 ```
 
 追加後に`./scripts/check-package-config.sh`を実行します。パッケージ一覧は`cmd/*`から取得されるため、通常はビルドスクリプトやWorkflowへツール名を追加する必要はありません。
+
+production Goコードが`internal/ctx`、`internal/ctxapi`、`internal/ctxexec`のいずれかをimportする場合、`debian/<tool>/control`の`Depends`へ`ctx`を含める必要があります。`check-package-config.sh`はこの対応をローカルと`test.yml`の両方で検査します。
 
 ただし、ツール固有の処理をWorkflowへ追加する必要がある設計変更を行った場合は、`test.yml`、`release.yml`、`audit-releases.yml`のすべてを確認します。

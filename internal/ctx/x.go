@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -65,8 +66,9 @@ func RunX(args []string, stdout, stderr io.Writer) int {
 	cmd.Stderr = io.MultiWriter(stderr, &stderrBuffer)
 
 	err = cmd.Run()
+	interruptedSignal := 0
 	if err != nil {
-		exitCode = commandExitCode(err)
+		exitCode, interruptedSignal = commandResult(err)
 		if exitCode == 127 {
 			message := fmt.Sprintf("x: %v\n", err)
 			_, _ = io.WriteString(stderr, message)
@@ -76,6 +78,10 @@ func RunX(args []string, stdout, stderr io.Writer) int {
 	endedAt := time.Now().UTC()
 
 	status, storedExitCode := commandLogStatus(exitCode)
+	if interruptedSignal > 0 {
+		status = "interrupted"
+		storedExitCode = -interruptedSignal
+	}
 	if err := FinishCommandLog(workspace, logID, CommandLog{
 		Status:   status,
 		ExitCode: storedExitCode,
@@ -122,6 +128,17 @@ func commandExitCode(err error) int {
 		return exitErr.ExitCode()
 	}
 	return 127
+}
+
+func commandResult(err error) (int, int) {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		if status, ok := exitErr.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+			signal := int(status.Signal())
+			return 128 + signal, signal
+		}
+	}
+	return commandExitCode(err), 0
 }
 
 func commandString(args []string) string {

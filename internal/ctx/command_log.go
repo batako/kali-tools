@@ -2,9 +2,12 @@ package ctx
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 )
+
+var ErrCommandLogNotFound = errors.New("command log not found")
 
 type CommandLog struct {
 	ID              int64
@@ -74,7 +77,7 @@ func FinishCommandLog(workspace *Workspace, id int64, log CommandLog) error {
 		return fmt.Errorf("failed to inspect command log update: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("log not found: %d", id)
+		return fmt.Errorf("%w: %d", ErrCommandLogNotFound, id)
 	}
 	return nil
 }
@@ -133,7 +136,7 @@ func GetCommandLog(workspace *Workspace, rawID string) (*CommandLog, error) {
 		WHERE workspace_id = ? AND id = ?
 	`, workspace.ID, id).Scan(&log.ID, &log.WorkspaceID, &log.Command, &log.ExpandedCommand, &log.Status, &log.ExitCode, &log.Stdout, &log.Stderr, &log.StartedAt, &log.EndedAt)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("log not found: %d", id)
+		return nil, fmt.Errorf("%w: %d", ErrCommandLogNotFound, id)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to load command log: %w", err)

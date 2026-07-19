@@ -209,4 +209,4 @@ git push origin <tool>/v<version>
 
 ## Documentation
 
-See `docs/` for the development workflow, ctx architecture, database, API, and add-on documentation. Run each command with `--help` for its current CLI syntax.
+See the [ctx integration guide](docs/integration.md) when connecting custom commands to ctx. The remaining documents in `docs/` cover the development workflow, ctx architecture, database, JSON API, and add-ons. Run each command with `--help` for its current CLI syntax.
