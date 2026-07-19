@@ -146,7 +146,7 @@ Build and install one package locally:
 ## Documentation
 
 - CLI syntax: run each command with `--help`.
-- Development, validation, and release flow: [Development Guide](docs/development.ja.md)
+- Development, validation, and release flow: [Development Guide](docs/development.md)
 - Custom command integration: [ctx Integration Guide](docs/integration.md)
 - JSON API: [ctx JSON API](docs/api.md)
 - Database: [Database Design](docs/database.md)
