@@ -1,7 +1,6 @@
 package ctx
 
 import (
-	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -27,23 +26,28 @@ const (
 var wordlistKinds = []string{WordlistKindAll, WordlistKindDirectory, WordlistKindSubdomain, WordlistKindParameterName, WordlistKindParameterValue, WordlistKindPassword, WordlistKindUsername, WordlistKindEndpoint, WordlistKindUnknown}
 
 type WordlistEntry struct {
-	Path         string `json:"path"`
-	ResolvedPath string `json:"resolved_path,omitempty"`
-	Provider     string `json:"provider"`
-	Kind         string `json:"kind"`
-	Profile      string `json:"profile,omitempty"`
-	Available    bool   `json:"available"`
-	Usable       bool   `json:"usable"`
-	Reason       string `json:"reason,omitempty"`
-	Size         int64  `json:"size,omitempty"`
-	Compressed   bool   `json:"compressed,omitempty"`
-	Lines        int64  `json:"lines,omitempty"`
+	Path         string              `json:"path"`
+	ResolvedPath string              `json:"resolved_path,omitempty"`
+	Provider     string              `json:"provider"`
+	Kind         string              `json:"kind"` // primary kind kept for JSON 1.0 compatibility
+	Kinds        []WordlistKindMatch `json:"kinds,omitempty"`
+	Profile      string              `json:"profile,omitempty"`
+	State        string              `json:"state"`
+	Format       string              `json:"format,omitempty"`
+	Readiness    string              `json:"readiness,omitempty"`
+	Available    bool                `json:"available"`
+	Usable       bool                `json:"usable"`
+	Reason       string              `json:"reason,omitempty"`
+	Size         int64               `json:"size,omitempty"`
+	Compressed   bool                `json:"compressed,omitempty"`
+	Lines        int64               `json:"lines,omitempty"`
 }
 
 type wordlistCatalog struct {
-	Root     string          `json:"root"`
-	Entries  []WordlistEntry `json:"entries"`
-	Warnings []string        `json:"warnings,omitempty"`
+	Root      string          `json:"root"`
+	Entries   []WordlistEntry `json:"entries"`
+	Warnings  []string        `json:"warnings,omitempty"`
+	QueryKind string          `json:"-"`
 }
 
 const wordlistUsageText = `usage: ctx wordlist <command> [options]
@@ -83,7 +87,6 @@ func runWordlist(args []string, stdout io.Writer) error {
 		_, err := fmt.Fprintln(stdout, wordlistUsageText)
 		return err
 	}
-	implicitList := len(args) == 0 || strings.HasPrefix(args[0], "-")
 	action := "ls"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		action = args[0]
@@ -107,10 +110,8 @@ func runWordlist(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if implicitList && options.Kind != WordlistKindAll {
+	if options.Kind != WordlistKindAll {
 		catalog.Entries = recommendWordlists(catalog.Entries, options.Kind)
-	} else if options.Kind != WordlistKindAll {
-		catalog.Entries = filterWordlistEntries(catalog.Entries, options.Kind, options.UsableOnly)
 	} else if options.UsableOnly {
 		catalog.Entries = filterWordlistEntries(catalog.Entries, WordlistKindAll, true)
 	}
@@ -121,6 +122,7 @@ func runWordlist(args []string, stdout io.Writer) error {
 		}
 		catalog.Entries = []WordlistEntry{entry}
 	}
+	catalog.QueryKind = options.Kind
 	return writeWordlistOutput(stdout, output, catalog, action)
 }
 
@@ -175,15 +177,19 @@ func containsWordlistKind(v string) bool {
 
 func buildWordlistCatalog(root string) (wordlistCatalog, error) {
 	c := wordlistCatalog{Root: root}
+	manifest, err := wordlistManifestIndex()
+	if err != nil {
+		return c, err
+	}
 	seen := map[string]bool{}
-	if err := scanWordlistNode(root, root, &c, seen); err != nil {
+	if err := scanWordlistNode(root, root, &c, seen, manifest); err != nil {
 		return c, err
 	}
 	sort.Slice(c.Entries, func(i, j int) bool { return c.Entries[i].Path < c.Entries[j].Path })
 	return c, nil
 }
 
-func scanWordlistNode(logical, real string, c *wordlistCatalog, seen map[string]bool) error {
+func scanWordlistNode(logical, real string, c *wordlistCatalog, seen map[string]bool, manifest map[string]wordlistManifestRecord) error {
 	info, err := os.Lstat(logical)
 	if err != nil {
 		return err
@@ -191,12 +197,12 @@ func scanWordlistNode(logical, real string, c *wordlistCatalog, seen map[string]
 	if info.Mode()&os.ModeSymlink != 0 {
 		resolved, e := filepath.EvalSymlinks(logical)
 		if e != nil {
-			c.Entries = append(c.Entries, WordlistEntry{Path: logical, Provider: wordlistProvider(logical), Kind: WordlistKindUnknown, Reason: "broken symlink"})
+			c.Entries = append(c.Entries, WordlistEntry{Path: logical, Provider: wordlistProvider(logical), Kind: WordlistKindUnknown, State: WordlistStateUnknown, Readiness: WordlistReadyUnsupported, Reason: "broken symlink"})
 			return nil
 		}
 		target, e := os.Stat(resolved)
 		if e != nil {
-			c.Entries = append(c.Entries, WordlistEntry{Path: logical, Provider: wordlistProvider(logical), Kind: WordlistKindUnknown, Reason: "unavailable target"})
+			c.Entries = append(c.Entries, WordlistEntry{Path: logical, Provider: wordlistProvider(logical), Kind: WordlistKindUnknown, State: WordlistStateUnknown, Readiness: WordlistReadyUnsupported, Reason: "unavailable target"})
 			return nil
 		}
 		if target.IsDir() {
@@ -206,13 +212,13 @@ func scanWordlistNode(logical, real string, c *wordlistCatalog, seen map[string]
 				return nil
 			}
 			for _, item := range items {
-				if e := scanWordlistNode(filepath.Join(logical, item.Name()), filepath.Join(resolved, item.Name()), c, seen); e != nil {
+				if e := scanWordlistNode(filepath.Join(logical, item.Name()), filepath.Join(resolved, item.Name()), c, seen, manifest); e != nil {
 					c.Warnings = append(c.Warnings, fmt.Sprintf("%s: %v", filepath.Join(logical, item.Name()), e))
 				}
 			}
 			return nil
 		}
-		return catalogWordlistFile(logical, resolved, target, c, seen)
+		return catalogWordlistFile(logical, resolved, target, c, seen, manifest)
 	}
 	if info.IsDir() {
 		items, err := os.ReadDir(real)
@@ -221,7 +227,7 @@ func scanWordlistNode(logical, real string, c *wordlistCatalog, seen map[string]
 			return nil
 		}
 		for _, item := range items {
-			if err := scanWordlistNode(filepath.Join(logical, item.Name()), filepath.Join(real, item.Name()), c, seen); err != nil {
+			if err := scanWordlistNode(filepath.Join(logical, item.Name()), filepath.Join(real, item.Name()), c, seen, manifest); err != nil {
 				c.Warnings = append(c.Warnings, fmt.Sprintf("%s: %v", filepath.Join(logical, item.Name()), err))
 			}
 		}
@@ -230,10 +236,10 @@ func scanWordlistNode(logical, real string, c *wordlistCatalog, seen map[string]
 	if !info.Mode().IsRegular() {
 		return nil
 	}
-	return catalogWordlistFile(logical, real, info, c, seen)
+	return catalogWordlistFile(logical, real, info, c, seen, manifest)
 }
 
-func catalogWordlistFile(logical, real string, info os.FileInfo, c *wordlistCatalog, seen map[string]bool) error {
+func catalogWordlistFile(logical, real string, info os.FileInfo, c *wordlistCatalog, seen map[string]bool, manifest map[string]wordlistManifestRecord) error {
 	resolved, _ := filepath.EvalSymlinks(real)
 	key := resolved
 	if key == "" {
@@ -243,20 +249,49 @@ func catalogWordlistFile(logical, real string, info os.FileInfo, c *wordlistCata
 		return nil
 	}
 	seen[key] = true
-	e := WordlistEntry{Path: logical, ResolvedPath: resolved, Provider: wordlistProvider(logical), Kind: classifyCatalogWordlist(logical), Available: true, Size: info.Size()}
-	e.Compressed = strings.HasSuffix(strings.ToLower(logical), ".gz") || strings.HasSuffix(strings.ToLower(logical), ".bz2")
-	e.Usable = !isCatalogMetadata(logical) && !e.Compressed
-	if !e.Usable {
-		if e.Compressed {
-			e.Reason = "compressed file is cataloged but not directly usable"
+	relative, relErr := filepath.Rel(c.Root, logical)
+	if relErr != nil {
+		return relErr
+	}
+	manifestRecord, knownPath := manifest[filepath.ToSlash(relative)]
+	e := WordlistEntry{Path: logical, ResolvedPath: resolved, Provider: wordlistProvider(logical), Available: true, Size: info.Size(), State: WordlistStateUnknown}
+	if knownPath {
+		e.Provider = manifestRecord.Provider
+		e.Format = manifestRecord.Format
+		e.Readiness = manifestRecord.Readiness
+		e.Lines = manifestRecord.Lines
+		e.Kinds = append([]WordlistKindMatch(nil), manifestRecord.Kinds...)
+		if info.Size() == manifestRecord.Size && hashMatches(real, manifestRecord.SHA256) {
+			e.State = WordlistStateKnownVerified
 		} else {
-			e.Reason = "metadata or non-wordlist file"
+			e.State = WordlistStateKnownModified
+			sample, _ := sampleWordlistFile(real, info.Size())
+			e.Kinds = classifyWordlistKinds(relative, sample, 0, "inferred")
+			e.Lines = 0
+			e.Reason = "path exists in the embedded catalog but content differs"
+		}
+	} else {
+		e.Format, e.Readiness = inspectWordlistFormat(logical, real)
+		sample, _ := sampleWordlistFile(real, info.Size())
+		e.Kinds = classifyWordlistKinds(relative, sample, 0, "inferred")
+	}
+	e.Compressed = e.Readiness == WordlistReadyNeedsExtract
+	e.Usable = e.Readiness == WordlistReadyReady || e.Readiness == WordlistReadyNeedsNormalize
+	if !e.Usable && e.Reason == "" {
+		switch e.Readiness {
+		case WordlistReadyNeedsExtract:
+			e.Reason = "compressed file is cataloged but not directly usable"
+		case WordlistReadyUnsafe:
+			e.Reason = "unsafe file is not an operational candidate"
+		default:
+			e.Reason = "metadata, binary, or unsupported file"
 		}
 	}
-	e.Profile = wordlistProfile(e.Kind, logical)
-	if e.Usable {
-		e.Lines = countWordlistLines(real, e.Compressed)
+	e.Kind = primaryWordlistKind(e.Kinds)
+	if e.Kind == "" {
+		e.Kind = WordlistKindUnknown
 	}
+	e.Profile = wordlistProfile(e.Kind, logical)
 	c.Entries = append(c.Entries, e)
 	return nil
 }
@@ -268,28 +303,14 @@ func wordlistProvider(path string) string {
 	}
 	return WordlistProviderLists
 }
-func classifyCatalogWordlist(path string) string {
-	p := strings.ToLower(filepath.ToSlash(path))
-	b := strings.ToLower(filepath.Base(path))
-	switch {
-	case strings.Contains(p, "/password"), strings.Contains(p, "rockyou"), strings.Contains(p, "john.lst"):
-		return WordlistKindPassword
-	case strings.Contains(p, "/username"), strings.Contains(p, "/usernames/"), strings.Contains(b, "user"):
-		return WordlistKindUsername
-	case strings.Contains(p, "parameter-name"), strings.Contains(b, "parameter-names"):
-		return WordlistKindParameterName
-	case strings.Contains(p, "/lfi/"), strings.Contains(p, "/payloads/"), strings.Contains(p, "/payload/"), strings.Contains(p, "parameter-value"), strings.Contains(b, "redirect"):
-		return WordlistKindParameterValue
-	case strings.Contains(p, "/fuzzing/"):
-		return WordlistKindEndpoint
-	case strings.Contains(p, "/discovery/dns/"), strings.Contains(p, "subdomain"), strings.Contains(p, "subdomains"), strings.Contains(b, "dns"):
-		return WordlistKindSubdomain
-	case strings.Contains(p, "/web-content/"), strings.Contains(p, "/dirb/"), strings.Contains(p, "/dirbuster/"):
-		return WordlistKindDirectory
-	case strings.Contains(p, "endpoint"), strings.Contains(p, "cgi"):
-		return WordlistKindEndpoint
+func primaryWordlistKind(kinds []WordlistKindMatch) string {
+	best := WordlistKindMatch{}
+	for _, match := range kinds {
+		if best.Name == "" || fitRank(match.Fit) > fitRank(best.Fit) || fitRank(match.Fit) == fitRank(best.Fit) && match.Priority > best.Priority {
+			best = match
+		}
 	}
-	return WordlistKindUnknown
+	return best.Name
 }
 func wordlistProfile(kind, path string) string {
 	if kind == WordlistKindDirectory {
@@ -338,32 +359,6 @@ func isCatalogMetadata(path string) bool {
 	b := strings.ToLower(filepath.Base(path))
 	return b == "readme" || strings.HasPrefix(b, "readme.") || b == "license" || b == "copying" || b == "changelog" || strings.HasSuffix(b, ".md") || strings.HasSuffix(b, ".html")
 }
-func countWordlistLines(path string, compressed bool) int64 {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0
-	}
-	defer f.Close()
-	var r io.Reader = f
-	if compressed {
-		gz, e := gzip.NewReader(f)
-		if e != nil {
-			return 0
-		}
-		defer gz.Close()
-		r = gz
-	}
-	buf := make([]byte, 32*1024)
-	var n int64
-	for {
-		k, e := r.Read(buf)
-		n += int64(bytesCountNewlines(buf[:k]))
-		if e != nil {
-			break
-		}
-	}
-	return n
-}
 func bytesCountNewlines(b []byte) int {
 	n := 0
 	for _, x := range b {
@@ -377,7 +372,7 @@ func bytesCountNewlines(b []byte) int {
 func filterWordlistEntries(entries []WordlistEntry, kind string, usableOnly bool) []WordlistEntry {
 	out := entries[:0]
 	for _, e := range entries {
-		if (kind == WordlistKindAll || e.Kind == kind) && (!usableOnly || e.Usable) {
+		if (kind == WordlistKindAll || wordlistKindMatch(e, kind) != nil || kind == WordlistKindUnknown && len(e.Kinds) == 0) && (!usableOnly || e.Usable) {
 			out = append(out, e)
 		}
 	}
@@ -389,24 +384,68 @@ func recommendWordlists(entries []WordlistEntry, kind string) []WordlistEntry {
 	}
 	entries = filterWordlistEntries(entries, kind, true)
 	sort.SliceStable(entries, func(i, j int) bool {
-		return wordlistSuggestionScore(entries[i]) > wordlistSuggestionScore(entries[j])
+		return compareWordlistRecommendations(entries[i], entries[j], kind)
 	})
 	return entries
 }
-func wordlistSuggestionScore(e WordlistEntry) int {
-	p := strings.ToLower(e.Path)
-	score := 0
-	if e.Profile != "" {
-		if strings.HasSuffix(e.Profile, "quick") {
-			score += 30
-		} else if strings.HasSuffix(e.Profile, "standard") {
-			score += 20
+func wordlistKindMatch(e WordlistEntry, kind string) *WordlistKindMatch {
+	for i := range e.Kinds {
+		if e.Kinds[i].Name == kind {
+			return &e.Kinds[i]
 		}
 	}
-	if e.Kind == WordlistKindParameterName && strings.Contains(p, "burp") {
-		score += 40
+	return nil
+}
+func compareWordlistRecommendations(a, b WordlistEntry, kind string) bool {
+	am, bm := wordlistKindMatch(a, kind), wordlistKindMatch(b, kind)
+	if am == nil || bm == nil {
+		return am != nil
 	}
-	return score
+	if stateRank(a.State) != stateRank(b.State) {
+		return stateRank(a.State) > stateRank(b.State)
+	}
+	if fitRank(am.Fit) != fitRank(bm.Fit) {
+		return fitRank(am.Fit) > fitRank(bm.Fit)
+	}
+	if am.Priority != bm.Priority {
+		return am.Priority > bm.Priority
+	}
+	if tierRank(am.Tier) != tierRank(bm.Tier) {
+		return tierRank(am.Tier) < tierRank(bm.Tier)
+	}
+	if am.Confidence != bm.Confidence {
+		return am.Confidence > bm.Confidence
+	}
+	if a.Size != b.Size {
+		return a.Size < b.Size
+	}
+	return a.Path < b.Path
+}
+func stateRank(state string) int {
+	switch state {
+	case WordlistStateKnownVerified:
+		return 3
+	case WordlistStateKnownModified:
+		return 2
+	default:
+		return 1
+	}
+}
+func fitRank(fit string) int {
+	if fit == WordlistFitPrimary {
+		return 2
+	}
+	return 1
+}
+func tierRank(tier string) int {
+	switch tier {
+	case WordlistTierQuick:
+		return 0
+	case WordlistTierStandard:
+		return 1
+	default:
+		return 2
+	}
 }
 func findWordlistEntry(entries []WordlistEntry, path string) (WordlistEntry, bool) {
 	for _, e := range entries {
@@ -421,19 +460,50 @@ func writeWordlistOutput(w io.Writer, output outputOptions, c wordlistCatalog, a
 	switch output.Format {
 	case apiFormatJSON:
 		return runJSONEndpoint(w, "wordlist", output.FormatVersion, func(version string) (any, error) {
-			return map[string]any{"format_version": version, "action": action, "root": c.Root, "entries": c.Entries, "warnings": c.Warnings}, nil
+			return map[string]any{"format_version": version, "action": action, "root": c.Root, "kind": c.QueryKind, "entries": c.Entries, "warnings": c.Warnings}, nil
 		})
 	case "markdown":
-		fmt.Fprintf(w, "# Wordlists\n\nRoot: `%s`\n\n| Kind | Usable | Path | Profile |\n|---|---:|---|---|\n", c.Root)
+		if c.QueryKind != "" && c.QueryKind != WordlistKindAll {
+			fmt.Fprintf(w, "# Wordlists\n\nRoot: `%s`\n\n| Fit | Tier | Confidence | State | Path |\n|---|---|---:|---|---|\n", c.Root)
+			for _, e := range c.Entries {
+				match := wordlistKindMatch(e, c.QueryKind)
+				if match != nil {
+					fmt.Fprintf(w, "| %s | %s | %d | %s | `%s` |\n", match.Fit, match.Tier, match.Confidence, e.State, e.Path)
+				}
+			}
+			return nil
+		}
+		fmt.Fprintf(w, "# Wordlists\n\nRoot: `%s`\n\n| Kinds | State | Usable | Path |\n|---|---|---:|---|\n", c.Root)
 		for _, e := range c.Entries {
-			fmt.Fprintf(w, "| %s | %t | `%s` | %s |\n", e.Kind, e.Usable, e.Path, e.Profile)
+			fmt.Fprintf(w, "| %s | %s | %t | `%s` |\n", wordlistKindNames(e.Kinds), e.State, e.Usable, e.Path)
 		}
 		return nil
 	default:
-		fmt.Fprintf(w, "Root: %s\n\n%-6s %-18s %-20s %-10s %-7s %s\n", c.Root, "USABLE", "KIND", "PROFILE", "LINES", "SIZE", "PATH")
+		if c.QueryKind != "" && c.QueryKind != WordlistKindAll {
+			fmt.Fprintf(w, "Root: %s\n\n%-15s %-10s %-10s %-10s %-7s %s\n", c.Root, "STATE", "FIT", "TIER", "CONFIDENCE", "LINES", "PATH")
+			for _, e := range c.Entries {
+				match := wordlistKindMatch(e, c.QueryKind)
+				if match != nil {
+					fmt.Fprintf(w, "%-15s %-10s %-10s %-10d %-7s %s\n", e.State, match.Fit, match.Tier, match.Confidence, strconv.FormatInt(e.Lines, 10), e.Path)
+				}
+			}
+			return nil
+		}
+		fmt.Fprintf(w, "Root: %s\n\n%-15s %-24s %-12s %-10s %-7s %s\n", c.Root, "STATE", "KINDS", "READINESS", "LINES", "SIZE", "PATH")
 		for _, e := range c.Entries {
-			fmt.Fprintf(w, "%-6t %-18s %-20s %-10s %-7s %s\n", e.Usable, e.Kind, e.Profile, strconv.FormatInt(e.Lines, 10), strconv.FormatInt(e.Size, 10), e.Path)
+			fmt.Fprintf(w, "%-15s %-24s %-12s %-10s %-7s %s\n", e.State, wordlistKindNames(e.Kinds), e.Readiness, strconv.FormatInt(e.Lines, 10), strconv.FormatInt(e.Size, 10), e.Path)
 		}
 		return nil
 	}
+}
+
+func wordlistKindNames(kinds []WordlistKindMatch) string {
+	if len(kinds) == 0 {
+		return WordlistKindUnknown
+	}
+	names := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		names = append(names, kind.Name)
+	}
+	return strings.Join(names, ",")
 }

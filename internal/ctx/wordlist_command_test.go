@@ -59,13 +59,128 @@ func TestBuildWordlistCatalogIncludesFilesAndClassifiesKinds(t *testing.T) {
 
 func TestWordlistSuggestionsPreferTaskSpecificLists(t *testing.T) {
 	entries := []WordlistEntry{
-		{Path: "/lists/generic.txt", Kind: WordlistKindParameterValue, Usable: true},
-		{Path: "/lists/url-redirect.txt", Kind: WordlistKindParameterValue, Usable: true},
-		{Path: "/lists/burp-parameter-names.txt", Kind: WordlistKindParameterName, Usable: true},
+		{Path: "/lists/generic.txt", Kind: WordlistKindParameterValue, Kinds: []WordlistKindMatch{{Name: WordlistKindParameterValue, Fit: WordlistFitCompatible, Tier: WordlistTierQuick, Priority: 20, Confidence: 70}}, State: WordlistStateKnownVerified, Usable: true},
+		{Path: "/lists/url-redirect.txt", Kind: WordlistKindParameterValue, Kinds: []WordlistKindMatch{{Name: WordlistKindParameterValue, Fit: WordlistFitPrimary, Tier: WordlistTierStandard, Priority: 80, Confidence: 95}}, State: WordlistStateKnownVerified, Usable: true},
+		{Path: "/lists/burp-parameter-names.txt", Kind: WordlistKindParameterName, Kinds: []WordlistKindMatch{{Name: WordlistKindParameterName, Fit: WordlistFitPrimary, Tier: WordlistTierQuick, Priority: 90, Confidence: 99}}, State: WordlistStateKnownVerified, Usable: true},
 	}
 	got := recommendWordlists(entries, WordlistKindParameterValue)
-	if len(got) != 2 || got[0].Path != "/lists/generic.txt" {
+	if len(got) != 2 || got[0].Path != "/lists/url-redirect.txt" {
 		t.Fatalf("suggestions = %+v", got)
+	}
+}
+
+func TestClassifyWordlistKindsSupportsMultipleUses(t *testing.T) {
+	kinds := classifyWordlistKinds("metasploit/default_userpass.txt", []byte("admin:admin\n"), 10, "curated")
+	if wordlistKindMatch(WordlistEntry{Kinds: kinds}, WordlistKindUsername) == nil || wordlistKindMatch(WordlistEntry{Kinds: kinds}, WordlistKindPassword) == nil {
+		t.Fatalf("kinds = %+v, want username and password", kinds)
+	}
+}
+
+func TestRecommendationsPreferVerifiedKnownFiles(t *testing.T) {
+	match := []WordlistKindMatch{{Name: WordlistKindDirectory, Fit: WordlistFitPrimary, Tier: WordlistTierQuick, Priority: 80, Confidence: 90}}
+	entries := []WordlistEntry{
+		{Path: "/lists/unknown.txt", Kinds: match, State: WordlistStateUnknown, Usable: true},
+		{Path: "/lists/known.txt", Kinds: match, State: WordlistStateKnownVerified, Usable: true},
+	}
+	got := recommendWordlists(entries, WordlistKindDirectory)
+	if len(got) != 2 || got[0].Path != "/lists/known.txt" {
+		t.Fatalf("recommendations = %+v", got)
+	}
+}
+
+func TestCatalogWordlistFileVerifiesKnownContent(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "custom.txt")
+	if err := os.WriteFile(path, []byte("admin\nlogin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := sha256File(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := wordlistManifestRecord{Path: "custom.txt", SHA256: hash, Size: info.Size(), Format: "text", Readiness: WordlistReadyReady, Kinds: []WordlistKindMatch{{Name: WordlistKindDirectory, Fit: WordlistFitPrimary, Tier: WordlistTierQuick, Classification: "curated"}}}
+	catalog := wordlistCatalog{Root: root}
+	if err := catalogWordlistFile(path, path, info, &catalog, map[string]bool{}, map[string]wordlistManifestRecord{"custom.txt": record}); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Entries) != 1 || catalog.Entries[0].State != WordlistStateKnownVerified {
+		t.Fatalf("entries = %+v", catalog.Entries)
+	}
+	if err := os.WriteFile(path, []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, _ = os.Stat(path)
+	catalog.Entries = nil
+	if err := catalogWordlistFile(path, path, info, &catalog, map[string]bool{}, map[string]wordlistManifestRecord{"custom.txt": record}); err != nil {
+		t.Fatal(err)
+	}
+	if catalog.Entries[0].State != WordlistStateKnownModified {
+		t.Fatalf("modified entry = %+v", catalog.Entries[0])
+	}
+}
+
+func TestEmbeddedWordlistManifestIntegrity(t *testing.T) {
+	manifest, err := loadWordlistManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Records) < 6000 {
+		t.Fatalf("manifest records = %d, want complete Kali catalog", len(manifest.Records))
+	}
+	seen := map[string]bool{}
+	var rockyou *wordlistManifestRecord
+	for i := range manifest.Records {
+		record := &manifest.Records[i]
+		if seen[record.Path] {
+			t.Fatalf("duplicate manifest path: %s", record.Path)
+		}
+		seen[record.Path] = true
+		if record.Path == "rockyou.txt.gz" {
+			rockyou = record
+		}
+	}
+	if rockyou == nil || rockyou.Readiness != WordlistReadyNeedsExtract || wordlistKindMatch(WordlistEntry{Kinds: rockyou.Kinds}, WordlistKindPassword) == nil {
+		t.Fatalf("rockyou manifest record = %+v", rockyou)
+	}
+}
+
+func TestCuratedKindsAvoidKnownDNSFalsePositives(t *testing.T) {
+	for _, path := range []string{"seclists/Discovery/DNS/tlds.txt", "seclists/Discovery/DNS/services-names.txt", "seclists/Miscellaneous/dns-resolvers.txt"} {
+		kinds := classifyWordlistKinds(path, nil, 100, "curated")
+		if wordlistKindMatch(WordlistEntry{Kinds: kinds}, WordlistKindSubdomain) != nil {
+			t.Fatalf("%s classified as subdomain: %+v", path, kinds)
+		}
+	}
+}
+
+func TestCuratedKindsUseTokenBoundaries(t *testing.T) {
+	tests := []struct {
+		path string
+		kind string
+	}{
+		{"seclists/Fuzzing/User-Agents/software-name/python-urllib.txt", WordlistKindParameterValue},
+		{"seclists/Fuzzing/User-Agents/software-name/amazon-api-gateway.txt", WordlistKindEndpoint},
+		{"seclists/Discovery/Web-Content/CMS/trickest-cms-wordlist/strapi-all-levels.txt", WordlistKindEndpoint},
+	}
+	for _, test := range tests {
+		kinds := classifyWordlistKinds(test.path, nil, 100, "curated")
+		match := wordlistKindMatch(WordlistEntry{Kinds: kinds}, test.kind)
+		if match != nil {
+			t.Fatalf("%s classified as %s: %+v", test.path, test.kind, kinds)
+		}
+	}
+}
+
+func TestInspectWordlistFormatRecognizesArchivesBeforeReading(t *testing.T) {
+	for _, name := range []string{"list.gz", "list.tar.gz", "list.tgz", "list.zip", "list.bz2", "list.xz", "list.tar", "list.7z", "list.rar"} {
+		_, readiness := inspectWordlistFormat(name, filepath.Join(t.TempDir(), "missing"))
+		if readiness != WordlistReadyNeedsExtract {
+			t.Fatalf("%s readiness = %s", name, readiness)
+		}
 	}
 }
 
