@@ -240,7 +240,7 @@ func enableExtraShortcutsInZshCompletionScript(script string) (string, error) {
 			old: `xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xwordlist xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `,
 			new: `xreset() { ctx reset "$@" }
 pj() { xproject "$@" }
@@ -250,7 +250,7 @@ cr() { xcredential "$@" }
 sv() { xservice "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv
+compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xwordlist xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv
 `,
 		},
 	})
@@ -350,7 +350,7 @@ func enableExtraShortcutsInBashCompletionScript(script string) (string, error) {
 			old: `xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xwordlist xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `,
 			new: `xreset() { ctx reset "$@"; }
 pj() { xproject "$@"; }
@@ -360,7 +360,7 @@ cr() { xcredential "$@"; }
 sv() { xservice "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv
+complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xwordlist xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset pj ta cr sv
 `,
 		},
 	})
@@ -425,6 +425,7 @@ _ctx_commands=(
   'scan:run nmap and save service information'
   'service:show saved service information'
   'web:show discovered web paths'
+  'wordlist:inspect installed wordlists and suggest lists by use'
   'credential:manage stored credentials'
   'note:add a note to the workspace timeline'
   'log:show the workspace timeline'
@@ -558,6 +559,48 @@ _ctx_web_clear_options=(
   '--help:show help'
 )
 
+_ctx_wordlist_commands=(
+  'ls:list every discovered wordlist file'
+  'show:show details for one wordlist'
+  'extract:verify and extract trusted wordlists'
+)
+_ctx_wordlist_options=(
+  '--kind:filter by wordlist kind'
+  '--usable-only:hide unavailable and non-wordlist files'
+  '--format:select shell, json, or markdown output'
+  '--format-version:select JSON format version'
+  '-h:show help'
+  '--help:show help'
+)
+_ctx_wordlist_ls_options=(
+  '--kind:filter by wordlist kind'
+  '--usable-only:hide unavailable and non-wordlist files'
+  '--format:select shell, json, or markdown output'
+  '--format-version:select JSON format version'
+  '-h:show help'
+  '--help:show help'
+)
+_ctx_wordlist_show_options=(
+  '--format:select shell, json, or markdown output'
+  '--format-version:select JSON format version'
+  '-h:show help'
+  '--help:show help'
+)
+_ctx_wordlist_extract_options=(
+  '-y:skip confirmation'
+  '--yes:skip confirmation'
+  '--force:replace an existing extracted file'
+  '--remove-source:remove the archive after successful extraction'
+  '-h:show help'
+  '--help:show help'
+)
+_ctx_wordlist_kinds=(all directory subdomain parameter-name parameter-value password username endpoint unknown)
+_ctx_wordlist_formats=(
+  'shell:shell output'
+  'json:JSON output'
+  'markdown:Markdown output'
+)
+
 _ctx_credential_commands=(
   'ls:list credentials'
   'set:create or update a credential'
@@ -676,6 +719,10 @@ _ctx() {
         _describe 'web command' _ctx_web_commands
         _describe 'web list option' _ctx_web_list_options
         ;;
+      wordlist)
+        _describe 'wordlist command' _ctx_wordlist_commands
+        _describe 'wordlist option' _ctx_wordlist_options
+        ;;
       credential) _describe 'credential command' _ctx_credential_commands ;;
       log)
         _ctx_dynamic_descriptions log
@@ -783,6 +830,23 @@ _ctx() {
         _describe 'web list option' _ctx_web_list_options
       fi
       ;;
+    wordlist)
+      if [[ ${previous} == --kind ]]; then
+        _describe 'wordlist kind' _ctx_wordlist_kinds
+      elif [[ ${previous} == --format ]]; then
+        _describe 'format' _ctx_wordlist_formats
+      elif [[ ${previous} == --format-version ]]; then
+        _describe 'format version' _ctx_format_versions
+      elif [[ ${subcommand} == ls || -z ${subcommand} || ${subcommand} == --kind || ${subcommand} == --usable-only || ${subcommand} == --format || ${subcommand} == --format-version ]]; then
+        _describe 'wordlist ls option' _ctx_wordlist_ls_options
+      elif [[ ${subcommand} == show ]]; then
+        _describe 'wordlist show option' _ctx_wordlist_show_options
+      elif [[ ${subcommand} == extract ]]; then
+        _describe 'wordlist extract option' _ctx_wordlist_extract_options
+      else
+        _describe 'wordlist option' _ctx_wordlist_options
+      fi
+      ;;
     credential)
       if [[ ${previous} == --format ]]; then
         _describe 'format' _ctx_prompt_formats
@@ -839,6 +903,7 @@ xhosts() { ctx hosts "$@" }
 xscan() { CTX_INVOKED_AS=xscan ctx scan "$@" }
 xservice() { ctx service "$@" }
 xweb() { ctx web "$@" }
+xwordlist() { ctx wordlist "$@" }
 xcredential() { ctx credential "$@" }
 xnote() { ctx note "$@" }
 xlog() { ctx log "$@" }
@@ -851,7 +916,7 @@ xinit-shell() { ctx init-shell "$@" }
 xreset() { ctx reset "$@" }
 
 compdef _ctx ctx
-compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
+compdef _ctx xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xwordlist xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `
 
 const bashCompletionScript = `_ctx_complete_values() {
@@ -937,9 +1002,13 @@ _ctx_completion() {
 	  COMPREPLY=($(compgen -W "path param param-name param-value" -- "${cur}"))
 	  return
 	fi
+	if [[ ${command} == wordlist && ${prev} == --format ]]; then
+		COMPREPLY=($(compgen -W "shell json markdown" -- "${cur}"))
+		return
+	fi
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status config workspace project target ip host hosts scan service web credential note log prompt formats x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status config workspace project target ip host hosts scan service web wordlist credential note log prompt formats x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)
@@ -990,6 +1059,10 @@ _ctx_completion() {
       COMPREPLY=($(compgen -W "ls show clear --target --type --format --format-version -h --help" -- "${cur}"))
       return
       ;;
+    wordlist|xwordlist)
+      COMPREPLY=($(compgen -W "ls show extract --kind --usable-only --format --format-version -h --help" -- "${cur}"))
+      return
+      ;;
     credential|xcredential)
       COMPREPLY=($(compgen -W "ls set add update rm -h --help" -- "${cur}"))
       return
@@ -1005,6 +1078,26 @@ _ctx_completion() {
       fi
       if [[ ${command} == credential ]]; then
         COMPREPLY=($(compgen -W "--format --format-version -h --help" -- "${cur}"))
+        return
+      fi
+      if [[ ${command} == wordlist ]]; then
+        if [[ ${subcommand} == ls || -z ${subcommand} ]]; then
+          COMPREPLY=($(compgen -W "--kind --usable-only --format --format-version -h --help" -- "${cur}"))
+        elif [[ ${subcommand} == show ]]; then
+          COMPREPLY=($(compgen -W "--format --format-version -h --help" -- "${cur}"))
+        fi
+        return
+      fi
+      ;;
+    show)
+      if [[ ${command} == wordlist ]]; then
+        COMPREPLY=($(compgen -W "--format --format-version -h --help" -- "${cur}"))
+        return
+      fi
+      ;;
+    extract)
+      if [[ ${command} == wordlist ]]; then
+        COMPREPLY=($(compgen -W "-y --yes --force --remove-source -h --help" -- "${cur}"))
         return
       fi
       ;;
@@ -1049,6 +1142,10 @@ _ctx_completion() {
       COMPREPLY=($(compgen -W "active workspace-id workspace-name workspace-path local-ip local-interface target-name target-ip" -- "${cur}"))
       return
       ;;
+    --kind)
+      COMPREPLY=($(compgen -W "all directory subdomain parameter-name parameter-value password username endpoint unknown" -- "${cur}"))
+      return
+      ;;
     x)
       COMPREPLY=($(compgen -c -- "${cur}"))
       return
@@ -1089,6 +1186,7 @@ xhosts() { ctx hosts "$@"; }
 xscan() { CTX_INVOKED_AS=xscan ctx scan "$@"; }
 xservice() { ctx service "$@"; }
 xweb() { ctx web "$@"; }
+xwordlist() { ctx wordlist "$@"; }
 xcredential() { ctx credential "$@"; }
 xnote() { ctx note "$@"; }
 xlog() { ctx log "$@"; }
@@ -1101,5 +1199,5 @@ xinit-shell() { ctx init-shell "$@"; }
 xreset() { ctx reset "$@"; }
 
 complete -F _ctx_completion ctx
-complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
+complete -F _ctx_completion xinit xstatus xconfig xworkspace xproject xnew xtarget xip xhost xhosts xscan xservice xweb xwordlist xcredential xnote xlog xprompt xformats x xcompletion xdoctor xinit-shell xreset
 `

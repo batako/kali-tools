@@ -64,6 +64,7 @@ func TestFormatsJSON(t *testing.T) {
 		"prompt":     "1.0",
 		"service":    "1.0",
 		"web":        "1.0",
+		"wordlist":   "1.0",
 	}
 	if len(formats) != len(wantFormats) {
 		t.Fatalf("formats = %#v, want exactly %#v", formats, wantFormats)

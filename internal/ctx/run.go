@@ -46,6 +46,7 @@ commands:
   scan     run nmap and save service information
   service  show saved service information
   web      show discovered web paths
+  wordlist inspect installed wordlists and suggest lists by use
   credential  manage stored credentials
   note     add a note to the workspace timeline
   log      show the workspace timeline
@@ -75,6 +76,7 @@ shortcuts (requires ctx init-shell):
   xscan        ctx scan
   xservice     ctx service
   xweb         ctx web
+  xwordlist    ctx wordlist
   xcredential  ctx credential
   xnote        ctx note
   xlog         ctx log
@@ -431,6 +433,8 @@ func runWithCurrentInput(args []string, stdout, stderr io.Writer) error {
 		return runService(args[2:], stdout)
 	case "web":
 		return runWeb(args[2:], stdout)
+	case "wordlist":
+		return runWordlist(args[2:], stdout)
 	case "credential":
 		return runCredential(args[2:], stdout)
 	case "note":
