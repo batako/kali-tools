@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	currentSchemaVersion     = 3
+	currentSchemaVersion     = 4
 	v100SchemaVersion        = 1
 	latestSchemaSnapshotPath = "schema.sql"
 )
@@ -662,6 +662,7 @@ var currentSchemaIndexes = map[string]string{
 	"idx_notes_workspace_created_at":        "notes",
 	"idx_web_discoveries_target_id":         "web_discoveries",
 	"idx_web_discoveries_command_log_id":    "web_discoveries",
+	"idx_web_discoveries_target_type":       "web_discoveries",
 	"idx_web_wordlist_runs_target_url":      "web_wordlist_runs",
 }
 
@@ -798,6 +799,13 @@ var currentSchemaTables = []schemaTable{
 			{Name: "command_log_id", Type: "INTEGER"},
 			{Name: "created_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
 			{Name: "updated_at", Type: "TEXT", NotNull: true, Default: "CURRENT_TIMESTAMP"},
+			{Name: "discovery_type", Type: "TEXT", NotNull: true, Default: "'path'"},
+			{Name: "template_url", Type: "TEXT"},
+			{Name: "parameter_name", Type: "TEXT"},
+			{Name: "parameter_value", Type: "TEXT"},
+			{Name: "fuzz_part", Type: "TEXT"},
+			{Name: "word_count", Type: "INTEGER"},
+			{Name: "line_count", Type: "INTEGER"},
 		},
 		SQLFragments: []string{
 			"FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE",

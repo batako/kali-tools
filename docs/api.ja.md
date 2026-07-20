@@ -476,7 +476,7 @@ protocol ASC, port ASC, id ASC
 
 ## `web`
 
-選択したTargetで発見済みのWeb pathを返します。
+選択したTargetで発見済みのWeb探索結果を返します。`--type path`、`--type param`、`--type param-name`、`--type param-value`で種類を絞り込めます。
 
 ```bash
 ctx web ls --format json --format-version 1.0

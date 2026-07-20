@@ -69,6 +69,19 @@ func TestParseOptionsKeepsManualFilterForValidation(t *testing.T) {
 	}
 }
 
+func TestManualMatchers(t *testing.T) {
+	options, err := parseOptions([]string{"param", "-mc", "301,302,303,307,308", "-ms", "42"})
+	if err != nil {
+		t.Fatalf("parseOptions() error = %v", err)
+	}
+	if got := strings.Join(manualMatchers(options.Extra), " "); got != "-mc 301,302,303,307,308 -ms 42" {
+		t.Fatalf("manualMatchers() = %q", got)
+	}
+	if useParamAutoFilter(options) {
+		t.Fatal("useParamAutoFilter() = true with explicit matchers")
+	}
+}
+
 func TestParseOptionsTrial(t *testing.T) {
 	options, err := parseOptions([]string{"vhost", "--trial", "-fw", "125"})
 	if err != nil {
@@ -192,9 +205,9 @@ func TestRunScanRecordsSuspiciousResultsAsFailed(t *testing.T) {
 	}
 	app := New(resultRunner{count: len(words)}, strings.NewReader(""), io.Discard, io.Discard)
 	selection := ctx.WordlistSelection{
-		Provider: "seclists",
+		Provider: ctx.WordlistProviderLists,
 		Profile:  "vhost",
-		Path:     "/usr/share/seclists/Discovery/DNS/test.txt",
+		Path:     "/usr/share/wordlists/seclists/Discovery/DNS/test.txt",
 	}
 	err = app.runScan(
 		workspace,
@@ -252,9 +265,9 @@ func TestRunScanTrialDoesNotPersistResults(t *testing.T) {
 		"http://192.0.2.10",
 		"example.test",
 		ctx.WordlistSelection{
-			Provider: "seclists",
+			Provider: ctx.WordlistProviderLists,
 			Profile:  "vhost",
-			Path:     "/usr/share/seclists/Discovery/DNS/test.txt",
+			Path:     "/usr/share/wordlists/seclists/Discovery/DNS/test.txt",
 		},
 		[]string{"admin"},
 		options{Trial: true},

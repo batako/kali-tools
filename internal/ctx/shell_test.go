@@ -98,12 +98,64 @@ func TestCompletionScriptsIncludeWebClear(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
 		}
-		want := `COMPREPLY=($(compgen -W "ls clear -h --help"`
+		want := `COMPREPLY=($(compgen -W "ls show clear --target --type --format --format-version -h --help"`
 		if shell == "zsh" {
 			want = `clear:clear paths and xgobuster progress after confirmation`
 		}
 		if !strings.Contains(script, want) {
 			t.Errorf("CompletionScript(%s) missing web clear completion %q", shell, want)
+		}
+	}
+}
+
+func TestCompletionScriptsIncludeWebTypeAndFormatValues(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell)
+		if err != nil {
+			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
+		}
+		for _, want := range []string{"path", "param", "param-name", "param-value", "shell", "json"} {
+			if !strings.Contains(script, want) {
+				t.Errorf("CompletionScript(%s) missing web value %q", shell, want)
+			}
+		}
+		if shell == "zsh" && !strings.Contains(script, `${previous} == --type`) {
+			t.Errorf("CompletionScript(zsh) missing web --type value routing")
+		}
+		if shell == "bash" && !strings.Contains(script, `${prev} == --type`) {
+			t.Errorf("CompletionScript(bash) missing web --type value routing")
+		}
+	}
+}
+
+func TestCompletionScriptsIncludeDefaultWebListOptions(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell)
+		if err != nil {
+			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
+		}
+		if shell == "zsh" {
+			if !strings.Contains(script, "_describe 'web command' _ctx_web_commands\n        _describe 'web list option' _ctx_web_list_options") {
+				t.Fatal("CompletionScript(zsh) does not add default web ls options")
+			}
+		} else if !strings.Contains(script, `ls show clear --target --type --format --format-version -h --help`) {
+			t.Fatal("CompletionScript(bash) does not add default web ls options")
+		}
+	}
+}
+
+func TestCompletionScriptsCompleteImplicitWebTarget(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell)
+		if err != nil {
+			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
+		}
+		want := `${command} == web && ${prev} == --target`
+		if shell == "zsh" {
+			want = `${previous} == --target`
+		}
+		if !strings.Contains(script, want) {
+			t.Errorf("CompletionScript(%s) missing implicit xweb target completion", shell)
 		}
 	}
 }

@@ -476,7 +476,7 @@ protocol ASC, port ASC, id ASC
 
 ## `web`
 
-Returns web paths discovered for the selected target.
+Returns web discoveries for the selected target. Use `--type path`, `--type param`, `--type param-name`, or `--type param-value` to filter discovery kinds.
 
 ```bash
 ctx web ls --format json --format-version 1.0

@@ -254,14 +254,16 @@ options:
 
 const webUsageText = `usage: ctx web <command> [options]
 
-View or clear web paths discovered for the primary or selected target.
+View or clear web discoveries for the primary or selected target.
 
 commands:
   ls     list discovered web paths
+  show   show one discovery by ID
   clear  clear paths and xgobuster progress after confirmation
 
 options:
   --target <name>            select a target by name
+  --type <path|param|param-name|param-value> filter ls output
   --format <shell|json>      select ls output format
   --format-version <version> select ls JSON format version
   -h, --help                 show this help`

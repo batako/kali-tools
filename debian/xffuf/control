@@ -4,5 +4,5 @@ Section: utils
 Priority: optional
 Architecture: @ARCH@
 Maintainer: batako <2323213+batako@users.noreply.github.com>
-Depends: ctx (>= 1.4.0), ffuf, seclists
-Description: Enumerate HTTP virtual hosts with ffuf and ctx integration
+Depends: ctx (>= 1.5.0), ffuf, wordlists
+Description: Fuzz HTTP virtual hosts and parameters with ffuf and ctx integration

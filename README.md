@@ -11,7 +11,7 @@ This monorepo manages self-made CLI tools for Kali Linux. Each tool has an indep
 - `xftp`: Connect to the current target over FTP using ctx credentials.
 - `xsmb`: Discover SMB shares and connect to a selected share using ctx credentials.
 - `xgobuster`: Run Gobuster against the current target and save web discoveries to ctx.
-- `xffuf`: Enumerate HTTP virtual hosts with ffuf and ctx calibration.
+- `xffuf`: Enumerate HTTP virtual hosts and query parameters with ffuf and ctx integration.
 - `xhydra`: Assist Hydra credential discovery and save successful results to ctx.
 - `xwebshell`: Select and export Kali Linux web shell templates.
 
@@ -92,6 +92,9 @@ xgo
 xgo dns
 xweb
 xffuf vhost --suggest
+xffuf param -u 'http://nahamstore.thm/?FUZZ=fuga'
+xffuf param -u 'http://nahamstore.thm/?hoge=FUZZ'
+xweb --type param
 xhydra --help
 xwebshell ls
 ```

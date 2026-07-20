@@ -532,15 +532,24 @@ _ctx_service_options=(
 
 _ctx_web_commands=(
   'ls:list discovered web paths'
+  'show:show one web discovery by ID'
   'clear:clear paths and xgobuster progress after confirmation'
 )
 
 _ctx_web_list_options=(
   '--target:select a target by name'
+  '--type:filter path or parameter discoveries'
   '--format:select shell or json output'
   '--format-version:select JSON format version'
   '-h:show help'
   '--help:show help'
+)
+
+_ctx_web_types=(
+  'path:directory and file discoveries'
+  'param:all parameter discoveries'
+  'param-name:parameter name discoveries'
+  'param-value:parameter value discoveries'
 )
 
 _ctx_web_clear_options=(
@@ -663,7 +672,10 @@ _ctx() {
       completion) _describe 'shell' _ctx_completion_shells ;;
       scan) _describe 'scan option' _ctx_scan_options ;;
       service) _describe 'service command' _ctx_service_commands ;;
-      web) _describe 'web command' _ctx_web_commands ;;
+      web)
+        _describe 'web command' _ctx_web_commands
+        _describe 'web list option' _ctx_web_list_options
+        ;;
       credential) _describe 'credential command' _ctx_credential_commands ;;
       log)
         _ctx_dynamic_descriptions log
@@ -757,11 +769,13 @@ _ctx() {
       fi
       ;;
     web)
-      if [[ (${subcommand} == ls || ${subcommand} == clear) && ${previous} == --target ]]; then
+	  if [[ ${previous} == --target ]]; then
         _ctx_dynamic_descriptions target
-      elif [[ ${subcommand} == ls && ${previous} == --format ]]; then
+	  elif [[ ${subcommand} != show && ${subcommand} != clear && ${previous} == --type ]]; then
+		_describe 'web discovery type' _ctx_web_types
+	  elif [[ ${subcommand} != show && ${subcommand} != clear && ${previous} == --format ]]; then
         _describe 'format' _ctx_prompt_formats
-      elif [[ ${subcommand} == ls && ${previous} == --format-version ]]; then
+	  elif [[ ${subcommand} != show && ${subcommand} != clear && ${previous} == --format-version ]]; then
         _describe 'format version' _ctx_format_versions
       elif [[ ${subcommand} == clear ]]; then
         _describe 'web clear option' _ctx_web_clear_options
@@ -915,10 +929,14 @@ _ctx_completion() {
     _ctx_complete_values target "${cur}"
     return
   fi
-  if [[ ${command} == web && (${subcommand} == ls || ${subcommand} == clear) && ${prev} == --target ]]; then
-    _ctx_complete_values target "${cur}"
-    return
+	if [[ ${command} == web && ${prev} == --target ]]; then
+	  _ctx_complete_values target "${cur}"
+	  return
   fi
+	if [[ ${command} == web && ${subcommand} != show && ${subcommand} != clear && ${prev} == --type ]]; then
+	  COMPREPLY=($(compgen -W "path param param-name param-value" -- "${cur}"))
+	  return
+	fi
   case "${prev}" in
     ctx)
       COMPREPLY=($(compgen -W "status config workspace project target ip host hosts scan service web credential note log prompt formats x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
@@ -969,7 +987,7 @@ _ctx_completion() {
       return
       ;;
     web|xweb)
-      COMPREPLY=($(compgen -W "ls clear -h --help" -- "${cur}"))
+      COMPREPLY=($(compgen -W "ls show clear --target --type --format --format-version -h --help" -- "${cur}"))
       return
       ;;
     credential|xcredential)
@@ -978,11 +996,11 @@ _ctx_completion() {
       ;;
     ls)
       if [[ ${command} == service ]]; then
-        COMPREPLY=($(compgen -W "--target --format --format-version -h --help" -- "${cur}"))
+		COMPREPLY=($(compgen -W "--target --format --format-version -h --help" -- "${cur}"))
         return
       fi
       if [[ ${command} == web ]]; then
-        COMPREPLY=($(compgen -W "--target --format --format-version -h --help" -- "${cur}"))
+        COMPREPLY=($(compgen -W "--target --type --format --format-version -h --help" -- "${cur}"))
         return
       fi
       if [[ ${command} == credential ]]; then

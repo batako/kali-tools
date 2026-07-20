@@ -21,21 +21,24 @@ import (
 )
 
 var (
-	Version = "1.0.0"
+	Version = "1.1.0"
 )
 
-const usageText = `usage: xffuf vhost [ffuf-options]
+const usageText = `usage: xffuf <vhost|param> [ffuf-options]
 
-Enumerate HTTP virtual hosts against the current ctx target.
+Enumerate HTTP virtual hosts or fuzz query parameters against the current ctx target.
 
 The domain and HTTP service are selected from ctx when they are not provided.
-The DNS wordlists under /usr/share/seclists are selected automatically.
+DNS wordlists supplied through /usr/share/wordlists are selected automatically.
 Automatic calibration is enabled unless a manual filter is provided.
 
 options:
   vhost                         enumerate HTTP virtual hosts
+  param                         fuzz a query parameter name or value
   -d, --domain <domain>         target domain
   -w, --wordlist <path>         use an explicit wordlist
+
+  --profile <name>              override automatic parameter wordlist profile
   -u, --url <url>               override the selected HTTP service
   --host <hostname>             use a registered xhost hostname
   --ip                          use the target IP as the HTTP host
@@ -53,7 +56,9 @@ options:
   -h, --help                    show this help
   -V, --version                 show version
 
-Common ffuf options, including -H, -fw, -fs, -fl, -fc, and -fr, are passed through.`
+Common ffuf options are passed through, including:
+  -mc, -ml, -mr, -ms, -mw      match status, lines, regex, size, or words
+  -fc, -fl, -fr, -fs, -fw      filter status, lines, regex, size, or words`
 
 type ExitCodeError struct{ Code int }
 
@@ -91,8 +96,10 @@ type App struct {
 }
 
 type options struct {
+	Mode         string
 	Domain       string
 	Wordlist     string
+	Profile      string
 	URL          string
 	Host         string
 	UseIP        bool
@@ -123,13 +130,14 @@ type prompt struct {
 }
 
 type ffufResult struct {
-	Input  map[string]string `json:"input"`
-	Status int               `json:"status"`
-	Length int               `json:"length"`
-	Words  int               `json:"words"`
-	Lines  int               `json:"lines"`
-	URL    string            `json:"url"`
-	Host   string            `json:"host"`
+	Input            map[string]string `json:"input"`
+	Status           int               `json:"status"`
+	Length           int               `json:"length"`
+	Words            int               `json:"words"`
+	Lines            int               `json:"lines"`
+	URL              string            `json:"url"`
+	Host             string            `json:"host"`
+	RedirectLocation string            `json:"redirectlocation"`
 }
 
 type ffufOutput struct {
@@ -219,6 +227,9 @@ func (app *App) Run(args []string) error {
 	baseURL, err := app.resolveURL(workspace, target, targetHost, parsed)
 	if err != nil {
 		return err
+	}
+	if parsed.Mode == "param" {
+		return app.runParam(workspace, target, baseURL, parsed, config, args[1:])
 	}
 	domain, err := resolveDomain(target.IP, hosts, parsed.Domain, app.stdin, app.stdout)
 	if err != nil {
@@ -319,9 +330,10 @@ func confirmTrial(in io.Reader, out io.Writer, filter []string) (bool, error) {
 }
 
 func parseOptions(args []string) (options, error) {
-	var result options
+	result := options{Mode: "vhost"}
 	start := 0
-	if len(args) > 0 && args[0] == "vhost" {
+	if len(args) > 0 && (args[0] == "vhost" || args[0] == "param") {
+		result.Mode = args[0]
 		start = 1
 	}
 	for i := start; i < len(args); i++ {
@@ -339,6 +351,12 @@ func parseOptions(args []string) (options, error) {
 				return options{}, err
 			}
 			result.Wordlist, i = value, next
+		case "--profile":
+			value, next, err := nextValue(args, i, "profile")
+			if err != nil {
+				return options{}, err
+			}
+			result.Profile, i = value, next
 		case "-u", "--url":
 			value, next, err := nextValue(args, i, "url")
 			if err != nil {
@@ -396,6 +414,10 @@ func parseOptions(args []string) (options, error) {
 				result.Wordlist = strings.TrimPrefix(arg, "--wordlist=")
 				continue
 			}
+			if strings.HasPrefix(arg, "--profile=") {
+				result.Profile = strings.TrimPrefix(arg, "--profile=")
+				continue
+			}
 			if strings.HasPrefix(arg, "--url=") {
 				result.URL = strings.TrimPrefix(arg, "--url=")
 				continue
@@ -429,6 +451,12 @@ func parseOptions(args []string) (options, error) {
 	}
 	if result.Status && result.Wordlist != "" {
 		return options{}, errors.New("usage: --status cannot be combined with --wordlist")
+	}
+	if result.Mode == "param" && result.Domain != "" {
+		return options{}, errors.New("usage: xffuf param does not accept --domain")
+	}
+	if result.Mode == "vhost" && result.Profile != "" {
+		return options{}, errors.New("usage: --profile is only available with xffuf param")
 	}
 	return result, nil
 }
@@ -558,9 +586,13 @@ func resolveDomain(targetIP string, hosts []ctx.Host, requested string, stdin io
 func discoverWordlists() ([]ctx.WordlistSelection, error) {
 	root := ctx.DiscoverWordlistsRoot()
 	if root == "" {
-		return nil, errors.New("wordlists directory not found; install wordlists or seclists")
+		return nil, errors.New("wordlists directory not found; install the wordlists package")
 	}
-	roots := []string{filepath.Join(root, "seclists", "Discovery", "DNS"), "/usr/share/seclists/Discovery/DNS"}
+	return discoverVhostWordlistsFromRoot(root)
+}
+
+func discoverVhostWordlistsFromRoot(root string) ([]ctx.WordlistSelection, error) {
+	roots := []string{filepath.Join(root, "seclists", "Discovery", "DNS")}
 	seen := make(map[string]struct{})
 	type candidate struct {
 		selection ctx.WordlistSelection
@@ -596,7 +628,7 @@ func discoverWordlists() ([]ctx.WordlistSelection, error) {
 			} else if strings.Contains(name, "top1million") || strings.Contains(name, "top50000") {
 				rank = 1
 			}
-			candidates = append(candidates, candidate{selection: ctx.WordlistSelection{Provider: "seclists", Profile: "vhost", Type: "vhost", Path: path}, rank: rank, size: info.Size(), key: relative})
+			candidates = append(candidates, candidate{selection: ctx.WordlistSelection{Provider: ctx.WordlistProviderLists, Profile: "vhost", Type: "vhost", Path: path}, rank: rank, size: info.Size(), key: relative})
 			return nil
 		})
 		if err != nil {
@@ -617,7 +649,7 @@ func discoverWordlists() ([]ctx.WordlistSelection, error) {
 		result = append(result, item.selection)
 	}
 	if len(result) == 0 {
-		return nil, errors.New("no DNS wordlist found; install seclists or use --wordlist")
+		return nil, errors.New("no DNS wordlist found in the wordlists package; use --wordlist to override")
 	}
 	return result, nil
 }
@@ -1064,6 +1096,20 @@ func originalArgs(options options) []string {
 
 func manualFilters(extra []string) []string {
 	flags := map[string]bool{"-fw": true, "-fs": true, "-fl": true, "-fc": true, "-fr": true, "--filter-words": true, "--filter-size": true, "--filter-lines": true, "--filter-status": true, "--filter-regex": true}
+	result := []string{}
+	for i, arg := range extra {
+		if flags[arg] {
+			result = append(result, arg)
+			if i+1 < len(extra) {
+				result = append(result, extra[i+1])
+			}
+		}
+	}
+	return result
+}
+
+func manualMatchers(extra []string) []string {
+	flags := map[string]bool{"-mc": true, "-ml": true, "-mr": true, "-ms": true, "-mw": true, "--match-codes": true, "--match-lines": true, "--match-regex": true, "--match-size": true, "--match-words": true}
 	result := []string{}
 	for i, arg := range extra {
 		if flags[arg] {

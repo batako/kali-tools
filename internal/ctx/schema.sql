@@ -119,6 +119,13 @@ CREATE TABLE web_discoveries (
 	command_log_id INTEGER,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	discovery_type TEXT NOT NULL DEFAULT 'path',
+	template_url TEXT,
+	parameter_name TEXT,
+	parameter_value TEXT,
+	fuzz_part TEXT,
+	word_count INTEGER,
+	line_count INTEGER,
 	FOREIGN KEY (target_id) REFERENCES targets(id) ON DELETE CASCADE,
 	FOREIGN KEY (command_log_id) REFERENCES command_logs(id) ON DELETE SET NULL
 );
@@ -133,6 +140,7 @@ CREATE INDEX idx_scan_runs_target_id ON scan_runs(target_id);
 CREATE INDEX idx_notes_workspace_created_at ON notes(workspace_id, created_at DESC);
 CREATE INDEX idx_web_discoveries_target_id ON web_discoveries(target_id, created_at DESC);
 CREATE INDEX idx_web_discoveries_command_log_id ON web_discoveries(command_log_id);
+CREATE INDEX idx_web_discoveries_target_type ON web_discoveries(target_id, discovery_type, created_at DESC);
 
 CREATE TABLE web_wordlist_runs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,

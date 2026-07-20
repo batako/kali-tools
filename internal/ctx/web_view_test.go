@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -54,6 +55,23 @@ func TestWriteWebDiscoveryListGroupsOriginsAndShowsDetails(t *testing.T) {
 	}
 }
 
+func TestWriteWebDiscoveryListSeparatesParameterKinds(t *testing.T) {
+	target := &Target{Name: "web", IP: "10.10.10.10"}
+	discoveries := []WebDiscovery{
+		{ID: 7, DiscoveryType: "param-name", URL: "http://example.test/?admin=fuga", Path: "/", ParameterName: "admin", ParameterValue: "fuga", StatusCode: 200, SourceTool: "xffuf"},
+		{ID: 8, DiscoveryType: "param-value", URL: "http://example.test/?hoge=debug", Path: "/", ParameterName: "hoge", ParameterValue: "debug", StatusCode: 302, SourceTool: "xffuf"},
+	}
+	var out bytes.Buffer
+	if err := WriteWebDiscoveryList(&out, target, discoveries); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Parameter names", "Parameter values", "PARAMETER", "admin", "hoge", "debug"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output = %q, want %q", out.String(), want)
+		}
+	}
+}
+
 func TestRunWebDefaultsToListAndSupportsTargetSelection(t *testing.T) {
 	workspace := initXTestWorkspace(t)
 	primary, err := SetPrimaryTargetIP(workspace, "10.10.10.10")
@@ -85,6 +103,37 @@ func TestRunWebDefaultsToListAndSupportsTargetSelection(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "/api") || strings.Contains(out.String(), "/admin") {
 		t.Fatalf("secondary web output = %q", out.String())
+	}
+}
+
+func TestRunWebFiltersAndShowsParameterDiscovery(t *testing.T) {
+	workspace := initXTestWorkspace(t)
+	target, err := SetPrimaryTargetIP(workspace, "10.10.10.10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveWebDiscovery(workspace, target, WebDiscovery{URL: "http://example.test/admin", Path: "/admin", StatusCode: 200, SourceTool: "gobuster", Wordlist: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	id, err := SaveWebDiscovery(workspace, target, WebDiscovery{DiscoveryType: "param-value", URL: "http://example.test/?hoge=debug", TemplateURL: "http://example.test/?hoge=FUZZ", Path: "/", ParameterName: "hoge", ParameterValue: "debug", FuzzPart: "value", StatusCode: 200, SourceTool: "xffuf", Wordlist: "values.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "web", "ls", "--type", "param"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "hoge") || strings.Contains(out.String(), "/admin") {
+		t.Fatalf("filtered output = %q", out.String())
+	}
+	out.Reset()
+	if err := Run([]string{"ctx", "web", "show", strconv.FormatInt(id, 10)}, &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Type:", "param-value", "Template:", "?hoge=FUZZ", "Parameter:", "hoge", "Value:", "debug"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("detail output = %q, want %q", out.String(), want)
+		}
 	}
 }
 
