@@ -63,8 +63,7 @@ _xffuf() {
         '--suggest[show calibration and optionally run a trial]'
       ;;
     param)
-      _arguments "${common[@]}" \
-        '--profile[parameter wordlist profile]:profile:(parameter-name parameter-value-generic parameter-value-url parameter-value-file parameter-value-username parameter-value-number)'
+      _arguments "${common[@]}"
       ;;
     *)
       _arguments \

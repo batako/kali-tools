@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +32,7 @@ const usageText = `usage: xgobuster [dns] [gobuster-options]
 
 Run gobuster dir against the current ctx target, or use dns mode for subdomain enumeration.
 
-The wordlist is selected from /usr/share/wordlists unless -w or --wordlist is provided.
+The wordlist is selected from ctx recommendations unless -w or --wordlist is provided.
 Automatic escalation continues while the configured request limit allows.
 
 options:
@@ -248,7 +247,7 @@ func (app *App) Run(args []string) error {
 		if configErr != nil {
 			return app.errorf("failed to load wordlist config: %s", configErr)
 		}
-		candidates, listErr := ctx.DiscoverConfiguredWebWordlists()
+		candidates, listErr := recommendWordlists(ctx.WordlistKindDirectory)
 		if listErr != nil {
 			return app.errorf("failed to select wordlist: %s", listErr)
 		}
@@ -572,77 +571,15 @@ func parseDNSHosts(output, domain string) []string {
 }
 
 func discoverDNSWordlists() ([]ctx.WordlistSelection, error) {
-	root := ctx.DiscoverWordlistsRoot()
-	if root == "" {
-		return nil, errors.New("wordlists directory not found; install seclists or use --wordlist")
+	candidates, err := recommendWordlists(ctx.WordlistKindSubdomain)
+	if err != nil {
+		return nil, fmt.Errorf("%w; use --wordlist to override", err)
 	}
-	roots := []string{filepath.Join(root, "seclists", "Discovery", "DNS"), "/usr/share/seclists/Discovery/DNS"}
-	seen := make(map[string]struct{})
-	var candidates []ctx.WordlistSelection
-	for _, base := range roots {
-		resolved, err := filepath.EvalSymlinks(base)
-		if err != nil {
-			continue
-		}
-		err = filepath.Walk(resolved, func(path string, info os.FileInfo, walkErr error) error {
-			if walkErr != nil || info == nil || !info.Mode().IsRegular() || !dnsWordlistFile(path) {
-				return walkErr
-			}
-			realPath, evalErr := filepath.EvalSymlinks(path)
-			if evalErr == nil {
-				if _, ok := seen[realPath]; ok {
-					return nil
-				}
-				seen[realPath] = struct{}{}
-			}
-			candidates = append(candidates, ctx.WordlistSelection{Provider: "seclists", Profile: dnsWordlistProfile(path), Type: "dns", Path: path})
-			return nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan DNS wordlists: %w", err)
-		}
+	for i := range candidates {
+		candidates[i].Profile = "dns-" + candidates[i].Tier
+		candidates[i].Type = "dns"
 	}
-	if len(candidates) == 0 {
-		return nil, errors.New("no DNS wordlist found; install seclists or use --wordlist")
-	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if dnsProfileRank(candidates[i].Profile) != dnsProfileRank(candidates[j].Profile) {
-			return dnsProfileRank(candidates[i].Profile) < dnsProfileRank(candidates[j].Profile)
-		}
-		return candidates[i].Path < candidates[j].Path
-	})
 	return candidates, nil
-}
-
-func dnsWordlistProfile(path string) string {
-	lower := strings.ToLower(filepath.Base(path))
-	if strings.Contains(lower, "5000") || strings.Contains(lower, "small") || strings.Contains(lower, "quick") {
-		return "dns-quick"
-	}
-	if strings.Contains(lower, "20000") || strings.Contains(lower, "medium") {
-		return "dns-standard"
-	}
-	return "dns-deep"
-}
-
-func dnsWordlistFile(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".txt", ".lst", ".list":
-		return true
-	default:
-		return false
-	}
-}
-
-func dnsProfileRank(profile string) int {
-	switch profile {
-	case "dns-quick":
-		return 0
-	case "dns-standard":
-		return 1
-	default:
-		return 2
-	}
 }
 
 func (app *App) showDNSStatus(domain string, candidates []ctx.WordlistSelection, searched map[string]struct{}) error {
@@ -782,7 +719,7 @@ func (app *App) runWordlist(workspace *ctx.Workspace, target *ctx.Target, url st
 }
 
 func (app *App) showStatus(workspace *ctx.Workspace, target *ctx.Target, url string, options parsedOptions) error {
-	candidates, err := ctx.DiscoverConfiguredWebWordlists()
+	candidates, err := recommendWordlists(ctx.WordlistKindDirectory)
 	if err != nil {
 		return app.errorf("failed to select wordlists: %s", err)
 	}
@@ -893,6 +830,8 @@ func (app *App) showStatus(workspace *ctx.Workspace, target *ctx.Target, url str
 	}
 	return nil
 }
+
+var recommendWordlists = ctx.RecommendWordlists
 
 func filterWordlists(candidates []ctx.WordlistSelection, profile string) []ctx.WordlistSelection {
 	if profile == "" {

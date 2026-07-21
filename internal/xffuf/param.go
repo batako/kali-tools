@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -18,8 +17,8 @@ import (
 )
 
 const (
-	paramNameProfile         = "parameter-name"
-	paramValueGenericProfile = "parameter-value-generic"
+	paramNameProfile  = "parameter-name"
+	paramValueProfile = "parameter-value"
 )
 
 type paramTemplate struct {
@@ -36,10 +35,7 @@ func (app *App) runParam(workspace *ctx.Workspace, target *ctx.Target, template 
 	if options.Suggest {
 		return errors.New("xffuf param does not support --suggest; use ffuf filters or --no-auto-filter")
 	}
-	profile := options.Profile
-	if profile == "" {
-		profile = inferParamProfile(parsed)
-	}
+	profile := inferParamProfile(parsed)
 	statePath := filepath.Join(workspace.DataPath, "xffuf-param", fmt.Sprintf("%d", target.ID), cacheDigest(template+"\x00"+profile), "searched.words")
 	if !options.Trial {
 		if err := os.MkdirAll(filepath.Dir(statePath), 0755); err != nil {
@@ -109,148 +105,23 @@ func inferParamProfile(template paramTemplate) string {
 	if template.Type == "param-name" {
 		return paramNameProfile
 	}
-	name := strings.ToLower(template.ParameterName)
-	switch {
-	case containsAny(name, "url", "uri", "redirect", "return", "next", "callback", "continue"):
-		return "parameter-value-url"
-	case containsAny(name, "file", "path", "page", "template", "include", "folder", "dir"):
-		return "parameter-value-file"
-	case containsAny(name, "user", "username", "login", "account", "email"):
-		return "parameter-value-username"
-	case containsAny(name, "id", "number", "num", "offset", "limit"):
-		return "parameter-value-number"
-	default:
-		return paramValueGenericProfile
-	}
-}
-
-func containsAny(value string, parts ...string) bool {
-	for _, part := range parts {
-		if strings.Contains(value, part) {
-			return true
-		}
-	}
-	return false
+	return paramValueProfile
 }
 
 func discoverParamWordlists(template paramTemplate, profile string) ([]ctx.WordlistSelection, error) {
-	root := ctx.DiscoverWordlistsRoot()
-	if root == "" {
-		return nil, errors.New("wordlists directory not found; install the wordlists package")
+	kind := ctx.WordlistKindParameterValue
+	if template.Type == "param-name" {
+		kind = ctx.WordlistKindParameterName
 	}
-	return discoverParamWordlistsFromRoot(root, template, profile)
-}
-
-func discoverParamWordlistsFromRoot(root string, template paramTemplate, profile string) ([]ctx.WordlistSelection, error) {
-	type candidate struct {
-		selection ctx.WordlistSelection
-		rank      int
-		size      int64
+	candidates, err := recommendWordlists(kind)
+	if err != nil {
+		return nil, fmt.Errorf("%w; use --wordlist to override", err)
 	}
-	var candidates []candidate
-	seen := make(map[string]struct{})
-	for _, source := range []string{filepath.Join(root, "seclists"), root} {
-		base, evalErr := filepath.EvalSymlinks(source)
-		if evalErr != nil {
-			continue
-		}
-		err := filepath.Walk(base, func(path string, info os.FileInfo, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if info == nil || !info.Mode().IsRegular() {
-				return nil
-			}
-			ext := strings.ToLower(filepath.Ext(path))
-			if ext != ".txt" && ext != ".lst" && ext != ".list" {
-				return nil
-			}
-			rank, ok := paramWordlistRank(path, template, profile)
-			if !ok {
-				return nil
-			}
-			real, pathErr := filepath.EvalSymlinks(path)
-			if pathErr == nil {
-				if _, ok := seen[real]; ok {
-					return nil
-				}
-				seen[real] = struct{}{}
-			}
-			selectedPath := path
-			if relative, relErr := filepath.Rel(base, path); relErr == nil {
-				selectedPath = filepath.Join(source, relative)
-			}
-			candidates = append(candidates, candidate{ctx.WordlistSelection{Provider: ctx.WordlistProviderLists, Profile: profile, Type: template.Type, Path: selectedPath}, rank, info.Size()})
-			return nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan parameter wordlists: %w", err)
-		}
+	for i := range candidates {
+		candidates[i].Profile = profile
+		candidates[i].Type = template.Type
 	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].rank != candidates[j].rank {
-			return candidates[i].rank < candidates[j].rank
-		}
-		if candidates[i].size != candidates[j].size {
-			return candidates[i].size < candidates[j].size
-		}
-		return candidates[i].selection.Path < candidates[j].selection.Path
-	})
-	result := make([]ctx.WordlistSelection, 0, len(candidates))
-	for _, candidate := range candidates {
-		result = append(result, candidate.selection)
-	}
-	if len(result) == 0 && template.Type == "param-value" && profile != paramValueGenericProfile {
-		fallback, err := discoverParamWordlistsFromRoot(root, template, paramValueGenericProfile)
-		if err == nil {
-			for i := range fallback {
-				fallback[i].Profile = profile
-			}
-			return fallback, nil
-		}
-	}
-	if len(result) == 0 {
-		return nil, fmt.Errorf("no %s wordlist found in the wordlists package; use --wordlist to override", profile)
-	}
-	return result, nil
-}
-
-func paramWordlistRank(path string, template paramTemplate, profile string) (int, bool) {
-	lower := strings.ToLower(filepath.ToSlash(path))
-	name := strings.ToLower(filepath.Base(path))
-	switch profile {
-	case paramNameProfile:
-		if strings.Contains(name, "burp-parameter-names") {
-			return 0, true
-		}
-		if strings.Contains(name, "parameter") && strings.Contains(lower, "web-content") {
-			return 1, true
-		}
-	case "parameter-value-url":
-		if containsAny(lower, "/ssrf/", "open-redirect", "url-schema", "url-scheme", "uri-") {
-			return 0, true
-		}
-	case "parameter-value-file":
-		if containsAny(lower, "/lfi/", "path-traversal", "directory-traversal") {
-			return 0, true
-		}
-	case "parameter-value-username":
-		if containsAny(lower, "/usernames/", "usernames", "user-list") {
-			return 0, true
-		}
-	case "parameter-value-number":
-		if containsAny(name, "number", "numeric", "integer", "digit") {
-			return 0, true
-		}
-	case paramValueGenericProfile:
-		if strings.Contains(lower, "/fuzzing/") && containsAny(name, "special", "quick", "common", "all") {
-			return 0, true
-		}
-		if strings.Contains(lower, "/fuzzing/") {
-			return 2, true
-		}
-	}
-	return 0, false
+	return candidates, nil
 }
 
 func (app *App) runParamScan(workspace *ctx.Workspace, target *ctx.Target, template string, parsed paramTemplate, selection ctx.WordlistSelection, words []string, options options, statePath string, original []string) error {

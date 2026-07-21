@@ -290,8 +290,9 @@ func catalogWordlistFile(logical, real string, info os.FileInfo, c *wordlistCata
 	e.Kind = primaryWordlistKind(e.Kinds)
 	if e.Kind == "" {
 		e.Kind = WordlistKindUnknown
+	} else if match := wordlistKindMatch(e, e.Kind); match != nil {
+		e.Profile = wordlistProfileForTier(e.Kind, match.Tier)
 	}
-	e.Profile = wordlistProfile(e.Kind, logical)
 	c.Entries = append(c.Entries, e)
 	return nil
 }
@@ -311,49 +312,6 @@ func primaryWordlistKind(kinds []WordlistKindMatch) string {
 		}
 	}
 	return best.Name
-}
-func wordlistProfile(kind, path string) string {
-	if kind == WordlistKindDirectory {
-		_, r := webWordlistProfile(path)
-		if r == 0 {
-			return WordlistProfileWebQuick
-		}
-		if r == 1 {
-			return WordlistProfileWebStandard
-		}
-		return WordlistProfileWebDeep
-	}
-	lower := strings.ToLower(filepath.ToSlash(path))
-	if kind == WordlistKindSubdomain {
-		if strings.Contains(lower, "top-1000") || strings.Contains(lower, "top-5000") || strings.Contains(lower, "top-10000") || strings.Contains(lower, "small") || strings.Contains(lower, "common") {
-			return "subdomain-quick"
-		}
-		if strings.Contains(lower, "top-100000") || strings.Contains(lower, "top-1000000") || strings.Contains(lower, "top1million") || strings.Contains(lower, "top-1million") {
-			return "subdomain-standard"
-		}
-		return "subdomain-deep"
-	}
-	if kind == WordlistKindPassword {
-		switch passwordWordlistRank(path) {
-		case 0:
-			return WordlistProfilePasswordQuick
-		case 1:
-			return WordlistProfilePasswordStandard
-		default:
-			return WordlistProfilePasswordDeep
-		}
-	}
-	if kind == WordlistKindUsername {
-		switch usernameWordlistRank(path) {
-		case 0:
-			return WordlistProfileUsernameQuick
-		case 1:
-			return WordlistProfileUsernameStandard
-		default:
-			return WordlistProfileUsernameDeep
-		}
-	}
-	return ""
 }
 func isCatalogMetadata(path string) bool {
 	b := strings.ToLower(filepath.Base(path))

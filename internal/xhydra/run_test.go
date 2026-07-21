@@ -188,6 +188,27 @@ func TestResponseConditionRejectsMultipleBodyMatchers(t *testing.T) {
 	}
 }
 
+func TestAutomaticWordlistsUseCtxRecommendation(t *testing.T) {
+	original := recommendWordlists
+	t.Cleanup(func() { recommendWordlists = original })
+	var requested []string
+	recommendWordlists = func(kind string) ([]ctx.WordlistSelection, error) {
+		requested = append(requested, kind)
+		return []ctx.WordlistSelection{{Path: "/lists/" + kind + ".txt"}}, nil
+	}
+	password, _, err := resolvePasswordList("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	users, err := usernameWordlistCandidates("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if password != "/lists/password.txt" || len(users) != 1 || users[0].Path != "/lists/username.txt" || strings.Join(requested, ",") != "password,username" {
+		t.Fatalf("password = %q, users = %+v, requested = %+v", password, users, requested)
+	}
+}
+
 func mustURL(raw string) *url.URL {
 	parsed, err := url.Parse(raw)
 	if err != nil {

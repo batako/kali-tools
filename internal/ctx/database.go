@@ -374,7 +374,7 @@ func repairUnreleasedSchema(db *sql.DB) error {
 	for _, run := range legacyRuns {
 		profile := run.profile.String
 		if profile == "" {
-			profile, _ = webWordlistProfile(run.wordlist.String)
+			profile = legacyWebWordlistProfile(run.wordlist.String)
 		}
 		searchSignature := ""
 		if profile == "web-files" {
@@ -395,6 +395,17 @@ func repairUnreleasedSchema(db *sql.DB) error {
 		return fmt.Errorf("failed to commit web wordlist schema repair: %w", err)
 	}
 	return nil
+}
+
+func legacyWebWordlistProfile(path string) string {
+	lower := strings.ToLower(path)
+	if strings.Contains(lower, "common") || strings.Contains(lower, "quick") || strings.Contains(lower, "small") {
+		return WordlistProfileWebQuick
+	}
+	if strings.Contains(lower, "medium") || strings.Contains(lower, "raft") || strings.Contains(lower, "directory-list") {
+		return WordlistProfileWebStandard
+	}
+	return WordlistProfileWebDeep
 }
 
 func createLatestSchema(db *sql.DB, fsys fs.FS, schemaPath string, version uint) error {

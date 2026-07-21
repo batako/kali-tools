@@ -2,7 +2,6 @@ package xffuf
 
 import (
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,9 +14,9 @@ func TestParseParamTemplateAndInferProfile(t *testing.T) {
 		url, kind, name, profile string
 	}{
 		{"http://nahamstore.thm/?FUZZ=fuga", "param-name", "", paramNameProfile},
-		{"http://nahamstore.thm/?hoge=FUZZ", "param-value", "hoge", paramValueGenericProfile},
-		{"http://nahamstore.thm/?redirect=FUZZ", "param-value", "redirect", "parameter-value-url"},
-		{"http://nahamstore.thm/?file=FUZZ", "param-value", "file", "parameter-value-file"},
+		{"http://nahamstore.thm/?hoge=FUZZ", "param-value", "hoge", paramValueProfile},
+		{"http://nahamstore.thm/?redirect=FUZZ", "param-value", "redirect", paramValueProfile},
+		{"http://nahamstore.thm/?file=FUZZ", "param-value", "file", paramValueProfile},
 	}
 	for _, test := range tests {
 		parsed, err := parseParamTemplate(test.url)
@@ -35,46 +34,36 @@ func TestParseParamTemplateAndInferProfile(t *testing.T) {
 	}
 }
 
-func TestDiscoverParamWordlistsUsesWordlistsProvider(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "wordlists")
-	realSeclists := filepath.Join(t.TempDir(), "seclists")
-	path := filepath.Join(realSeclists, "Discovery", "Web-Content", "burp-parameter-names.txt")
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatal(err)
+func TestDiscoverParamWordlistsUsesCtxRecommendation(t *testing.T) {
+	original := recommendWordlists
+	t.Cleanup(func() { recommendWordlists = original })
+	requested := ""
+	recommendWordlists = func(kind string) ([]ctx.WordlistSelection, error) {
+		requested = kind
+		return []ctx.WordlistSelection{{Provider: "seclists", Path: "/lists/params.txt"}}, nil
 	}
-	if err := os.WriteFile(path, []byte("admin\ndebug\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(root, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(realSeclists, filepath.Join(root, "seclists")); err != nil {
-		t.Fatal(err)
-	}
-	candidates, err := discoverParamWordlistsFromRoot(root, paramTemplate{Type: "param-name"}, paramNameProfile)
+	candidates, err := discoverParamWordlists(paramTemplate{Type: "param-name"}, paramNameProfile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantPath := filepath.Join(root, "seclists", "Discovery", "Web-Content", "burp-parameter-names.txt")
-	if len(candidates) != 1 || candidates[0].Provider != ctx.WordlistProviderLists || candidates[0].Path != wantPath {
+	if requested != ctx.WordlistKindParameterName || len(candidates) != 1 || candidates[0].Profile != paramNameProfile || candidates[0].Type != "param-name" {
 		t.Fatalf("candidates = %+v", candidates)
 	}
 }
 
-func TestDiscoverVhostWordlistsUsesWordlistsProvider(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "wordlists")
-	path := filepath.Join(root, "seclists", "Discovery", "DNS", "subdomains-top1million-5000.txt")
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatal(err)
+func TestDiscoverVhostWordlistsUsesCtxRecommendation(t *testing.T) {
+	original := recommendWordlists
+	t.Cleanup(func() { recommendWordlists = original })
+	requested := ""
+	recommendWordlists = func(kind string) ([]ctx.WordlistSelection, error) {
+		requested = kind
+		return []ctx.WordlistSelection{{Provider: "seclists", Path: "/lists/subdomains.txt"}}, nil
 	}
-	if err := os.WriteFile(path, []byte("www\nadmin\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	candidates, err := discoverVhostWordlistsFromRoot(root)
+	candidates, err := discoverWordlists()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidates) != 1 || candidates[0].Provider != ctx.WordlistProviderLists || candidates[0].Path != path {
+	if requested != ctx.WordlistKindSubdomain || len(candidates) != 1 || candidates[0].Profile != "vhost" || candidates[0].Type != "vhost" {
 		t.Fatalf("candidates = %+v", candidates)
 	}
 }
@@ -91,7 +80,7 @@ func TestRunParamScanPersistsStructuredDiscovery(t *testing.T) {
 	}
 	statePath := filepath.Join(t.TempDir(), "searched.words")
 	app := New(resultRunner{count: 1}, strings.NewReader(""), io.Discard, io.Discard)
-	err = app.runParamScan(workspace, target, "http://nahamstore.thm/?hoge=FUZZ", paramTemplate{Type: "param-value", ParameterName: "hoge"}, ctx.WordlistSelection{Provider: ctx.WordlistProviderLists, Profile: paramValueGenericProfile, Type: "param-value", Path: "/usr/share/wordlists/test.txt"}, []string{"host-0"}, options{Mode: "param", NoAutoFilter: true}, statePath, []string{"param"})
+	err = app.runParamScan(workspace, target, "http://nahamstore.thm/?hoge=FUZZ", paramTemplate{Type: "param-value", ParameterName: "hoge"}, ctx.WordlistSelection{Provider: ctx.WordlistProviderLists, Profile: paramValueProfile, Type: "param-value", Path: "/usr/share/wordlists/test.txt"}, []string{"host-0"}, options{Mode: "param", NoAutoFilter: true}, statePath, []string{"param"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -484,3 +484,20 @@ func TestLoadSearchedWordsForChangedIPv4URL(t *testing.T) {
 		t.Fatalf("seen = %#v, want two words", seen)
 	}
 }
+
+func TestDiscoverDNSWordlistsUsesCtxRecommendation(t *testing.T) {
+	original := recommendWordlists
+	t.Cleanup(func() { recommendWordlists = original })
+	requested := ""
+	recommendWordlists = func(kind string) ([]ctx.WordlistSelection, error) {
+		requested = kind
+		return []ctx.WordlistSelection{{Path: "/lists/subdomains.txt", Tier: ctx.WordlistTierQuick}}, nil
+	}
+	candidates, err := discoverDNSWordlists()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requested != ctx.WordlistKindSubdomain || len(candidates) != 1 || candidates[0].Profile != "dns-quick" || candidates[0].Type != "dns" {
+		t.Fatalf("candidates = %+v, requested = %q", candidates, requested)
+	}
+}

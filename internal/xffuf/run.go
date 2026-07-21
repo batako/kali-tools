@@ -29,7 +29,7 @@ const usageText = `usage: xffuf <vhost|param> [ffuf-options]
 Enumerate HTTP virtual hosts or fuzz query parameters against the current ctx target.
 
 The domain and HTTP service are selected from ctx when they are not provided.
-DNS wordlists supplied through /usr/share/wordlists are selected automatically.
+Automatic wordlists are selected from ctx wordlist recommendations.
 Automatic calibration is enabled unless a manual filter is provided.
 
 options:
@@ -38,7 +38,6 @@ options:
   -d, --domain <domain>         target domain
   -w, --wordlist <path>         use an explicit wordlist
 
-  --profile <name>              override automatic parameter wordlist profile
   -u, --url <url>               override the selected HTTP service
   --host <hostname>             use a registered xhost hostname
   --ip                          use the target IP as the HTTP host
@@ -99,7 +98,6 @@ type options struct {
 	Mode         string
 	Domain       string
 	Wordlist     string
-	Profile      string
 	URL          string
 	Host         string
 	UseIP        bool
@@ -352,11 +350,7 @@ func parseOptions(args []string) (options, error) {
 			}
 			result.Wordlist, i = value, next
 		case "--profile":
-			value, next, err := nextValue(args, i, "profile")
-			if err != nil {
-				return options{}, err
-			}
-			result.Profile, i = value, next
+			return options{}, errors.New("--profile was removed; FUZZ position selects parameter-name or parameter-value")
 		case "-u", "--url":
 			value, next, err := nextValue(args, i, "url")
 			if err != nil {
@@ -415,8 +409,7 @@ func parseOptions(args []string) (options, error) {
 				continue
 			}
 			if strings.HasPrefix(arg, "--profile=") {
-				result.Profile = strings.TrimPrefix(arg, "--profile=")
-				continue
+				return options{}, errors.New("--profile was removed; FUZZ position selects parameter-name or parameter-value")
 			}
 			if strings.HasPrefix(arg, "--url=") {
 				result.URL = strings.TrimPrefix(arg, "--url=")
@@ -454,9 +447,6 @@ func parseOptions(args []string) (options, error) {
 	}
 	if result.Mode == "param" && result.Domain != "" {
 		return options{}, errors.New("usage: xffuf param does not accept --domain")
-	}
-	if result.Mode == "vhost" && result.Profile != "" {
-		return options{}, errors.New("usage: --profile is only available with xffuf param")
 	}
 	return result, nil
 }
@@ -584,75 +574,18 @@ func resolveDomain(targetIP string, hosts []ctx.Host, requested string, stdin io
 }
 
 func discoverWordlists() ([]ctx.WordlistSelection, error) {
-	root := ctx.DiscoverWordlistsRoot()
-	if root == "" {
-		return nil, errors.New("wordlists directory not found; install the wordlists package")
+	candidates, err := recommendWordlists(ctx.WordlistKindSubdomain)
+	if err != nil {
+		return nil, fmt.Errorf("%w; use --wordlist to override", err)
 	}
-	return discoverVhostWordlistsFromRoot(root)
+	for i := range candidates {
+		candidates[i].Profile = "vhost"
+		candidates[i].Type = "vhost"
+	}
+	return candidates, nil
 }
 
-func discoverVhostWordlistsFromRoot(root string) ([]ctx.WordlistSelection, error) {
-	roots := []string{filepath.Join(root, "seclists", "Discovery", "DNS")}
-	seen := make(map[string]struct{})
-	type candidate struct {
-		selection ctx.WordlistSelection
-		rank      int
-		size      int64
-		key       string
-	}
-	var candidates []candidate
-	for _, base := range roots {
-		realBase, err := filepath.EvalSymlinks(base)
-		if err != nil {
-			continue
-		}
-		err = filepath.Walk(realBase, func(path string, info os.FileInfo, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if info == nil || !info.Mode().IsRegular() || filepath.Ext(path) != ".txt" {
-				return nil
-			}
-			realPath, evalErr := filepath.EvalSymlinks(path)
-			if evalErr == nil {
-				if _, ok := seen[realPath]; ok {
-					return nil
-				}
-				seen[realPath] = struct{}{}
-			}
-			relative, _ := filepath.Rel(root, path)
-			name := strings.ToLower(filepath.Base(path))
-			rank := 2
-			if strings.Contains(name, "top1million-5000") || strings.Contains(name, "top5000") {
-				rank = 0
-			} else if strings.Contains(name, "top1million") || strings.Contains(name, "top50000") {
-				rank = 1
-			}
-			candidates = append(candidates, candidate{selection: ctx.WordlistSelection{Provider: ctx.WordlistProviderLists, Profile: "vhost", Type: "vhost", Path: path}, rank: rank, size: info.Size(), key: relative})
-			return nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan vhost wordlists: %w", err)
-		}
-	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].rank != candidates[j].rank {
-			return candidates[i].rank < candidates[j].rank
-		}
-		if candidates[i].size != candidates[j].size {
-			return candidates[i].size < candidates[j].size
-		}
-		return candidates[i].key < candidates[j].key
-	})
-	result := make([]ctx.WordlistSelection, 0, len(candidates))
-	for _, item := range candidates {
-		result = append(result, item.selection)
-	}
-	if len(result) == 0 {
-		return nil, errors.New("no DNS wordlist found in the wordlists package; use --wordlist to override")
-	}
-	return result, nil
-}
+var recommendWordlists = ctx.RecommendWordlists
 
 func selectWordlist(candidates []ctx.WordlistSelection, searched map[string]struct{}, explicit string, next, force bool, limit int) (ctx.WordlistSelection, []string, error) {
 	if explicit != "" {

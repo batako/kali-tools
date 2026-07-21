@@ -59,6 +59,14 @@ func TestParseOptions(t *testing.T) {
 	}
 }
 
+func TestParseOptionsRejectsRemovedProfile(t *testing.T) {
+	for _, args := range [][]string{{"param", "--profile", "parameter-value-url"}, {"param", "--profile=parameter-value-file"}} {
+		if _, err := parseOptions(args); err == nil || !strings.Contains(err.Error(), "--profile was removed") {
+			t.Fatalf("parseOptions(%v) error = %v", args, err)
+		}
+	}
+}
+
 func TestParseOptionsKeepsManualFilterForValidation(t *testing.T) {
 	options, err := parseOptions([]string{"vhost", "--suggest", "-fw", "125"})
 	if err != nil {

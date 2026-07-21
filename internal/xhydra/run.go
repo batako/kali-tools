@@ -21,17 +21,17 @@ import (
 )
 
 var (
-	Version = "1.0.0"
+	Version = "1.1.0"
 )
 
 const usageText = `usage: xhydra <mode> [options]
 
 Run Hydra against a service and save successful credentials to ctx.
 
-Password wordlists are selected automatically unless -P/--password-list is used.
-For SSH, FTP, and SMB, wordlists are tried in password-quick, password-standard,
-and password-deep order, without repeating searched passwords. The automatic
-request limit is configured with: ctx config set password.max-requests <count>.
+Password and username wordlists are selected from ctx recommendations.
+For SSH, FTP, and SMB, wordlists are tried in ctx recommendation order without
+repeating searched passwords. The automatic request limit is configured with:
+ctx config set password.max-requests <count>.
 For SSH, FTP, and SMB, use --password without -u to search usernames with an
 automatically selected username wordlist, or provide one with -L/--user-list.
 
@@ -376,7 +376,7 @@ func (app *app) showPasswordStatus(workspace *ctx.Workspace, targetID int64, opt
 		candidates = append(candidates, ctx.WordlistSelection{Provider: "manual", Type: ctx.WordlistTypePassword, Path: options.PasswordList})
 	} else {
 		var err error
-		candidates, err = ctx.DiscoverConfiguredPasswordWordlists()
+		candidates, err = recommendWordlists(ctx.WordlistKindPassword)
 		if err != nil {
 			return fmt.Errorf("failed to select password wordlist: %w", err)
 		}
@@ -472,9 +472,9 @@ func usernameWordlistCandidates(explicit string) ([]ctx.WordlistSelection, error
 		}
 		return []ctx.WordlistSelection{{Provider: "manual", Profile: ctx.WordlistProfileUsernameQuick, Path: explicit}}, nil
 	}
-	candidates, err := ctx.DiscoverConfiguredUsernameWordlists()
+	candidates, err := recommendWordlists(ctx.WordlistKindUsername)
 	if err != nil {
-		return nil, fmt.Errorf("failed to select username wordlist: %w", err)
+		return nil, fmt.Errorf("failed to select username wordlist: %w; use --user-list to override", err)
 	}
 	return candidates, nil
 }
@@ -637,7 +637,7 @@ func (app *app) preparePasswordBatches(workspace *ctx.Workspace, targetID int64,
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("failed to load wordlist config: %w", err)
 	}
-	candidates, err := ctx.DiscoverConfiguredPasswordWordlists()
+	candidates, err := recommendWordlists(ctx.WordlistKindPassword)
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("failed to select password wordlist: %w", err)
 	}
@@ -1143,22 +1143,14 @@ func resolvePasswordList(explicit string) (string, func(), error) {
 		}
 		return explicit, func() {}, nil
 	}
-	root := ctx.DiscoverWordlistsRoot()
-	candidates := []string{
-		filepath.Join(root, "rockyou.txt"),
-		filepath.Join(root, "fasttrack.txt"),
-		"/usr/share/seclists/Passwords/Common-Credentials/10-million-password-list-top-1000000.txt",
-		"/usr/share/seclists/Passwords/Common-Credentials/best1050.txt",
+	candidates, err := recommendWordlists(ctx.WordlistKindPassword)
+	if err != nil {
+		return "", func() {}, fmt.Errorf("%w; use --password-list to override", err)
 	}
-	for _, candidate := range candidates {
-		if candidate != "" {
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate, func() {}, nil
-			}
-		}
-	}
-	return "", func() {}, errors.New("no password wordlist found; install wordlists or seclists, or use --password-list")
+	return candidates[0].Path, func() {}, nil
 }
+
+var recommendWordlists = ctx.RecommendWordlists
 
 func loadWorkspace() (*ctx.Workspace, error) {
 	data, err := ctx.LoadPromptData(".")

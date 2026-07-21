@@ -19,15 +19,10 @@ _xffuf_complete() {
     '))
     return
   fi
-  if [[ "${mode}" == "param" && "${prev}" == "--profile" ]]; then
-    COMPREPLY=($(compgen -W "parameter-name parameter-value-generic parameter-value-url parameter-value-file parameter-value-username parameter-value-number" -- "${cur}"))
-    return
-  fi
-
   common="-w --wordlist -u --url -c --cookies -k --no-tls-validation --tls-verify --trial --no-auto-filter --status --clear-cache --next --force -H -mc -ml -mr -ms -mw -fc -fl -fr -fs -fw -t -rate -timeout -h --help -V --version"
   case "${mode}" in
     vhost) options="${common} -d --domain --host --ip --service --suggest" ;;
-    param) options="${common} --profile" ;;
+    param) options="${common}" ;;
     *) options="vhost param -h --help -V --version" ;;
   esac
   COMPREPLY=($(compgen -W "${options}" -- "${cur}"))

@@ -222,6 +222,7 @@ ctx owns durable data that represents shared investigation context or findings.
 | Command logs | Store command lifecycle, sanitized command text, output, status, and exit code | `ctx x`, add-ons using `ctx log` |
 | Shared web discoveries | Store target paths, response metadata, source tool, wordlist, and log provenance | Web discovery and site-map features |
 | Shared web wordlist run history | Coordinate completed and interrupted searches across compatible discovery commands | `xgobuster`, `xffuf` |
+| Wordlist catalog and recommendation order | Centralize availability, purpose, fit, priority, and known-file verification | `ctx wordlist`, `xffuf`, `xgobuster`, `xhydra` |
 | Configuration storage | Store configured values and provide validation and defaults | ctx and tools that consume a documented key |
 
 A producer does not become the owner of shared data by creating it. For example, a vhost scanner may register a host, but ctx remains responsible for hostname validation, target association, persistence, and migration.
@@ -229,6 +230,8 @@ A producer does not become the owner of shared data by creating it. For example,
 ctx owns the named project root settings, active-root selection, workspace marker, and project-to-workspace relationship. It does not own the user's project files or arbitrary files created inside the project directory.
 
 Some ctx-owned data does not yet have a public integration command or JSON endpoint. In particular, internal support for web discoveries or wordlist run history is not itself a public API. Custom commands must not infer a stable interface from an exported Go function or database table. A public operation should be added only when a concrete integration needs it.
+
+Bundled tools use the shared ctx recommendation implementation for automatic wordlist selection. External commands should use `ctx wordlist --kind <kind> --format json` instead of independently scanning `/usr/share/wordlists`.
 
 ### Data Owned by Each Tool
 
@@ -238,7 +241,7 @@ Each external or custom command owns implementation data that is meaningful only
 |---|---|---|
 | External command construction | Select the executable, flags, arguments, and environment | Gobuster, Hydra, ffuf, SSH invocation |
 | Output parsing and classification | Interpret tool-specific output and decide what is a finding | HTTP response filtering, Hydra success parsing |
-| Search strategy | Choose wordlists, profiles, request limits, escalation, and retry behavior | Directory, vhost, password, and username searches |
+| Search strategy | Consume ctx-recommended wordlists and choose request limits, escalation, and retry behavior | Directory, vhost, password, and username searches |
 | Rebuildable progress cache | Define, update, clear, and migrate or discard private cache formats | searched-word files and per-tool completion state |
 | Temporary files | Create securely and remove after use | Filtered wordlists and machine-readable result files |
 | Interactive behavior | Prompts, selection order, defaults, terminal handling, and completion | Service, credential, and share selection |
