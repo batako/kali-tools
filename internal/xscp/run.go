@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	Version = "1.0.0"
+	Version = "1.1.0"
 )
 
 const usageText = `usage: xscp <upload|download> <source> [destination] [credential-id|username]
