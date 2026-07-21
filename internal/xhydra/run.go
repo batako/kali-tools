@@ -48,6 +48,7 @@ options:
   --host <host>               override the target host for ssh, ftp, or smb
   -p, --port <port>           override the target port for ssh, ftp, or smb
   --service <number>          select a discovered service for ssh, ftp, or smb
+  -t, --tasks <number>        override SSH/FTP parallel tasks (default: 4)
   --status                    show password wordlist progress (requires -u)
   --clear-cache               clear scoped password search progress (requires -u)
   -r, --request <file>        use a raw HTTP request template
@@ -77,6 +78,7 @@ type parsedOptions struct {
 	Host            string
 	Port            string
 	Service         string
+	Tasks           int
 	Status          bool
 	ClearCache      bool
 	RequestFile     string
@@ -143,6 +145,9 @@ func (app *app) run(args []string) error {
 	if options.Mode == "version" {
 		_, err := fmt.Fprintf(app.stdout, "xhydra %s\n", Version)
 		return err
+	}
+	if options.Tasks > 0 && options.Mode != "ssh" && options.Mode != "ftp" {
+		return errors.New("--tasks is supported for ssh and ftp only")
 	}
 	if options.Mode != "http" {
 		if options.Mode == "ssh" || options.Mode == "ftp" || options.Mode == "smb" {
@@ -248,6 +253,9 @@ func (app *app) runServiceMode(options parsedOptions, originalArgs []string) err
 	if options.RequestFile != "" || options.URL != "" || options.Data != "" || options.UserField != "" || options.PasswordField != "" || options.FailJSON != "" || options.SuccessJSON != "" || options.FailBody != "" || options.SuccessBody != "" || options.FailStatus != "" || options.SuccessRedirect {
 		return errors.New("HTTP form options cannot be used with ssh, ftp, or smb")
 	}
+	if options.Tasks > 0 && (options.Status || options.ClearCache) {
+		return errors.New("--tasks cannot be combined with --status or --clear-cache")
+	}
 	host, err := app.serviceHost(options.Host)
 	if err != nil {
 		return err
@@ -314,8 +322,8 @@ func (app *app) runServiceMode(options parsedOptions, originalArgs []string) err
 	}
 	defer cleanup()
 	for _, batch := range batches {
-		hydraArgs := buildServiceHydraArgs(options.Mode, host, port, batch.TempPath, options.Username)
-		expandedArgs := buildServiceHydraArgs(options.Mode, host, port, batch.OriginalPath, options.Username)
+		hydraArgs := buildServiceHydraArgs(options.Mode, host, port, batch.TempPath, options.Username, options.Tasks)
+		expandedArgs := buildServiceHydraArgs(options.Mode, host, port, batch.OriginalPath, options.Username, options.Tasks)
 		logID, err := ctx.StartCommandLog(workspace, ctx.CommandLog{
 			Command:         commandString(append([]string{"xhydra"}, originalArgs...)),
 			ExpandedCommand: commandString(append([]string{"hydra"}, expandedArgs...)),
@@ -507,8 +515,8 @@ func (app *app) runUsernameMode(workspace *ctx.Workspace, targetID int64, option
 	}
 	defer cleanup()
 	for _, batch := range batches {
-		hydraArgs := buildServiceCredentialArgs(options.Mode, host, port, "", options.Password, batch.TempPath, "")
-		expandedArgs := buildServiceCredentialArgs(options.Mode, host, port, "", "<redacted>", batch.OriginalPath, "")
+		hydraArgs := buildServiceCredentialArgs(options.Mode, host, port, "", options.Password, batch.TempPath, "", options.Tasks)
+		expandedArgs := buildServiceCredentialArgs(options.Mode, host, port, "", "<redacted>", batch.OriginalPath, "", options.Tasks)
 		logID, err := ctx.StartCommandLog(workspace, ctx.CommandLog{
 			Command:         commandString(redactCommandArgs(append([]string{"xhydra"}, originalArgs...))),
 			ExpandedCommand: commandString(redactCommandArgs(append([]string{"hydra"}, expandedArgs...))),
@@ -925,11 +933,11 @@ func defaultServicePort(mode string) int {
 	}
 }
 
-func buildServiceHydraArgs(mode, host string, port int, passwordList, username string) []string {
-	return buildServiceCredentialArgs(mode, host, port, passwordList, "", "", username)
+func buildServiceHydraArgs(mode, host string, port int, passwordList, username string, tasks int) []string {
+	return buildServiceCredentialArgs(mode, host, port, passwordList, "", "", username, tasks)
 }
 
-func buildServiceCredentialArgs(mode, host string, port int, passwordList, password, usernameList, username string) []string {
+func buildServiceCredentialArgs(mode, host string, port int, passwordList, password, usernameList, username string, tasks int) []string {
 	module := mode
 	if mode == "smb" {
 		module = "smb2"
@@ -945,8 +953,11 @@ func buildServiceCredentialArgs(mode, host string, port int, passwordList, passw
 	} else {
 		args = append(args, "-P", passwordList)
 	}
-	if mode == "ssh" {
-		args = append(args, "-t", "4")
+	if mode == "ssh" || mode == "ftp" {
+		if tasks < 1 {
+			tasks = 4
+		}
+		args = append(args, "-t", strconv.Itoa(tasks))
 	}
 	args = append(args, "-f", "-s", strconv.Itoa(port), host, module)
 	return args
@@ -1258,6 +1269,16 @@ func parseOptions(args []string) (parsedOptions, error) {
 				return parsedOptions{}, err
 			}
 			options.Service = v
+		case "-t", "--tasks":
+			v, err := value(args[i])
+			if err != nil {
+				return parsedOptions{}, err
+			}
+			tasks, convErr := strconv.Atoi(v)
+			if convErr != nil || tasks < 1 {
+				return parsedOptions{}, errors.New("tasks must be a positive integer")
+			}
+			options.Tasks = tasks
 		case "--force":
 			return parsedOptions{}, errors.New("--force was removed; rerun the same command to continue or use --clear-cache to restart")
 		case "--status":

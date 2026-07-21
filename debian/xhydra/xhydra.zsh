@@ -33,7 +33,39 @@ _xhydra() {
         '--success-redirect[treat HTTP 302 as success]' \
         '(-P --password-list)'{-P,--password-list}'[use an explicit password list]:password-list:_files'
       ;;
-    ssh|ftp|smb)
+    ssh)
+      _arguments -s \
+        '1:mode:_xhydra_modes' \
+        '(-h --help)'{-h,--help}'[show this help]' \
+        '(-V --version)'{-V,--version}'[show version]' \
+        '(-u --username)'{-u,--username}'[username to test]:username:' \
+        '--password[fixed password for username search]:password:' \
+        '(-L --user-list)'{-L,--user-list}'[use a username list]:user-list:_files' \
+        '--host[target host override]:host:' \
+        '(-p --port)'{-p,--port}'[target port override]:port:' \
+        '--service[select a discovered service by number]:service:' \
+        '(-t --tasks)'{-t,--tasks}'[override SSH parallel tasks]:tasks:' \
+        '--status[show password wordlist progress; requires -u]' \
+        '--clear-cache[clear scoped password search progress; requires -u]' \
+        '(-P --password-list)'{-P,--password-list}'[use an explicit password list]:password-list:_files'
+      ;;
+    ftp)
+      _arguments -s \
+        '1:mode:_xhydra_modes' \
+        '(-h --help)'{-h,--help}'[show this help]' \
+        '(-V --version)'{-V,--version}'[show version]' \
+        '(-u --username)'{-u,--username}'[username to test]:username:' \
+        '--password[fixed password for username search]:password:' \
+        '(-L --user-list)'{-L,--user-list}'[use a username list]:user-list:_files' \
+        '--host[target host override]:host:' \
+        '(-p --port)'{-p,--port}'[target port override]:port:' \
+        '--service[select a discovered service by number]:service:' \
+        '(-t --tasks)'{-t,--tasks}'[override FTP parallel tasks]:tasks:' \
+        '--status[show password wordlist progress; requires -u]' \
+        '--clear-cache[clear scoped password search progress; requires -u]' \
+        '(-P --password-list)'{-P,--password-list}'[use an explicit password list]:password-list:_files'
+      ;;
+    smb)
       _arguments -s \
         '1:mode:_xhydra_modes' \
         '(-h --help)'{-h,--help}'[show this help]' \

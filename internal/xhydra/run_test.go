@@ -26,12 +26,43 @@ func TestParseOptions(t *testing.T) {
 }
 
 func TestParseServiceOptions(t *testing.T) {
-	options, err := parseOptions([]string{"smb", "-u", "john", "--host", "10.0.0.5", "--port", "1445", "--service", "2", "-P", "/tmp/passwords.txt"})
+	options, err := parseOptions([]string{"ssh", "-u", "john", "--host", "10.0.0.5", "--port", "2222", "--service", "2", "--tasks", "8", "-P", "/tmp/passwords.txt"})
 	if err != nil {
 		t.Fatalf("parseOptions() error = %v", err)
 	}
-	if options.Mode != "smb" || options.Username != "john" || options.Host != "10.0.0.5" || options.Port != "1445" || options.Service != "2" || options.PasswordList != "/tmp/passwords.txt" {
+	if options.Mode != "ssh" || options.Username != "john" || options.Host != "10.0.0.5" || options.Port != "2222" || options.Service != "2" || options.Tasks != 8 || options.PasswordList != "/tmp/passwords.txt" {
 		t.Fatalf("options = %+v", options)
+	}
+}
+
+func TestParseTasksRejectsInvalidValues(t *testing.T) {
+	for _, value := range []string{"0", "-1", "many"} {
+		if _, err := parseOptions([]string{"ssh", "-u", "john", "-t", value}); err == nil || !strings.Contains(err.Error(), "positive integer") {
+			t.Fatalf("parseOptions(-t %s) error = %v, want positive integer error", value, err)
+		}
+	}
+}
+
+func TestTasksAreRestrictedToSupportedExecutionModes(t *testing.T) {
+	for _, args := range [][]string{{"xhydra", "smb", "-u", "john", "-t", "8"}, {"xhydra", "ssh", "-u", "john", "--tasks", "8", "--status"}} {
+		err := newApp(nil, strings.NewReader(""), &strings.Builder{}, &strings.Builder{}).run(args)
+		if err == nil || !strings.Contains(err.Error(), "--tasks") {
+			t.Fatalf("run(%#v) error = %v, want tasks usage error", args, err)
+		}
+	}
+}
+
+func TestBuildFTPServiceHydraArgsUsesConservativeTasks(t *testing.T) {
+	args := buildServiceHydraArgs("ftp", "10.0.0.5", 21, "/tmp/passwords.txt", "john", 0)
+	want := []string{"-l", "john", "-P", "/tmp/passwords.txt", "-t", "4", "-f", "-s", "21", "10.0.0.5", "ftp"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+
+	args = buildServiceHydraArgs("ftp", "10.0.0.5", 21, "/tmp/passwords.txt", "john", 2)
+	want[5] = "2"
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("override args = %#v, want %#v", args, want)
 	}
 }
 
@@ -64,7 +95,7 @@ func TestMatchingServices(t *testing.T) {
 }
 
 func TestBuildServiceHydraArgs(t *testing.T) {
-	args := buildServiceHydraArgs("smb", "10.0.0.5", 1445, "/tmp/passwords.txt", "john")
+	args := buildServiceHydraArgs("smb", "10.0.0.5", 1445, "/tmp/passwords.txt", "john", 0)
 	want := []string{"-l", "john", "-P", "/tmp/passwords.txt", "-f", "-s", "1445", "10.0.0.5", "smb2"}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("args = %#v, want %#v", args, want)
@@ -72,14 +103,14 @@ func TestBuildServiceHydraArgs(t *testing.T) {
 }
 
 func TestBuildSSHServiceHydraArgsUsesRecommendedTasks(t *testing.T) {
-	args := buildServiceHydraArgs("ssh", "10.0.0.5", 22, "/tmp/passwords.txt", "john")
+	args := buildServiceHydraArgs("ssh", "10.0.0.5", 22, "/tmp/passwords.txt", "john", 0)
 	want := []string{"-l", "john", "-P", "/tmp/passwords.txt", "-t", "4", "-f", "-s", "22", "10.0.0.5", "ssh"}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("args = %#v, want %#v", args, want)
 	}
 
-	args = buildServiceCredentialArgs("ssh", "10.0.0.5", 22, "", "secret", "/tmp/users.txt", "")
-	want = []string{"-L", "/tmp/users.txt", "-p", "secret", "-t", "4", "-f", "-s", "22", "10.0.0.5", "ssh"}
+	args = buildServiceCredentialArgs("ssh", "10.0.0.5", 22, "", "secret", "/tmp/users.txt", "", 8)
+	want = []string{"-L", "/tmp/users.txt", "-p", "secret", "-t", "8", "-f", "-s", "22", "10.0.0.5", "ssh"}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("username search args = %#v, want %#v", args, want)
 	}
