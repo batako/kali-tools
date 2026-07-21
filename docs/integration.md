@@ -172,7 +172,7 @@ There is no separate generic result-storage API. There is also no generic public
 
 Passing a password as an argument may expose it through shell history or the process list. Existing command behavior is shown here, not declared safe for unattended secret transfer. A safer machine input should be added to the specific command when a concrete integration requires it.
 
-The stable command forms, duplicate behavior, exit codes, and current limitations are defined in [ctx Registration Commands](registration.md).
+The ctx command forms and current behavior are documented in the [ctx command documentation](commands/ctx.md).
 
 ## Control Structured Logs
 

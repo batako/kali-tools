@@ -40,8 +40,6 @@ for path in \
   docs/api.ja.md \
   docs/integration.md \
   docs/integration.ja.md \
-  docs/registration.md \
-  docs/registration.ja.md \
   docs/database.md \
   docs/database.ja.md \
   internal/ctxapi/client.go \
@@ -63,8 +61,6 @@ check_text docs/integration.md '### Starting ctx safely' 'English fixed-path gui
 check_text docs/integration.ja.md '### ctxを安全に起動する' 'Japanese fixed-path guidance'
 check_text docs/database.md '## Direct Write Warning' 'English SQLite warning'
 check_text docs/database.ja.md '## 直接書き込みの警告' 'Japanese SQLite warning'
-check_text docs/registration.md '## Contract Scope' 'English registration contract'
-check_text docs/registration.ja.md '## 仕様の範囲' 'Japanese registration specification'
 check_text internal/ctxexec/ctxexec.go 'var ExecutablePath = "/usr/local/bin/ctx"' 'default ctx executable is fixed'
 
 for package in xssh xftp xsmb xscp xgobuster xwebshell; do
