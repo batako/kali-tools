@@ -36,8 +36,6 @@ _xffuf() {
     '--no-auto-filter[disable automatic filtering]'
     '--status[show wordlist status]'
     '--clear-cache[clear wordlist cache]'
-    '--next[continue with the next wordlist]'
-    '--force[rerun the first available wordlist]'
     '-H[HTTP header]:header:'
     '-mc[match response status]:status:'
     '-ml[match response lines]:number:'

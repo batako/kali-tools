@@ -29,8 +29,6 @@ _xgobuster() {
       '--wildcard[continue with wildcard DNS results]' \
       '--status[show DNS wordlist search status]' \
       '--clear-cache[clear DNS search cache]' \
-      '--next[continue with the next DNS wordlist]' \
-      '--force[rerun the first DNS wordlist]' \
       '*:gobuster option:'
     return
   fi
@@ -41,10 +39,7 @@ _xgobuster() {
     '(-V --version)'{-V,--version}'[show version]' \
     '--preset[select a technology preset]:preset:(php wordpress aspnet java node static)' \
     '--status[show wordlist search status]' \
-    '--clear-cache[clear DNS search cache]' \
-    '--next[continue with the next automatic wordlist]' \
-    '--force[rerun an already completed wordlist]' \
-    '--profile[limit automatic selection to a profile]:profile:(web-quick web-standard web-deep)' \
+    '--clear-cache[clear scoped wordlist progress]' \
     '(-w --wordlist)'{-w,--wordlist}'[use an explicit wordlist]:wordlist:_files' \
     '(-u --url)'{-u,--url}'[override the target URL]:url:' \
     '--host[use a registered xhost hostname for the target]:hostname:' \

@@ -50,8 +50,6 @@ options:
   --no-auto-filter              disable automatic calibration
   --status                      show vhost wordlist status
   --clear-cache                 clear vhost wordlist cache
-  --next                        continue with the next wordlist
-  --force                       rerun the first available wordlist
   -h, --help                    show this help
   -V, --version                 show version
 
@@ -110,8 +108,6 @@ type options struct {
 	NoAutoFilter bool
 	Status       bool
 	ClearCache   bool
-	Next         bool
-	Force        bool
 	Extra        []string
 }
 
@@ -287,7 +283,7 @@ func (app *App) Run(args []string) error {
 	if parsed.Status {
 		return app.showStatus(baseURL, domain, candidates, searched)
 	}
-	selected, words, err := selectWordlist(candidates, searched, parsed.Wordlist, parsed.Next, parsed.Force, config.VHostMaxRequests)
+	selected, words, err := selectWordlist(candidates, searched, parsed.Wordlist, config.VHostMaxRequests)
 	if err != nil {
 		return err
 	}
@@ -395,10 +391,8 @@ func parseOptions(args []string) (options, error) {
 			result.Status = true
 		case "--clear-cache":
 			result.ClearCache = true
-		case "--next":
-			result.Next = true
-		case "--force":
-			result.Force = true
+		case "--next", "--force":
+			return options{}, fmt.Errorf("%s was removed; rerun the same command to continue or use --clear-cache to restart", arg)
 		default:
 			if strings.HasPrefix(arg, "--domain=") {
 				result.Domain = strings.TrimPrefix(arg, "--domain=")
@@ -430,17 +424,14 @@ func parseOptions(args []string) (options, error) {
 			result.Extra = append(result.Extra, arg)
 		}
 	}
-	if result.Suggest && (result.Status || result.ClearCache || result.Next || result.Force) {
-		return options{}, errors.New("usage: --suggest cannot be combined with --status, --clear-cache, --next, or --force")
+	if result.Suggest && (result.Status || result.ClearCache) {
+		return options{}, errors.New("usage: --suggest cannot be combined with --status or --clear-cache")
 	}
-	if result.Trial && (result.Suggest || result.Status || result.ClearCache || result.Next || result.Force) {
-		return options{}, errors.New("usage: --trial cannot be combined with --suggest, --status, --clear-cache, --next, or --force")
+	if result.Trial && (result.Suggest || result.Status || result.ClearCache) {
+		return options{}, errors.New("usage: --trial cannot be combined with --suggest, --status, or --clear-cache")
 	}
-	if result.ClearCache && (result.Status || result.Next || result.Force) {
-		return options{}, errors.New("usage: --clear-cache cannot be combined with --status, --next, or --force")
-	}
-	if result.Next && result.Wordlist != "" {
-		return options{}, errors.New("usage: --next cannot be combined with --wordlist")
+	if result.ClearCache && result.Status {
+		return options{}, errors.New("usage: --clear-cache cannot be combined with --status")
 	}
 	if result.Status && result.Wordlist != "" {
 		return options{}, errors.New("usage: --status cannot be combined with --wordlist")
@@ -587,27 +578,22 @@ func discoverWordlists() ([]ctx.WordlistSelection, error) {
 
 var recommendWordlists = ctx.RecommendWordlists
 
-func selectWordlist(candidates []ctx.WordlistSelection, searched map[string]struct{}, explicit string, next, force bool, limit int) (ctx.WordlistSelection, []string, error) {
+func selectWordlist(candidates []ctx.WordlistSelection, searched map[string]struct{}, explicit string, limit int) (ctx.WordlistSelection, []string, error) {
 	if explicit != "" {
-		words, err := loadWordlist(explicit, nil, false)
+		words, err := loadWordlist(explicit, nil)
 		return ctx.WordlistSelection{Provider: "manual", Profile: "manual", Type: "vhost", Path: explicit}, capWords(words, limit), err
 	}
-	skip := next
-	for index, candidate := range candidates {
-		words, err := loadWordlist(candidate.Path, searched, force && index == 0)
+	for _, candidate := range candidates {
+		words, err := loadWordlist(candidate.Path, searched)
 		if err != nil {
 			return ctx.WordlistSelection{}, nil, fmt.Errorf("failed to prepare vhost wordlist %s: %w", candidate.Path, err)
 		}
 		if len(words) == 0 {
 			continue
 		}
-		if skip {
-			skip = false
-			continue
-		}
 		return candidate, capWords(words, limit), nil
 	}
-	return ctx.WordlistSelection{}, nil, errors.New("all vhost wordlists have completed; use --force to rerun")
+	return ctx.WordlistSelection{}, nil, errors.New("all configured wordlists have completed; use --clear-cache to restart")
 }
 
 func capWords(words []string, limit int) []string {
@@ -617,7 +603,7 @@ func capWords(words []string, limit int) []string {
 	return words
 }
 
-func loadWordlist(path string, searched map[string]struct{}, ignoreSeen bool) ([]string, error) {
+func loadWordlist(path string, searched map[string]struct{}) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -628,7 +614,7 @@ func loadWordlist(path string, searched map[string]struct{}, ignoreSeen bool) ([
 	local := make(map[string]struct{})
 	for scanner.Scan() {
 		word := strings.TrimSpace(scanner.Text())
-		if word == "" || (!ignoreSeen && searched != nil && hasWord(searched, word)) {
+		if word == "" || (searched != nil && hasWord(searched, word)) {
 			continue
 		}
 		if _, ok := local[word]; ok {
@@ -1059,7 +1045,7 @@ func (app *App) showStatus(baseURL, domain string, candidates []ctx.WordlistSele
 	_, _ = fmt.Fprintf(app.stdout, "Vhost wordlist status for %s (%s)\n", baseURL, domain)
 	total, covered := 0, 0
 	for _, item := range candidates {
-		words, err := loadWordlist(item.Path, searched, false)
+		words, err := loadWordlist(item.Path, searched)
 		if err != nil {
 			return err
 		}

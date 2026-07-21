@@ -19,7 +19,7 @@ _xffuf_complete() {
     '))
     return
   fi
-  common="-w --wordlist -u --url -c --cookies -k --no-tls-validation --tls-verify --trial --no-auto-filter --status --clear-cache --next --force -H -mc -ml -mr -ms -mw -fc -fl -fr -fs -fw -t -rate -timeout -h --help -V --version"
+  common="-w --wordlist -u --url -c --cookies -k --no-tls-validation --tls-verify --trial --no-auto-filter --status --clear-cache -H -mc -ml -mr -ms -mw -fc -fl -fr -fs -fw -t -rate -timeout -h --help -V --version"
   case "${mode}" in
     vhost) options="${common} -d --domain --host --ip --service --suggest" ;;
     param) options="${common}" ;;

@@ -67,6 +67,14 @@ func TestParseOptionsRejectsRemovedProfile(t *testing.T) {
 	}
 }
 
+func TestParseOptionsRejectsRemovedProgressFlags(t *testing.T) {
+	for _, flag := range []string{"--next", "--force"} {
+		if _, err := parseOptions([]string{"vhost", flag}); err == nil || !strings.Contains(err.Error(), "was removed") {
+			t.Fatalf("parseOptions(%q) error = %v, want removed option error", flag, err)
+		}
+	}
+}
+
 func TestParseOptionsKeepsManualFilterForValidation(t *testing.T) {
 	options, err := parseOptions([]string{"vhost", "--suggest", "-fw", "125"})
 	if err != nil {

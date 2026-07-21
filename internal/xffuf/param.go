@@ -66,7 +66,7 @@ func (app *App) runParam(workspace *ctx.Workspace, target *ctx.Target, template 
 	if options.Status {
 		return app.showParamStatus(template, profile, candidates, searched)
 	}
-	selected, words, err := selectWordlist(candidates, searched, options.Wordlist, options.Next, options.Force, config.VHostMaxRequests)
+	selected, words, err := selectWordlist(candidates, searched, options.Wordlist, config.VHostMaxRequests)
 	if err != nil {
 		return err
 	}
@@ -242,7 +242,7 @@ func paramResult(template paramTemplate, word string) (string, string) {
 func (app *App) showParamStatus(template, profile string, candidates []ctx.WordlistSelection, searched map[string]struct{}) error {
 	_, _ = fmt.Fprintf(app.stdout, "Parameter wordlist status for %s (%s)\n", template, profile)
 	for _, candidate := range candidates {
-		words, err := loadWordlist(candidate.Path, searched, false)
+		words, err := loadWordlist(candidate.Path, searched)
 		if err != nil {
 			return err
 		}

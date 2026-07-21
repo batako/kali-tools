@@ -13,7 +13,7 @@ _xhydra_completion() {
       return
       ;;
     ssh|ftp|smb)
-      COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service --force --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}"))
       return
       ;;
     -u|--username|--password|-L|--user-list|-r|--request|--url|--data|--user-field|--password-field|--fail-json|--success-json|--fail-body|--success-body|--fail-status|-P|--password-list)
@@ -29,7 +29,7 @@ _xhydra_completion() {
   if [[ "${COMP_WORDS[1]}" == "http" ]]; then
     COMPREPLY=($(compgen -W "-u --username -r --request --url --data --user-field --password-field --fail-json --success-json --fail-body --success-body --fail-status --success-redirect -P --password-list -h --help -V --version" -- "${cur}"))
   else
-    COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service --force --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}"))
+    COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}"))
   fi
 }
 

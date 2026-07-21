@@ -44,7 +44,6 @@ _xhydra() {
         '--host[target host override]:host:' \
         '(-p --port)'{-p,--port}'[target port override]:port:' \
         '--service[select a discovered service by number]:service:' \
-        '--force[rerun the next automatic password batch]' \
         '--status[show password wordlist progress; requires -u]' \
         '--clear-cache[clear scoped password search progress; requires -u]' \
         '(-P --password-list)'{-P,--password-list}'[use an explicit password list]:password-list:_files'

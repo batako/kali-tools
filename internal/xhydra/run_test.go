@@ -45,6 +45,12 @@ func TestParseClearCacheOption(t *testing.T) {
 	}
 }
 
+func TestParseOptionsRejectsRemovedForce(t *testing.T) {
+	if _, err := parseOptions([]string{"ssh", "-u", "kali", "--force"}); err == nil || !strings.Contains(err.Error(), "was removed") {
+		t.Fatalf("parseOptions(--force) error = %v, want removed option error", err)
+	}
+}
+
 func TestMatchingServices(t *testing.T) {
 	services := matchingServices([]ctx.Service{
 		{Port: 22, Protocol: "tcp", ServiceName: "ssh"},
@@ -70,7 +76,7 @@ func TestFilteredPasswordWordlistSkipsSharedWords(t *testing.T) {
 	if err := os.WriteFile(path, []byte("secret\npassword\nsecret\n\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	words, err := filteredPasswordWordlist(path, map[string]struct{}{"password": {}}, false)
+	words, err := filteredPasswordWordlist(path, map[string]struct{}{"password": {}})
 	if err != nil {
 		t.Fatalf("filteredPasswordWordlist() error = %v", err)
 	}

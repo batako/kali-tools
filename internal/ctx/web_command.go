@@ -177,7 +177,7 @@ func confirmWebDiscoveryClear(stdout io.Writer, scanner *bufio.Scanner, target *
 	if _, err := fmt.Fprintf(stdout, "Clear all web discovery data for target %s (%s)?\n", target.Name, target.IP); err != nil {
 		return false, err
 	}
-	if _, err := fmt.Fprintf(stdout, "\nDiscoveries: %d\nWordlist runs: %d\nWordlist cache: %s\n\nThis resets xgobuster search progress and cannot be undone.\n[y/N]: ",
+	if _, err := fmt.Fprintf(stdout, "\nDiscoveries: %d\nWordlist runs: %d\nWordlist cache: %s\n\nThis resets xgobuster and xffuf search progress and cannot be undone.\n[y/N]: ",
 		summary.Discoveries, summary.WordlistRuns, webCacheStatus(summary.CachePresent)); err != nil {
 		return false, err
 	}

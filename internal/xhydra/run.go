@@ -48,7 +48,6 @@ options:
   --host <host>               override the target host for ssh, ftp, or smb
   -p, --port <port>           override the target port for ssh, ftp, or smb
   --service <number>          select a discovered service for ssh, ftp, or smb
-  --force                     rerun the next automatic password batch
   --status                    show password wordlist progress (requires -u)
   --clear-cache               clear scoped password search progress (requires -u)
   -r, --request <file>        use a raw HTTP request template
@@ -78,7 +77,6 @@ type parsedOptions struct {
 	Host            string
 	Port            string
 	Service         string
-	Force           bool
 	Status          bool
 	ClearCache      bool
 	RequestFile     string
@@ -286,8 +284,8 @@ func (app *app) runServiceMode(options parsedOptions, originalArgs []string) err
 		return app.runUsernameMode(workspace, target.ID, options, host, port, originalArgs)
 	}
 	if options.ClearCache {
-		if options.Status || options.Force || options.PasswordList != "" {
-			return errors.New("--clear-cache cannot be combined with --status, --force, or --password-list")
+		if options.Status || options.PasswordList != "" {
+			return errors.New("--clear-cache cannot be combined with --status or --password-list")
 		}
 		statePath, err := passwordStatePath(workspace, target.ID, options.Mode, host, port, options.Username)
 		if err != nil {
@@ -480,8 +478,8 @@ func usernameWordlistCandidates(explicit string) ([]ctx.WordlistSelection, error
 }
 
 func (app *app) clearUsernameCache(workspace *ctx.Workspace, targetID int64, options parsedOptions, host string, port int) error {
-	if options.Status || options.Force || options.UserList != "" {
-		return errors.New("--clear-cache cannot be combined with --status, --force, or --user-list")
+	if options.Status || options.UserList != "" {
+		return errors.New("--clear-cache cannot be combined with --status or --user-list")
 	}
 	statePath, err := usernameStatePath(workspace, targetID, options.Mode, host, port, options.Password)
 	if err != nil {
@@ -582,8 +580,8 @@ func (app *app) prepareUsernameBatches(workspace *ctx.Workspace, targetID int64,
 	var batches []passwordBatch
 	var temporaryPaths []string
 	planned := 0
-	for index, candidate := range candidates {
-		words, err := filteredPasswordWordlist(candidate.Path, seen, options.Force && index == 0)
+	for _, candidate := range candidates {
+		words, err := filteredPasswordWordlist(candidate.Path, seen)
 		if err != nil {
 			return nil, func() {}, fmt.Errorf("failed to prepare wordlist %s: %w", candidate.Path, err)
 		}
@@ -609,7 +607,7 @@ func (app *app) prepareUsernameBatches(workspace *ctx.Workspace, targetID int64,
 		}
 	}
 	if len(batches) == 0 {
-		return nil, func() {}, errors.New("all configured username wordlists have completed; use --force to rerun")
+		return nil, func() {}, errors.New("all configured username wordlists have completed; use --clear-cache to restart")
 	}
 	return batches, func() {
 		for _, path := range temporaryPaths {
@@ -652,9 +650,8 @@ func (app *app) preparePasswordBatches(workspace *ctx.Workspace, targetID int64,
 	batches := make([]passwordBatch, 0)
 	temporaryPaths := make([]string, 0)
 	planned := 0
-	for index, candidate := range candidates {
-		ignoreSeen := options.Force && index == 0
-		candidateWords, err := filteredPasswordWordlist(candidate.Path, seen, ignoreSeen)
+	for _, candidate := range candidates {
+		candidateWords, err := filteredPasswordWordlist(candidate.Path, seen)
 		if err != nil {
 			return nil, func() {}, fmt.Errorf("failed to prepare wordlist %s: %w", candidate.Path, err)
 		}
@@ -683,7 +680,7 @@ func (app *app) preparePasswordBatches(workspace *ctx.Workspace, targetID int64,
 		}
 	}
 	if len(batches) == 0 {
-		return nil, func() {}, errors.New("all configured password wordlists have completed; use --force to rerun")
+		return nil, func() {}, errors.New("all configured password wordlists have completed; use --clear-cache to restart")
 	}
 	return batches, func() {
 		for _, path := range temporaryPaths {
@@ -710,7 +707,7 @@ func usernameStatePath(workspace *ctx.Workspace, targetID int64, mode, host stri
 	return filepath.Join(directory, "searched.words"), nil
 }
 
-func filteredPasswordWordlist(path string, seen map[string]struct{}, ignoreSeen bool) ([]string, error) {
+func filteredPasswordWordlist(path string, seen map[string]struct{}) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -721,7 +718,7 @@ func filteredPasswordWordlist(path string, seen map[string]struct{}, ignoreSeen 
 	local := make(map[string]struct{})
 	for scanner.Scan() {
 		word := strings.TrimSpace(scanner.Text())
-		if word == "" || (!ignoreSeen && hasSearchedPassword(seen, word)) {
+		if word == "" || hasSearchedPassword(seen, word) {
 			continue
 		}
 		if _, ok := local[word]; ok {
@@ -1259,7 +1256,7 @@ func parseOptions(args []string) (parsedOptions, error) {
 			}
 			options.Service = v
 		case "--force":
-			options.Force = true
+			return parsedOptions{}, errors.New("--force was removed; rerun the same command to continue or use --clear-cache to restart")
 		case "--status":
 			options.Status = true
 		case "--clear-cache":

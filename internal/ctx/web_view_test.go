@@ -170,9 +170,9 @@ func TestRunWebClearRemovesAllDiscoveriesForSelectedTargetOnly(t *testing.T) {
 	if _, err := StartWebWordlistRun(workspace, secondary, "http://10.10.10.20", "wordlists", "web-quick", "", "/usr/share/dirb/wordlists/common.txt", "2026-07-20T00:00:00Z", 0); err != nil {
 		t.Fatal(err)
 	}
-	primaryCache := webWordlistCachePath(workspace, primary)
-	secondaryCache := webWordlistCachePath(workspace, secondary)
-	for _, path := range []string{primaryCache, secondaryCache} {
+	primaryCaches := webDiscoveryCachePaths(workspace, primary)
+	secondaryCaches := webDiscoveryCachePaths(workspace, secondary)
+	for _, path := range append(append([]string{}, primaryCaches...), secondaryCaches...) {
 		if err := os.MkdirAll(filepath.Join(path, "state"), 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -191,7 +191,7 @@ func TestRunWebClearRemovesAllDiscoveriesForSelectedTargetOnly(t *testing.T) {
 	if err := Run([]string{"ctx", "web", "clear"}, &out); err != nil {
 		t.Fatalf("Run(ctx web clear) error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "Clear all web discovery data for target default (10.10.10.10)?") || !strings.Contains(got, "Discoveries: 2") || !strings.Contains(got, "Wordlist runs: 1") || !strings.Contains(got, "Wordlist cache: present") || !strings.Contains(got, "Cleared web discovery data for target: default") || !strings.Contains(got, "Wordlist cache: removed") {
+	if got := out.String(); !strings.Contains(got, "Clear all web discovery data for target default (10.10.10.10)?") || !strings.Contains(got, "Discoveries: 2") || !strings.Contains(got, "Wordlist runs: 1") || !strings.Contains(got, "Wordlist cache: present") || !strings.Contains(got, "xgobuster and xffuf search progress") || !strings.Contains(got, "Cleared web discovery data for target: default") || !strings.Contains(got, "Wordlist cache: removed") {
 		t.Fatalf("clear output = %q", got)
 	}
 	primaryDiscoveries, err := ListWebDiscoveries(workspace, primary)
@@ -222,11 +222,15 @@ func TestRunWebClearRemovesAllDiscoveriesForSelectedTargetOnly(t *testing.T) {
 	if len(secondaryRuns) != 1 {
 		t.Fatalf("secondary wordlist runs = %d, want 1", len(secondaryRuns))
 	}
-	if _, err := os.Stat(primaryCache); !os.IsNotExist(err) {
-		t.Fatalf("primary cache stat error = %v, want not exist", err)
+	for _, path := range primaryCaches {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("primary cache %s stat error = %v, want not exist", path, err)
+		}
 	}
-	if _, err := os.Stat(secondaryCache); err != nil {
-		t.Fatalf("secondary cache stat error = %v, want present", err)
+	for _, path := range secondaryCaches {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("secondary cache %s stat error = %v, want present", path, err)
+		}
 	}
 	logs, err := ListCommandLogs(workspace)
 	if err != nil {
@@ -244,6 +248,11 @@ func TestRunWebClearRemovesAllDiscoveriesForSelectedTargetOnly(t *testing.T) {
 	if got := out.String(); !strings.Contains(got, "Cleared web discovery data for target: secondary") || !strings.Contains(got, "Discoveries: 1") || !strings.Contains(got, "Wordlist runs: 1") || !strings.Contains(got, "Wordlist cache: removed") {
 		t.Fatalf("selected clear output = %q", got)
 	}
+	for _, path := range secondaryCaches {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("secondary cache %s stat error = %v, want not exist", path, err)
+		}
+	}
 }
 
 func TestRunWebClearCancelsWithoutExplicitConfirmation(t *testing.T) {
@@ -258,12 +267,14 @@ func TestRunWebClearCancelsWithoutExplicitConfirmation(t *testing.T) {
 	if _, err := StartWebWordlistRun(workspace, target, "http://10.10.10.10", "wordlists", "web-quick", "", "/usr/share/dirb/wordlists/common.txt", "2026-07-20T00:00:00Z", 0); err != nil {
 		t.Fatal(err)
 	}
-	cachePath := webWordlistCachePath(workspace, target)
-	if err := os.MkdirAll(cachePath, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(cachePath, "searched.words"), []byte("admin\n"), 0600); err != nil {
-		t.Fatal(err)
+	cachePaths := webDiscoveryCachePaths(workspace, target)
+	for _, cachePath := range cachePaths {
+		if err := os.MkdirAll(cachePath, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cachePath, "searched.words"), []byte("admin\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	oldStdin := workspaceStdin
 	workspaceStdin = strings.NewReader("\n")
@@ -290,8 +301,44 @@ func TestRunWebClearCancelsWithoutExplicitConfirmation(t *testing.T) {
 	if len(runs) != 1 {
 		t.Fatalf("wordlist runs after cancellation = %d, want 1", len(runs))
 	}
-	if _, err := os.Stat(cachePath); err != nil {
-		t.Fatalf("cache after cancellation stat error = %v, want present", err)
+	for _, cachePath := range cachePaths {
+		if _, err := os.Stat(cachePath); err != nil {
+			t.Fatalf("cache %s after cancellation stat error = %v, want present", cachePath, err)
+		}
+	}
+}
+
+func TestIsolateWebDiscoveryCachesRestoresEarlierCacheOnFailure(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "web-wordlists", "1")
+	if err := os.MkdirAll(first, 0755); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(root, "xffuf-vhost", "1")
+	if err := os.MkdirAll(second, 0755); err != nil {
+		t.Fatal(err)
+	}
+	blocker := filepath.Join(root, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := isolateWebDiscoveryCaches([]string{first, second, filepath.Join(blocker, "xffuf")}); err == nil {
+		t.Fatal("isolateWebDiscoveryCaches() error = nil, want failure")
+	}
+	if _, err := os.Stat(first); err != nil {
+		t.Fatalf("first cache was not restored: %v", err)
+	}
+	if _, err := os.Stat(second); err != nil {
+		t.Fatalf("second cache was not restored: %v", err)
+	}
+	for _, path := range []string{first, second} {
+		matches, err := filepath.Glob(path + ".clearing-*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(matches) != 0 {
+			t.Fatalf("isolated cache remains after rollback: %#v", matches)
+		}
 	}
 }
 

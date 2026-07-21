@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -49,12 +48,9 @@ options:
   -k, --no-tls-validation disable TLS certificate validation
   --tls-verify           verify TLS certificates for this run
   --preset <name>        select a technology preset
-  --profile <name>       limit automatic selection to web-quick, web-standard, or web-deep
   -x, --extensions <list> pass extensions to Gobuster (for example php,html,js)
   --status               show wordlist search status
-  --clear-cache          clear DNS search cache without running Gobuster
-  --next                 continue with the next automatic wordlist
-  --force                rerun an already completed automatic wordlist
+  --clear-cache          clear scoped wordlist progress without running Gobuster
   -h, --help             show this help
   -V, --version          show version`
 
@@ -162,14 +158,11 @@ func (app *App) Run(args []string) error {
 		if (options.Status || options.ClearCache) && options.Wordlist != "" {
 			return app.errorf("usage: xgobuster dns --status cannot be combined with --wordlist")
 		}
-		if options.ClearCache && (options.Status || options.Next || options.Force) {
-			return app.errorf("usage: xgobuster dns --clear-cache cannot be combined with --status, --next, or --force")
+		if options.ClearCache && options.Status {
+			return app.errorf("usage: xgobuster dns --clear-cache cannot be combined with --status")
 		}
-		if options.Next && options.Wordlist != "" {
-			return app.errorf("usage: xgobuster dns --next cannot be combined with --wordlist")
-		}
-		if options.Profile != "" || options.Preset != "" || options.URL != "" || options.Host != "" || options.IP || options.Service != 0 || options.Cookie != "" || options.ExcludeStatus != "" || options.ExcludeLength != "" || options.Insecure || options.VerifyTLS {
-			return app.errorf("dns mode accepts -d, -w, --status, --next, --force, and Gobuster DNS options only")
+		if options.Preset != "" || options.URL != "" || options.Host != "" || options.IP || options.Service != 0 || options.Cookie != "" || options.ExcludeStatus != "" || options.ExcludeLength != "" || options.Insecure || options.VerifyTLS {
+			return app.errorf("dns mode accepts -d, -w, --status, --clear-cache, and Gobuster DNS options only")
 		}
 		hosts, hostErr := ctx.ListHosts(workspace)
 		if hostErr != nil {
@@ -183,8 +176,11 @@ func (app *App) Run(args []string) error {
 		return app.runDNS(workspace, target, options, args[1:])
 	}
 
-	if options.Status && options.Wordlist != "" {
-		return app.errorf("usage: xgobuster --status [--profile <name>] [--preset <name>] [-x <list>] [--url <url>]")
+	if (options.Status || options.ClearCache) && options.Wordlist != "" {
+		return app.errorf("usage: xgobuster --status|--clear-cache [--preset <name>] [-x <list>] [--url <url>]")
+	}
+	if options.Status && options.ClearCache {
+		return app.errorf("usage: --clear-cache cannot be combined with --status")
 	}
 	config, configErr := ctx.LoadConfig()
 	if configErr != nil {
@@ -201,9 +197,6 @@ func (app *App) Run(args []string) error {
 	}
 	if options.Insecure && options.VerifyTLS {
 		return app.errorf("usage: -k cannot be combined with --tls-verify")
-	}
-	if options.Profile != "" && options.Wordlist != "" {
-		return app.errorf("usage: xgobuster --profile <name> cannot be used with --wordlist")
 	}
 	wordlist := options.Wordlist
 	url := options.URL
@@ -228,7 +221,7 @@ func (app *App) Run(args []string) error {
 		return app.errorf("usage: --service cannot be combined with --url")
 	}
 	if options.Wordlist == "" {
-		if err := resolveExecutionStrategy(workspace, target, url, &options); err != nil {
+		if err := resolveExecutionStrategy(&options); err != nil {
 			return app.errorf("failed to resolve technology preset: %s", err)
 		}
 	}
@@ -238,6 +231,13 @@ func (app *App) Run(args []string) error {
 	historyURLs, historyErr := compatibleHistoryURLs(workspace, target, url)
 	if historyErr != nil {
 		return app.errorf("failed to load web wordlist history: %s", historyErr)
+	}
+	if options.ClearCache {
+		if err := clearSearchedWordsForURLs(workspace, target.ID, historyURLs, effectiveExtra(options)); err != nil {
+			return app.errorf("failed to clear web wordlist state: %s", err)
+		}
+		_, _ = fmt.Fprintf(app.stdout, "Cleared web wordlist cache for %s\n", url)
+		return nil
 	}
 	selection := ctx.WordlistSelection{Provider: "manual", Path: wordlist}
 
@@ -251,11 +251,9 @@ func (app *App) Run(args []string) error {
 		if listErr != nil {
 			return app.errorf("failed to select wordlist: %s", listErr)
 		}
-		candidates = filterWordlists(candidates, options.Profile)
 		if len(candidates) == 0 {
-			return app.errorf("no wordlists found for profile %s", options.Profile)
+			return app.errorf("no directory wordlists found")
 		}
-		start := 0
 		baseSearched, loadErr := loadSearchedWordsForURLs(workspace, target.ID, historyURLs, "base", "")
 		if loadErr != nil {
 			return app.errorf("failed to load wordlist state: %s", loadErr)
@@ -277,19 +275,19 @@ func (app *App) Run(args []string) error {
 		planned = planned[:0]
 		usedRequests := 0
 		requestLimit := searchRequestLimit(config, options)
-		for i := start; i < len(candidates); i++ {
+		for i := 0; i < len(candidates); i++ {
 			candidate := candidates[i]
-			words, countErr := filteredWordlist(candidate.Path, baseSearched, options.Force && i == start)
+			words, countErr := filteredWordlist(candidate.Path, baseSearched)
 			if countErr != nil {
 				return app.errorf("failed to prepare wordlist %s: %s", candidate.Path, countErr)
 			}
 			allWords := words
 			if searchModeFromOptions(options) == "file" {
-				allWords, countErr = filteredWordlist(candidate.Path, nil, false)
+				allWords, countErr = filteredWordlist(candidate.Path, nil)
 				if countErr != nil {
 					return app.errorf("failed to prepare wordlist %s: %s", candidate.Path, countErr)
 				}
-				words, countErr = filteredWordlist(candidate.Path, baseSearched, options.Force && i == start)
+				words, countErr = filteredWordlist(candidate.Path, baseSearched)
 				if countErr != nil {
 					return app.errorf("failed to prepare wordlist %s: %s", candidate.Path, countErr)
 				}
@@ -319,24 +317,17 @@ func (app *App) Run(args []string) error {
 
 			missingBase := make([]string, 0, len(words))
 			missingExtensions := make([]string, 0)
-			forceCurrent := options.Force && i == start
 			for _, word := range words {
-				if forceCurrent {
-					missingBase = append(missingBase, word)
-					continue
-				}
 				missingBase = append(missingBase, word)
 			}
-			if !forceCurrent {
-				for _, word := range allWords {
-					if _, ok := baseSearched[word]; !ok {
-						continue
-					}
-					for _, extension := range extensions {
-						request := word + "." + extension
-						if _, ok := extensionSearched[extension][request]; !ok {
-							missingExtensions = append(missingExtensions, request)
-						}
+			for _, word := range allWords {
+				if _, ok := baseSearched[word]; !ok {
+					continue
+				}
+				for _, extension := range extensions {
+					request := word + "." + extension
+					if _, ok := extensionSearched[extension][request]; !ok {
+						missingExtensions = append(missingExtensions, request)
 					}
 				}
 			}
@@ -390,7 +381,7 @@ func (app *App) Run(args []string) error {
 			}
 		}
 		if len(planned) == 0 {
-			return app.errorf("all configured web wordlists have completed; use --force to rerun")
+			return app.errorf("all configured web wordlists have completed; use --clear-cache to restart")
 		}
 	}
 	for _, item := range planned {
@@ -474,33 +465,28 @@ func (app *App) runDNS(workspace *ctx.Workspace, target *ctx.Target, options par
 	if options.Wordlist != "" {
 		candidates = []ctx.WordlistSelection{{Provider: "manual", Profile: "manual", Type: "dns", Path: options.Wordlist}}
 	}
-	if options.Force {
-		candidates = candidates[:1]
-	}
 	var selected ctx.WordlistSelection
 	var words []string
-	skipNext := options.Next
 	for _, candidate := range candidates {
 		if _, statErr := os.Stat(candidate.Path); statErr != nil {
 			continue
 		}
-		ignoreSeen := options.Force && candidate.Path == candidates[0].Path
-		candidateWords, wordErr := filteredWordlist(candidate.Path, searched, ignoreSeen)
+		candidateSeen := searched
+		if candidate.Provider == "manual" {
+			candidateSeen = nil
+		}
+		candidateWords, wordErr := filteredWordlist(candidate.Path, candidateSeen)
 		if wordErr != nil {
 			return app.errorf("failed to prepare DNS wordlist %s: %s", candidate.Path, wordErr)
 		}
 		if len(candidateWords) == 0 {
 			continue
 		}
-		if skipNext {
-			skipNext = false
-			continue
-		}
 		selected, words = candidate, candidateWords
 		break
 	}
 	if len(words) == 0 {
-		return app.errorf("all DNS wordlists have completed; use --force to rerun")
+		return app.errorf("all DNS wordlists have completed; use --clear-cache to restart")
 	}
 	if len(words) > config.DNSMaxQueries {
 		words = words[:config.DNSMaxQueries]
@@ -687,7 +673,7 @@ func (app *App) runWordlist(workspace *ctx.Workspace, target *ctx.Target, url st
 	}
 	runID := int64(0)
 	if selection.Provider != "manual" {
-		runID, err = ctx.StartWebWordlistRun(workspace, target, url, selection.Provider, runProfile(options, selection), searchSignature(options), logWordlist, startedAt.Format(time.RFC3339Nano), logID)
+		runID, err = ctx.StartWebWordlistRun(workspace, target, url, selection.Provider, runProfile(selection), searchSignature(options), logWordlist, startedAt.Format(time.RFC3339Nano), logID)
 		if err != nil {
 			return app.errorf("failed to start wordlist run: %s", err)
 		}
@@ -723,9 +709,8 @@ func (app *App) showStatus(workspace *ctx.Workspace, target *ctx.Target, url str
 	if err != nil {
 		return app.errorf("failed to select wordlists: %s", err)
 	}
-	candidates = filterWordlists(candidates, options.Profile)
 	if len(candidates) == 0 {
-		return app.errorf("no wordlists found for profile %s", options.Profile)
+		return app.errorf("no directory wordlists found")
 	}
 	allRuns, err := ctx.ListWebWordlistRunsForTarget(workspace, target)
 	if err != nil {
@@ -776,13 +761,13 @@ func (app *App) showStatus(workspace *ctx.Workspace, target *ctx.Target, url str
 		if countErr != nil {
 			return app.errorf("failed to inspect wordlist %s: %s", candidate.Path, countErr)
 		}
-		remaining, remainingErr := filteredWordlist(candidate.Path, searched, false)
+		remaining, remainingErr := filteredWordlist(candidate.Path, searched)
 		if remainingErr != nil {
 			return app.errorf("failed to inspect wordlist %s: %s", candidate.Path, remainingErr)
 		}
 		checked := lineCount - len(remaining)
 		status := "pending"
-		run, ok := runByWordlist[runProfileKey(runProfile(options, candidate), searchSignature(options), candidate.Path)]
+		run, ok := runByWordlist[runProfileKey(runProfile(candidate), searchSignature(options), candidate.Path)]
 		remainingRequests := len(remaining)
 		if searchModeFromOptions(options) == "file" {
 			remainingRequests = 0
@@ -833,23 +818,7 @@ func (app *App) showStatus(workspace *ctx.Workspace, target *ctx.Target, url str
 
 var recommendWordlists = ctx.RecommendWordlists
 
-func filterWordlists(candidates []ctx.WordlistSelection, profile string) []ctx.WordlistSelection {
-	if profile == "" {
-		return candidates
-	}
-	filtered := make([]ctx.WordlistSelection, 0, len(candidates))
-	for _, candidate := range candidates {
-		if candidate.Profile == profile {
-			filtered = append(filtered, candidate)
-		}
-	}
-	return filtered
-}
-
-func runProfile(options parsedOptions, selection ctx.WordlistSelection) string {
-	if options.Profile != "" {
-		return options.Profile
-	}
+func runProfile(selection ctx.WordlistSelection) string {
 	return selection.Profile
 }
 
@@ -857,172 +826,13 @@ func runProfileKey(profile, searchSignature, wordlist string) string {
 	return profile + "\x00" + searchSignature + "\x00" + wordlist
 }
 
-func hasStartedRuns(runs []ctx.WebWordlistRun, options parsedOptions) bool {
-	if options.Profile == "" {
-		return len(runs) > 0
-	}
-	for _, run := range runs {
-		if run.Profile == options.Profile {
-			return true
+func resolveExecutionStrategy(options *parsedOptions) error {
+	if options.Preset != "" {
+		if err := applyPreset(options); err != nil {
+			return err
 		}
 	}
-	return false
-}
-
-type activeStrategy struct {
-	Profile          string `json:"profile"`
-	Preset           string `json:"preset"`
-	PresetExtensions string `json:"preset_extensions"`
-	Mode             string `json:"mode"`
-}
-
-func resolveExecutionStrategy(workspace *ctx.Workspace, target *ctx.Target, url string, options *parsedOptions) error {
-	explicit := options.Profile != "" || options.Preset != "" || hasExtensionsOption(options.Extra)
-	if explicit {
-		if options.Preset != "" {
-			if err := applyPreset(options); err != nil {
-				return err
-			}
-		}
-		if options.Profile == "" {
-			options.Profile = ctx.WordlistProfileWebQuick
-		}
-		options.Mode = searchModeFromOptions(*options)
-		return persistActiveStrategy(workspace, target.ID, url, *options)
-	}
-
-	active, err := loadCompatibleActiveStrategy(workspace, target.ID, url)
-	if err != nil {
-		return err
-	}
-	if options.Next {
-		base := active.Profile
-		if base == "" {
-			base = ctx.WordlistProfileWebQuick
-		}
-		next, ok := nextProfile(base)
-		if !ok {
-			return fmt.Errorf("no next web profile after %s", base)
-		}
-		options.Profile = next
-		options.Preset = active.Preset
-		options.PresetExtensions = active.PresetExtensions
-		options.Mode = active.Mode
-	} else if active.Profile != "" && active.Mode == "directory" {
-		options.Profile = active.Profile
-		options.Mode = "directory"
-	} else {
-		options.Profile = ctx.WordlistProfileWebQuick
-		options.Preset = ""
-		options.PresetExtensions = ""
-		options.Mode = "directory"
-	}
-	return persistActiveStrategy(workspace, target.ID, url, *options)
-}
-
-func persistActiveStrategy(workspace *ctx.Workspace, targetID int64, url string, options parsedOptions) error {
-	if options.Status {
-		return nil
-	}
-	return saveActiveStrategy(workspace, targetID, url, activeStrategyFromOptions(options))
-}
-
-func nextProfile(profile string) (string, bool) {
-	profiles := []string{ctx.WordlistProfileWebQuick, ctx.WordlistProfileWebStandard, ctx.WordlistProfileWebDeep}
-	for i, current := range profiles {
-		if current == profile && i+1 < len(profiles) {
-			return profiles[i+1], true
-		}
-	}
-	return "", false
-}
-
-func activeStrategyFromOptions(options parsedOptions) activeStrategy {
-	return activeStrategy{Profile: options.Profile, Preset: options.Preset, PresetExtensions: options.PresetExtensions, Mode: options.Mode}
-}
-
-func activeStrategyPath(workspace *ctx.Workspace, targetID int64, url string) (string, error) {
-	digest := sha256.Sum256([]byte(url))
-	directory := filepath.Join(workspace.DataPath, "web-wordlists", strconv.FormatInt(targetID, 10), hex.EncodeToString(digest[:]))
-	if err := os.MkdirAll(directory, 0755); err != nil {
-		return "", err
-	}
-	return filepath.Join(directory, "active.json"), nil
-}
-
-func loadActiveStrategy(workspace *ctx.Workspace, targetID int64, url string) (activeStrategy, error) {
-	path, err := activeStrategyPath(workspace, targetID, url)
-	if err != nil {
-		return activeStrategy{}, err
-	}
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return activeStrategy{}, nil
-	}
-	if err != nil {
-		return activeStrategy{}, err
-	}
-	var strategy activeStrategy
-	if err := json.Unmarshal(data, &strategy); err != nil {
-		return activeStrategy{}, fmt.Errorf("failed to read active strategy: %w", err)
-	}
-	// Normalize state written before search mode was separated from profile.
-	if strategy.Profile == "web-files" {
-		strategy.Profile = ctx.WordlistProfileWebQuick
-		strategy.PresetExtensions = "html,htm,js,php"
-		strategy.Mode = "file"
-	}
-	if strategy.Mode == "" {
-		if strategy.PresetExtensions != "" {
-			strategy.Mode = "file"
-		} else {
-			strategy.Mode = "directory"
-		}
-	}
-	return strategy, nil
-}
-
-func loadCompatibleActiveStrategy(workspace *ctx.Workspace, targetID int64, currentURL string) (activeStrategy, error) {
-	strategy, err := loadActiveStrategy(workspace, targetID, currentURL)
-	if err != nil || strategy.Profile != "" {
-		return strategy, err
-	}
-
-	target, err := ctx.GetPrimaryTarget(workspace)
-	if err != nil {
-		return activeStrategy{}, err
-	}
-	runs, err := ctx.ListWebWordlistRunsForTarget(workspace, target)
-	if err != nil {
-		return activeStrategy{}, err
-	}
-	for _, historyURL := range compatibleURLList(currentURL, runs) {
-		if historyURL == currentURL {
-			continue
-		}
-		strategy, err := loadActiveStrategy(workspace, targetID, historyURL)
-		if err != nil {
-			return activeStrategy{}, err
-		}
-		if strategy.Profile != "" {
-			return strategy, nil
-		}
-	}
-	return activeStrategy{}, nil
-}
-
-func saveActiveStrategy(workspace *ctx.Workspace, targetID int64, url string, strategy activeStrategy) error {
-	path, err := activeStrategyPath(workspace, targetID, url)
-	if err != nil {
-		return err
-	}
-	data, err := json.Marshal(strategy)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, append(data, '\n'), 0644); err != nil {
-		return fmt.Errorf("failed to save active strategy: %w", err)
-	}
+	options.Mode = searchModeFromOptions(*options)
 	return nil
 }
 
@@ -1077,15 +887,12 @@ func applyPreset(options *parsedOptions) error {
 	if preset == "" || preset == "unknown" {
 		return nil
 	}
-	profile, extensions, ok := technologyPresetValues(preset)
+	extensions, ok := technologyPresetValues(preset)
 	if !ok {
 		if options.Preset != "" {
 			return fmt.Errorf("unknown technology preset: %s", preset)
 		}
 		return nil
-	}
-	if options.Profile == "" {
-		options.Profile = profile
 	}
 	options.Preset = preset
 	options.PresetExtensions = extensions
@@ -1093,20 +900,20 @@ func applyPreset(options *parsedOptions) error {
 	return nil
 }
 
-func technologyPresetValues(preset string) (string, string, bool) {
+func technologyPresetValues(preset string) (string, bool) {
 	switch preset {
 	case "php", "wordpress":
-		return ctx.WordlistProfileWebQuick, "php,inc,phps", true
+		return "php,inc,phps", true
 	case "aspnet":
-		return ctx.WordlistProfileWebQuick, "asp,aspx,config", true
+		return "asp,aspx,config", true
 	case "java":
-		return ctx.WordlistProfileWebQuick, "jsp,do,action", true
+		return "jsp,do,action", true
 	case "node":
-		return ctx.WordlistProfileWebQuick, "js,json", true
+		return "js,json", true
 	case "static":
-		return ctx.WordlistProfileWebQuick, "html,htm,js", true
+		return "html,htm,js", true
 	default:
-		return "", "", false
+		return "", false
 	}
 }
 
@@ -1242,6 +1049,35 @@ func loadSearchedWordsForURLs(workspace *ctx.Workspace, targetID int64, urls []s
 	return merged, nil
 }
 
+func clearSearchedWordsForURLs(workspace *ctx.Workspace, targetID int64, urls []string, extra []string) error {
+	exts := extensionsFromExtra(extra)
+	for _, candidateURL := range urls {
+		paths := make([]string, 0, len(exts)+2)
+		base, err := searchedBaseWordsPath(workspace, targetID, candidateURL)
+		if err != nil {
+			return err
+		}
+		legacy, err := searchedWordsPath(workspace, targetID, candidateURL, extra)
+		if err != nil {
+			return err
+		}
+		paths = append(paths, base, legacy)
+		for _, extension := range exts {
+			path, pathErr := searchedExtensionWordsPath(workspace, targetID, candidateURL, extension)
+			if pathErr != nil {
+				return pathErr
+			}
+			paths = append(paths, path)
+		}
+		for _, path := range paths {
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
@@ -1277,7 +1113,7 @@ func mergeSearchedWords(target, source map[string]struct{}) {
 	}
 }
 
-func filteredWordlist(path string, seen map[string]struct{}, ignoreSeen bool) ([]string, error) {
+func filteredWordlist(path string, seen map[string]struct{}) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -1288,7 +1124,7 @@ func filteredWordlist(path string, seen map[string]struct{}, ignoreSeen bool) ([
 	local := make(map[string]struct{})
 	for scanner.Scan() {
 		word := strings.TrimSpace(scanner.Text())
-		if word == "" || (!ignoreSeen && hasWord(seen, word)) {
+		if word == "" || hasWord(seen, word) {
 			continue
 		}
 		if _, exists := local[word]; exists {
@@ -1480,10 +1316,7 @@ type parsedOptions struct {
 	Preset           string
 	PresetExtensions string
 	Mode             string
-	Profile          string
 	Extra            []string
-	Next             bool
-	Force            bool
 	Status           bool
 	ClearCache       bool
 }
@@ -1507,22 +1340,14 @@ func parseOptions(args []string) (parsedOptions, error) {
 			options.Status = true
 		case "--clear-cache":
 			options.ClearCache = true
-		case "--profile":
-			if i+1 >= len(args) || args[i+1] == "" {
-				return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
-			}
-			options.Profile = args[i+1]
-			i++
+		case "--next", "--force", "--profile":
+			return parsedOptions{}, fmt.Errorf("%s was removed; rerun the same command to continue or use --clear-cache to restart", args[i])
 		case "--preset":
 			if i+1 >= len(args) || args[i+1] == "" {
 				return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
 			}
 			options.Preset = args[i+1]
 			i++
-		case "--next":
-			options.Next = true
-		case "--force":
-			options.Force = true
 		case "-w", "--wordlist":
 			if i+1 >= len(args) || args[i+1] == "" {
 				return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
@@ -1578,6 +1403,9 @@ func parseOptions(args []string) (parsedOptions, error) {
 		case "--tls-verify":
 			options.VerifyTLS = true
 		default:
+			if strings.HasPrefix(args[i], "--profile=") {
+				return parsedOptions{}, errors.New("--profile was removed; ctx wordlist recommendation order is always used")
+			}
 			if strings.HasPrefix(args[i], "--domain=") {
 				value := args[i]
 				value = strings.TrimPrefix(value, "--domain=")
@@ -1634,13 +1462,6 @@ func parseOptions(args []string) (parsedOptions, error) {
 			if strings.HasPrefix(args[i], "--exclude-status=") {
 				options.ExcludeStatus = strings.TrimPrefix(args[i], "--exclude-status=")
 				if options.ExcludeStatus == "" {
-					return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
-				}
-				continue
-			}
-			if strings.HasPrefix(args[i], "--profile=") {
-				options.Profile = strings.TrimPrefix(args[i], "--profile=")
-				if options.Profile == "" {
 					return parsedOptions{}, errors.New("usage: xgobuster [gobuster-options]")
 				}
 				continue

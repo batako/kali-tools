@@ -193,16 +193,11 @@ func TestEffectiveExtraAddsInsecureTLSFlag(t *testing.T) {
 	}
 }
 
-func TestParseOptionsSupportsEscalationFlags(t *testing.T) {
-	options, err := parseOptions([]string{"--next", "--force", "-t", "25"})
-	if err != nil {
-		t.Fatalf("parseOptions() error = %v", err)
-	}
-	if !options.Next || !options.Force {
-		t.Fatalf("options = %+v, want next and force", options)
-	}
-	if strings.Join(options.Extra, " ") != "-t 25" {
-		t.Fatalf("extra = %#v, want gobuster options", options.Extra)
+func TestParseOptionsRejectsRemovedProgressFlags(t *testing.T) {
+	for _, args := range [][]string{{"--next"}, {"--force"}, {"--profile", "web-quick"}, {"--profile=web-deep"}} {
+		if _, err := parseOptions(args); err == nil || !strings.Contains(err.Error(), "was removed") {
+			t.Fatalf("parseOptions(%#v) error = %v, want removed option error", args, err)
+		}
 	}
 }
 
@@ -230,16 +225,6 @@ func TestParseDNSHosts(t *testing.T) {
 	got := parseDNSHosts("Found: admin.example.test\nFound: admin.example.test.\nFound: example.test\n", "example.test")
 	if strings.Join(got, ",") != "admin.example.test" {
 		t.Fatalf("parseDNSHosts() = %#v, want one subdomain", got)
-	}
-}
-
-func TestParseOptionsSupportsProfile(t *testing.T) {
-	options, err := parseOptions([]string{"--status", "--profile=web-quick"})
-	if err != nil {
-		t.Fatalf("parseOptions() error = %v", err)
-	}
-	if options.Profile != "web-quick" {
-		t.Fatalf("profile = %q, want web-quick", options.Profile)
 	}
 }
 
@@ -282,16 +267,6 @@ func TestWithoutExtensionsOption(t *testing.T) {
 	got := withoutExtensionsOption([]string{"-t", "10", "-x", "php,js", "-r"})
 	if strings.Join(got, " ") != "-t 10 -r" {
 		t.Fatalf("withoutExtensionsOption() = %#v, want non-extension options", got)
-	}
-}
-
-func TestHasStartedRunsIsProfileScoped(t *testing.T) {
-	runs := []ctx.WebWordlistRun{{Profile: "web-quick"}}
-	if hasStartedRuns(runs, parsedOptions{Profile: "web-standard"}) {
-		t.Fatal("web-standard should not be blocked by web-quick history")
-	}
-	if !hasStartedRuns(runs, parsedOptions{Profile: "web-quick"}) {
-		t.Fatal("web-quick history should be detected")
 	}
 }
 
@@ -339,7 +314,7 @@ func TestFilteredWordlistExcludesPreviouslySearchedWords(t *testing.T) {
 	if err := os.WriteFile(path, []byte("admin\nlogin\nadmin\napi\n\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	words, err := filteredWordlist(path, map[string]struct{}{"admin": {}}, false)
+	words, err := filteredWordlist(path, map[string]struct{}{"admin": {}})
 	if err != nil {
 		t.Fatalf("filteredWordlist() error = %v", err)
 	}
@@ -359,14 +334,14 @@ func TestFilteredWordlistCanShareStateWithinOneCommand(t *testing.T) {
 	}
 
 	seen := make(map[string]struct{})
-	first, err := filteredWordlist(firstPath, seen, false)
+	first, err := filteredWordlist(firstPath, seen)
 	if err != nil {
 		t.Fatalf("filteredWordlist(first) error = %v", err)
 	}
 	for _, word := range first {
 		seen[word] = struct{}{}
 	}
-	second, err := filteredWordlist(secondPath, seen, false)
+	second, err := filteredWordlist(secondPath, seen)
 	if err != nil {
 		t.Fatalf("filteredWordlist(second) error = %v", err)
 	}
@@ -482,6 +457,48 @@ func TestLoadSearchedWordsForChangedIPv4URL(t *testing.T) {
 	}
 	if len(seen) != 2 {
 		t.Fatalf("seen = %#v, want two words", seen)
+	}
+}
+
+func TestClearSearchedWordsForURLsRemovesBaseLegacyAndExtensionState(t *testing.T) {
+	workspace := &ctx.Workspace{DataPath: t.TempDir()}
+	urls := []string{"http://10.10.10.10/", "http://10.10.10.20/"}
+	extra := []string{"-x", "php"}
+	for _, rawURL := range urls {
+		base, err := searchedBaseWordsPath(workspace, 1, rawURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		legacy, err := searchedWordsPath(workspace, 1, rawURL, extra)
+		if err != nil {
+			t.Fatal(err)
+		}
+		extension, err := searchedExtensionWordsPath(workspace, 1, rawURL, "php")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{base, legacy, extension} {
+			if err := appendSearchedWords(path, []string{"admin"}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := clearSearchedWordsForURLs(workspace, 1, urls, extra); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := loadSearchedWordsForURLs(workspace, 1, urls, "base", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 0 {
+		t.Fatalf("base state = %#v, want empty", seen)
+	}
+	seen, err = loadSearchedWordsForURLs(workspace, 1, urls, "extension", "php")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 0 {
+		t.Fatalf("extension state = %#v, want empty", seen)
 	}
 }
 
