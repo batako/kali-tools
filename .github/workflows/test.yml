@@ -29,13 +29,13 @@ jobs:
         run: go test ./...
 
       - name: Check package configuration
-        run: ./scripts/check-package-config.sh
+        run: ./scripts/shared/check-package-config.sh
 
       - name: Audit ctx integration contract
-        run: ./scripts/check-ctx-integration.sh
+        run: ./scripts/shared/check-ctx-integration.sh
 
       - name: Check package versions
         run: |
           for command_dir in cmd/*; do
-            ./scripts/check-version.sh "$(basename "${command_dir}")"
+            ./scripts/shared/check-version.sh "$(basename "${command_dir}")"
           done

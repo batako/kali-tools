@@ -32,14 +32,14 @@ releases/<tool>/<version>.ja.md
 Change code and tests on the `dev` branch. Run Go checks in the Kali container configured in the parent directory.
 
 ```sh
-docker-compose exec -w /tools kali gofmt -w cmd internal
-docker-compose exec -w /tools kali go test ./...
+gofmt -w cmd internal
+go test ./...
 ```
 
 ### 2. Install Locally on Kali
 
 ```sh
-./scripts/install-deb.sh <tool>
+./scripts/local/install-deb.sh <tool>
 ```
 
 This builds a package for the current Debian architecture and reinstalls it on Kali. After installation, operate the CLI manually to verify its actual behavior.
@@ -60,7 +60,7 @@ Do not duplicate current version numbers in the README files.
 ### 4. Run Pre-release Checks
 
 ```sh
-./scripts/check-release.sh <tool>
+./scripts/shared/check-release.sh <tool>
 ```
 
 This detects the following problems before a push:
@@ -89,7 +89,7 @@ Run these commands from a clean `main` branch:
 
 ```sh
 git switch main
-./scripts/tag-release.sh <tool>
+./scripts/local/tag-release.sh <tool>
 git push origin <tool>/v<version>
 ```
 
@@ -100,13 +100,13 @@ Pushing the tag starts [`.github/workflows/release.yml`](../.github/workflows/re
 ### 7. Verify the Published Release
 
 ```sh
-./scripts/check-published.sh <tool>
+./scripts/ci/check-published.sh <tool>
 ```
 
 This downloads the published `Packages.gz` and the `amd64` and `arm64` packages, then verifies that the current VERSION is available. The default publication URL is `https://offsec.batako.net`.
 
 ```sh
-APT_REPOSITORY_URL=https://example.com ./scripts/check-published.sh <tool>
+APT_REPOSITORY_URL=https://example.com ./scripts/ci/check-published.sh <tool>
 ```
 
 ## Invocation Relationships
@@ -122,14 +122,14 @@ flowchart TB
     manualRepair["Run repair from Actions"]
 
     subgraph scripts["scripts/"]
-        install["install-deb.sh"]
-        checkRelease["check-release.sh"]
-        tagRelease["tag-release.sh"]
-        checkConfig["check-package-config.sh"]
-        checkVersion["check-version.sh"]
-        buildDeb["build-deb.sh"]
-        buildRepo["build-apt-repo.sh"]
-        checkPublished["check-published.sh"]
+        install["local/install-deb.sh"]
+        checkRelease["shared/check-release.sh"]
+        tagRelease["local/tag-release.sh"]
+        checkConfig["shared/check-package-config.sh"]
+        checkVersion["shared/check-version.sh"]
+        buildDeb["shared/build-deb.sh"]
+        buildRepo["shared/build-apt-repo.sh"]
+        checkPublished["ci/check-published.sh"]
     end
 
     subgraph workflows[".github/workflows/"]
@@ -194,29 +194,29 @@ flowchart TB
 
 | File | Purpose | Main result |
 | --- | --- | --- |
-| [`scripts/install-deb.sh`](../scripts/install-deb.sh) | Install a package under development on Kali | `dist/`, local APT state |
-| [`scripts/check-release.sh`](../scripts/check-release.sh) | Run pre-release checks for one tool | `dist/` |
-| [`scripts/tag-release.sh`](../scripts/tag-release.sh) | Create a release tag after validation | Local Git tag |
-| [`scripts/check-published.sh`](../scripts/check-published.sh) | Verify the published APT repository | None |
+| [`scripts/local/install-deb.sh`](../scripts/local/install-deb.sh) | Install a package under development on Kali | `dist/`, local APT state |
+| [`scripts/shared/check-release.sh`](../scripts/shared/check-release.sh) | Run pre-release checks for one tool | `dist/` |
+| [`scripts/local/tag-release.sh`](../scripts/local/tag-release.sh) | Create a release tag after validation | Local Git tag |
+| [`scripts/ci/check-published.sh`](../scripts/ci/check-published.sh) | Verify the published APT repository | None |
 
 ### Internal Processing and Individual Investigation
 
 | File | Purpose | Called by | Main result |
 | --- | --- | --- | --- |
-| [`scripts/build-deb.sh`](../scripts/build-deb.sh) | Build one `.deb` for one tool and architecture | `install-deb.sh`, `check-release.sh` (and indirectly `release.yml`) | `dist/` |
-| [`scripts/build-apt-repo.sh`](../scripts/build-apt-repo.sh) | Rebuild APT indexes from `dist/*.deb` | `release.yml` | `repo/` |
-| [`scripts/check-package-config.sh`](../scripts/check-package-config.sh) | Validate every tool's structure, release notes, and Debian dependency on ctx where required | `test.yml`, `check-release.sh` (and indirectly `release.yml`) | None |
-| [`scripts/check-ctx-integration.sh`](../scripts/check-ctx-integration.sh) | Audit the English and Japanese ctx integration documentation, fixed executable path, shared JSON client, Debian dependencies, and integration tests | `test.yml` | None |
-| [`scripts/check-version.sh`](../scripts/check-version.sh) | Compare the Go source version with the Debian VERSION | `test.yml`, `check-release.sh` (and indirectly `release.yml`) | None |
+| [`scripts/shared/build-deb.sh`](../scripts/shared/build-deb.sh) | Build one `.deb` for one tool and architecture | `local/install-deb.sh`, `shared/check-release.sh` (and indirectly `release.yml`) | `dist/` |
+| [`scripts/shared/build-apt-repo.sh`](../scripts/shared/build-apt-repo.sh) | Rebuild APT indexes from `dist/*.deb` | `release.yml` | `repo/` |
+| [`scripts/shared/check-package-config.sh`](../scripts/shared/check-package-config.sh) | Validate every tool's structure, release notes, and Debian dependency on ctx where required | `test.yml`, `shared/check-release.sh` (and indirectly `release.yml`) | None |
+| [`scripts/shared/check-ctx-integration.sh`](../scripts/shared/check-ctx-integration.sh) | Audit the English and Japanese ctx integration documentation, fixed executable path, shared JSON client, Debian dependencies, and integration tests | `test.yml` | None |
+| [`scripts/shared/check-version.sh`](../scripts/shared/check-version.sh) | Compare the Go source version with the Debian VERSION | `test.yml`, `shared/check-release.sh` (and indirectly `release.yml`) | None |
 
 Internal scripts may be run directly for troubleshooting or individual checks, but normal development does not require running all of them in sequence.
 
 ```sh
-./scripts/build-deb.sh <tool> [amd64|arm64]
-./scripts/build-apt-repo.sh
-./scripts/check-package-config.sh
-./scripts/check-ctx-integration.sh
-./scripts/check-version.sh <tool>
+./scripts/shared/build-deb.sh <tool> [amd64|arm64]
+./scripts/shared/build-apt-repo.sh
+./scripts/shared/check-package-config.sh
+./scripts/shared/check-ctx-integration.sh
+./scripts/shared/check-version.sh <tool>
 ```
 
 ## GitHub Actions
@@ -244,12 +244,12 @@ The workflow discovers tools dynamically from `cmd/*`, so new tool names do not 
 ```text
 release.yml
 ├── Validate the tag name, VERSION, and membership in main
-├── check-release.sh
-│   ├── check-package-config.sh
-│   ├── check-version.sh
-│   └── build-deb.sh (amd64 and arm64)
+├── shared/check-release.sh
+│   ├── shared/check-package-config.sh
+│   ├── shared/check-version.sh
+│   └── shared/build-deb.sh (amd64 and arm64)
 ├── Prevent replacement of a published package with different content
-├── build-apt-repo.sh
+├── shared/build-apt-repo.sh
 ├── Update the apt-repo branch
 └── Create the GitHub Release
 ```
@@ -295,7 +295,7 @@ releases/<tool>/<version>.md
 releases/<tool>/<version>.ja.md
 ```
 
-Then run `./scripts/check-package-config.sh`. The package list is discovered from `cmd/*`, so tool names normally do not need to be added to build scripts or workflows.
+Then run `./scripts/shared/check-package-config.sh`. The package list is discovered from `cmd/*`, so tool names normally do not need to be added to build scripts or workflows.
 
 If production Go code imports `internal/ctx`, `internal/ctxapi`, or `internal/ctxexec`, include `ctx` in `Depends` in `debian/<tool>/control`. `check-package-config.sh` validates this both locally and in `test.yml`.
 

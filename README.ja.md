@@ -48,7 +48,10 @@ sudo apt install <package> [<package> ...]
 ├── cmd/                 # Goコマンドのエントリポイント
 ├── internal/            # ツールの実装とテスト
 ├── debian/              # ツールごとのパッケージ定義とVERSION
-├── scripts/             # ビルド、検証、公開スクリプト
+├── scripts/
+│   ├── local/           # 開発者がローカルで実行するコマンド
+│   ├── shared/          # ローカルとWorkflowで共有するビルド・検証
+│   └── ci/              # 公開状態の検証
 ├── releases/            # 英語・日本語のリリースノート
 ├── docs/
 │   └── commands/        # コマンド別の日本語・英語ドキュメント
@@ -71,21 +74,6 @@ sudo apt install <package> [<package> ...]
 dist/
 repo/dists/
 repo/pool/
-```
-
-## 開発
-
-Kali開発コンテナ内でテストします。
-
-```sh
-go test ./...
-gofmt -w cmd internal
-```
-
-ローカルでパッケージをビルドしてインストールする場合:
-
-```sh
-./scripts/install-deb.sh <tool>
 ```
 
 ## ドキュメント

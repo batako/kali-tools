@@ -32,14 +32,14 @@ releases/<tool>/<version>.ja.md
 `dev`ブランチでコードとテストを変更します。Goの確認は親ディレクトリのKaliコンテナで実行します。
 
 ```sh
-docker-compose exec -w /tools kali gofmt -w cmd internal
-docker-compose exec -w /tools kali go test ./...
+gofmt -w cmd internal
+kali go test ./...
 ```
 
 ### 2. Kaliへローカルインストール
 
 ```sh
-./scripts/install-deb.sh <tool>
+./scripts/local/install-deb.sh <tool>
 ```
 
 現在のDebianアーキテクチャ向けパッケージを生成し、Kaliへ再インストールします。インストール後、CLIを手動操作して実際の動作を確認します。
@@ -60,7 +60,7 @@ READMEには現在のバージョンを重複して記載しません。
 ### 4. リリース前検査
 
 ```sh
-./scripts/check-release.sh <tool>
+./scripts/shared/check-release.sh <tool>
 ```
 
 次の問題をpush前に検出します。
@@ -89,7 +89,7 @@ cleanな`main`で実行します。
 
 ```sh
 git switch main
-./scripts/tag-release.sh <tool>
+./scripts/local/tag-release.sh <tool>
 git push origin <tool>/v<version>
 ```
 
@@ -100,13 +100,13 @@ git push origin <tool>/v<version>
 ### 7. 公開後確認
 
 ```sh
-./scripts/check-published.sh <tool>
+./scripts/ci/check-published.sh <tool>
 ```
 
 公開先の`Packages.gz`と`amd64`・`arm64`パッケージを取得し、現在のVERSIONが公開されていることを確認します。既定の公開先は`https://offsec.batako.net`です。
 
 ```sh
-APT_REPOSITORY_URL=https://example.com ./scripts/check-published.sh <tool>
+APT_REPOSITORY_URL=https://example.com ./scripts/ci/check-published.sh <tool>
 ```
 
 ## 呼び出し関係
@@ -122,14 +122,14 @@ flowchart TB
     manualRepair["Actions画面から修復を実行"]
 
     subgraph scripts["scripts/"]
-        install["install-deb.sh"]
-        checkRelease["check-release.sh"]
-        tagRelease["tag-release.sh"]
-        checkConfig["check-package-config.sh"]
-        checkVersion["check-version.sh"]
-        buildDeb["build-deb.sh"]
-        buildRepo["build-apt-repo.sh"]
-        checkPublished["check-published.sh"]
+        install["local/install-deb.sh"]
+        checkRelease["shared/check-release.sh"]
+        tagRelease["local/tag-release.sh"]
+        checkConfig["shared/check-package-config.sh"]
+        checkVersion["shared/check-version.sh"]
+        buildDeb["shared/build-deb.sh"]
+        buildRepo["shared/build-apt-repo.sh"]
+        checkPublished["ci/check-published.sh"]
     end
 
     subgraph workflows[".github/workflows/"]
@@ -194,29 +194,29 @@ flowchart TB
 
 | ファイル | 用途 | 主な結果 |
 | --- | --- | --- |
-| [`scripts/install-deb.sh`](../scripts/install-deb.sh) | 開発中のパッケージをKaliへ導入 | `dist/`、ローカルAPT状態 |
-| [`scripts/check-release.sh`](../scripts/check-release.sh) | 1ツールのリリース前検査 | `dist/` |
-| [`scripts/tag-release.sh`](../scripts/tag-release.sh) | 検査後にリリースタグを作成 | ローカルGitタグ |
-| [`scripts/check-published.sh`](../scripts/check-published.sh) | 公開済みAPTを確認 | なし |
+| [`scripts/local/install-deb.sh`](../scripts/local/install-deb.sh) | 開発中のパッケージをKaliへ導入 | `dist/`、ローカルAPT状態 |
+| [`scripts/shared/check-release.sh`](../scripts/shared/check-release.sh) | 1ツールのリリース前検査 | `dist/` |
+| [`scripts/local/tag-release.sh`](../scripts/local/tag-release.sh) | 検査後にリリースタグを作成 | ローカルGitタグ |
+| [`scripts/ci/check-published.sh`](../scripts/ci/check-published.sh) | 公開済みAPTを確認 | なし |
 
 ### 内部処理・個別調査用
 
 | ファイル | 用途 | 呼び出し元 | 主な結果 |
 | --- | --- | --- | --- |
-| [`scripts/build-deb.sh`](../scripts/build-deb.sh) | 1ツール・1アーキテクチャの`.deb`を生成 | `install-deb.sh`、`check-release.sh`（`release.yml`からも間接実行） | `dist/` |
-| [`scripts/build-apt-repo.sh`](../scripts/build-apt-repo.sh) | `dist/*.deb`からAPTインデックスを再生成 | `release.yml` | `repo/` |
-| [`scripts/check-package-config.sh`](../scripts/check-package-config.sh) | 全ツールの構成、リリースノート、ctx利用パッケージのDebian依存を検査 | `test.yml`、`check-release.sh`（`release.yml`からも間接実行） | なし |
-| [`scripts/check-ctx-integration.sh`](../scripts/check-ctx-integration.sh) | ctx外部連携仕様の日英文書、固定実行パス、共通JSONクライアント、Debian依存、連携仕様テストを一括監査 | `test.yml` | なし |
-| [`scripts/check-version.sh`](../scripts/check-version.sh) | GoソースとDebian VERSIONを照合 | `test.yml`、`check-release.sh`（`release.yml`からも間接実行） | なし |
+| [`scripts/shared/build-deb.sh`](../scripts/shared/build-deb.sh) | 1ツール・1アーキテクチャの`.deb`を生成 | `local/install-deb.sh`、`shared/check-release.sh`（`release.yml`からも間接実行） | `dist/` |
+| [`scripts/shared/build-apt-repo.sh`](../scripts/shared/build-apt-repo.sh) | `dist/*.deb`からAPTインデックスを再生成 | `release.yml` | `repo/` |
+| [`scripts/shared/check-package-config.sh`](../scripts/shared/check-package-config.sh) | 全ツールの構成、リリースノート、ctx利用パッケージのDebian依存を検査 | `test.yml`、`shared/check-release.sh`（`release.yml`からも間接実行） | なし |
+| [`scripts/shared/check-ctx-integration.sh`](../scripts/shared/check-ctx-integration.sh) | ctx外部連携仕様の日英文書、固定実行パス、共通JSONクライアント、Debian依存、連携仕様テストを一括監査 | `test.yml` | なし |
+| [`scripts/shared/check-version.sh`](../scripts/shared/check-version.sh) | GoソースとDebian VERSIONを照合 | `test.yml`、`shared/check-release.sh`（`release.yml`からも間接実行） | なし |
 
 内部スクリプトは障害調査や個別確認のために直接実行できますが、通常の開発で順番にすべて実行する必要はありません。
 
 ```sh
-./scripts/build-deb.sh <tool> [amd64|arm64]
-./scripts/build-apt-repo.sh
-./scripts/check-package-config.sh
-./scripts/check-ctx-integration.sh
-./scripts/check-version.sh <tool>
+./scripts/shared/build-deb.sh <tool> [amd64|arm64]
+./scripts/shared/build-apt-repo.sh
+./scripts/shared/check-package-config.sh
+./scripts/shared/check-ctx-integration.sh
+./scripts/shared/check-version.sh <tool>
 ```
 
 ## GitHub Actions
@@ -244,12 +244,12 @@ test.yml
 ```text
 release.yml
 ├── タグ名、VERSION、main所属を検証
-├── check-release.sh
-│   ├── check-package-config.sh
-│   ├── check-version.sh
-│   └── build-deb.sh（amd64・arm64）
+├── shared/check-release.sh
+│   ├── shared/check-package-config.sh
+│   ├── shared/check-version.sh
+│   └── shared/build-deb.sh（amd64・arm64）
 ├── 公開済み同一バージョンの上書きを防止
-├── build-apt-repo.sh
+├── shared/build-apt-repo.sh
 ├── apt-repoブランチを更新
 └── GitHub Releaseを作成
 ```
@@ -295,7 +295,7 @@ releases/<tool>/<version>.md
 releases/<tool>/<version>.ja.md
 ```
 
-追加後に`./scripts/check-package-config.sh`を実行します。パッケージ一覧は`cmd/*`から取得されるため、通常はビルドスクリプトやWorkflowへツール名を追加する必要はありません。
+追加後に`./scripts/shared/check-package-config.sh`を実行します。パッケージ一覧は`cmd/*`から取得されるため、通常はビルドスクリプトやWorkflowへツール名を追加する必要はありません。
 
 production Goコードが`internal/ctx`、`internal/ctxapi`、`internal/ctxexec`のいずれかをimportする場合、`debian/<tool>/control`の`Depends`へ`ctx`を含める必要があります。`check-package-config.sh`はこの対応をローカルと`test.yml`の両方で検査します。
 

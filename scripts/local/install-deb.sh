@@ -31,7 +31,7 @@ else
 fi
 DEB_PATH="dist/${PACKAGE_NAME}_${VERSION}_${DEB_ARCH}.deb"
 
-./scripts/build-deb.sh "${PACKAGE_NAME}" "${ARCH}"
+./scripts/shared/build-deb.sh "${PACKAGE_NAME}" "${ARCH}"
 
 ABSOLUTE_DEB_PATH="$(cd "$(dirname "${DEB_PATH}")" && pwd)/$(basename "${DEB_PATH}")"
 sudo apt-get install --reinstall --allow-downgrades -y "${ABSOLUTE_DEB_PATH}"

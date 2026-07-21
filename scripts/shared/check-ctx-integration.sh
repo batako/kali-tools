@@ -80,7 +80,7 @@ else
   printf '%s\n' "${legacy_calls}"
 fi
 
-if output="$(./scripts/check-package-config.sh 2>&1)"; then
+if output="$(./scripts/shared/check-package-config.sh 2>&1)"; then
   ok 'ctx Debian dependencies and package configuration'
 else
   ng 'ctx Debian dependencies or package configuration'

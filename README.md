@@ -48,7 +48,10 @@ sudo apt install <package> [<package> ...]
 ├── cmd/                 # Go command entrypoints
 ├── internal/            # Tool implementations and tests
 ├── debian/              # Per-tool package metadata and VERSION files
-├── scripts/             # Build, validation, and publication scripts
+├── scripts/
+│   ├── local/           # Commands run by developers
+│   ├── shared/          # Local and workflow build/validation commands
+│   └── ci/              # Publication-state checks
 ├── releases/            # English and Japanese release notes
 ├── docs/
 │   └── commands/        # Per-command English and Japanese documentation
@@ -71,21 +74,6 @@ The following are generated and must not be committed to `main`:
 dist/
 repo/dists/
 repo/pool/
-```
-
-## Development
-
-Run tests in the Kali development container:
-
-```sh
-go test ./...
-gofmt -w cmd internal
-```
-
-Build and install one package locally:
-
-```sh
-./scripts/install-deb.sh <tool>
 ```
 
 ## Documentation

@@ -125,20 +125,20 @@ esac
 printf 'Pre-release checks: %s %s\n\n' "${PACKAGE_NAME}" "${VERSION}"
 
 check "required commands are available" check_commands
-check "package configuration is complete" ./scripts/check-package-config.sh
+check "package configuration is complete" ./scripts/shared/check-package-config.sh
 check "release files exist" check_release_files
-check "source and package versions match" ./scripts/check-version.sh "${PACKAGE_NAME}"
+check "source and package versions match" ./scripts/shared/check-version.sh "${PACKAGE_NAME}"
 check "Go files are formatted" check_format
 check "Go modules are tidy" go mod tidy -diff
 check "Go tests pass" go test ./...
 check "release tag is absent or points to HEAD" check_tag
 
 if [ -f "debian/${PACKAGE_NAME}/META_PACKAGE" ]; then
-  check "Debian package builds (all)" ./scripts/build-deb.sh "${PACKAGE_NAME}" amd64
+  check "Debian package builds (all)" ./scripts/shared/build-deb.sh "${PACKAGE_NAME}" amd64
   check "Debian package is valid (all)" check_deb all
 else
   for arch in amd64 arm64; do
-    check "Debian package builds (${arch})" ./scripts/build-deb.sh "${PACKAGE_NAME}" "${arch}"
+    check "Debian package builds (${arch})" ./scripts/shared/build-deb.sh "${PACKAGE_NAME}" "${arch}"
     check "Debian package is valid (${arch})" check_deb "${arch}"
   done
 fi

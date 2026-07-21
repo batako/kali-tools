@@ -136,10 +136,10 @@ jobs:
           (
             cd source
             if git cat-file -e "${RELEASE_TAG}:debian/${APPLICATION}/META_PACKAGE" 2>/dev/null; then
-              SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" amd64
+              SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/shared/build-deb.sh "${APPLICATION}" amd64
             else
-              SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" amd64
-              SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" arm64
+              SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/shared/build-deb.sh "${APPLICATION}" amd64
+              SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/shared/build-deb.sh "${APPLICATION}" arm64
             fi
           )
 
@@ -184,7 +184,7 @@ jobs:
           git -C apt-repo archive HEAD | tar -x -C source/repo
           (
             cd source
-            ../automation/scripts/build-apt-repo.sh
+            ../automation/scripts/shared/build-apt-repo.sh
           )
 
       - name: Publish repaired APT repository

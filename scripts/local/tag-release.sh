@@ -53,7 +53,7 @@ if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
   exit 1
 fi
 
-./scripts/check-release.sh "${PACKAGE_NAME}"
+./scripts/shared/check-release.sh "${PACKAGE_NAME}"
 
 git tag -a "${TAG}" -m "${PACKAGE_NAME} v${VERSION}"
 

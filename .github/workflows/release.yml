@@ -75,7 +75,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Run release checks
-        run: ./scripts/check-release.sh "${APPLICATION}"
+        run: ./scripts/shared/check-release.sh "${APPLICATION}"
 
       - name: Ensure GitHub Release does not exist
         env:
@@ -121,7 +121,7 @@ jobs:
           done
 
       - name: Build APT repository
-        run: ./scripts/build-apt-repo.sh
+        run: ./scripts/shared/build-apt-repo.sh
 
       - name: Publish APT repository
         env:

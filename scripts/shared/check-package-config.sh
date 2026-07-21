@@ -84,10 +84,10 @@ check_ctx_dependency() {
 }
 
 for required_file in \
-  scripts/build-deb.sh \
-  scripts/install-deb.sh \
-  scripts/check-version.sh \
-  scripts/check-release.sh \
+  scripts/shared/build-deb.sh \
+  scripts/local/install-deb.sh \
+  scripts/shared/check-version.sh \
+  scripts/shared/check-release.sh \
   .github/workflows/test.yml \
   .github/workflows/release.yml \
   .github/workflows/repair-release.yml \
