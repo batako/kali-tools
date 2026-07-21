@@ -1,0 +1,11 @@
+Package: xsteg
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.5.0), wordlists, file, binwalk, libimage-exiftool-perl, binutils, steghide, stegseek
+Suggests: stegsnow
+Description: Detect, crack, and extract data hidden in local files
+ Analyze files with format-appropriate steganography tools, use ctx-ranked
+ password wordlists for steghide payloads, and save reproducible reports.

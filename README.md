@@ -15,6 +15,7 @@ This monorepo manages self-made CLI tools for Kali Linux. Each tool has an indep
 - `xhydra`: Assist Hydra credential discovery and save successful results to ctx.
 - `xwebshell`: Select and export Kali Linux web shell templates.
 - `xmagic`: Create copies with spoofed magic numbers without modifying source files.
+- `xsteg`: Detect, crack, and extract data hidden in local files.
 
 ## Installation
 
@@ -40,6 +41,7 @@ sudo apt install xffuf
 sudo apt install xhydra
 sudo apt install xwebshell
 sudo apt install xmagic
+sudo apt install xsteg
 ```
 
 ## Usage
@@ -110,6 +112,23 @@ Create a copy with a spoofed magic number without requiring a ctx workspace:
 ```sh
 xmagic set gif shell.php
 ```
+
+### xsteg
+
+Scan files or directories with format-appropriate backends. For password-protected steghide payloads, xsteg tries password wordlists in the order recommended by `ctx wordlist`.
+
+```sh
+xsteg scan suspicious.png
+xsteg extract suspicious.jpg       # choose only when a protected candidate is detected
+xsteg extract suspicious.jpg --auto
+xsteg extract suspicious.jpg --manual
+xsteg
+xsteg show 1
+```
+
+`scan` only detects hidden-data candidates and never extracts data or requests a passphrase. `extract` requires a completed scan and uses its same-SHA-256 result without repeating detection. It prompts for automatic analysis, a known passphrase, or skipping only when the scan found a relevant candidate. Without a scan, it tells you to run `xsteg scan <path>` first. Rejected passphrases produce `FAILED`, while only successful extraction produces `EXTRACTED`.
+
+Only `scan` performs StegHide seed detection. It exits early when it finds a candidate but must reach 100% when no candidate exists, so xsteg displays progress while it runs.
 
 ## Repository Layout
 

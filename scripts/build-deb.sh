@@ -157,6 +157,13 @@ if [ "${PACKAGE_NAME}" = "xmagic" ]; then
   cp "debian/${PACKAGE_NAME}/xmagic.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xmagic"
 fi
 
+if [ "${PACKAGE_NAME}" = "xsteg" ]; then
+  mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
+  mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
+  cp "debian/${PACKAGE_NAME}/xsteg.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xsteg"
+  cp "debian/${PACKAGE_NAME}/xsteg.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xsteg"
+fi
+
 dpkg-deb --root-owner-group --build "${PKG_ROOT}" "${OUTPUT_DEB}"
 
 echo "created ${OUTPUT_DEB}"
