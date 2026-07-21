@@ -15,6 +15,7 @@ import (
 
 	"req/internal/ctxapi"
 	"req/internal/ctxexec"
+	"req/internal/onlinehelp"
 )
 
 var (
@@ -37,7 +38,8 @@ options:
   -p, --port      override the SSH port
   --service       select a discovered SSH service by number
   -h, --help     show this help
-  -V, --version  show version`
+  -V, --version  show version
+  --online-help  show the versioned online help URL`
 
 type parsedOptions struct {
 	Action      string
@@ -106,6 +108,9 @@ func (app *App) run(args []string) error {
 	if options.Action == "help" {
 		_, err := fmt.Fprintln(app.stdout, usageText)
 		return err
+	}
+	if options.Action == "online-help" {
+		return onlinehelp.Print(app.stdout, "xscp", Version)
 	}
 	if options.Action == "version" {
 		_, err := fmt.Fprintf(app.stdout, "xscp %s\n", Version)
@@ -300,6 +305,9 @@ func (app *App) resolveSSHPort(services []Service, explicit, selection string) (
 func parseOptions(args []string) (parsedOptions, error) {
 	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
 		return parsedOptions{Action: "help"}, nil
+	}
+	if len(args) == 1 && args[0] == "--online-help" {
+		return parsedOptions{Action: "online-help"}, nil
 	}
 	if len(args) == 1 && (args[0] == "-V" || args[0] == "--version") {
 		return parsedOptions{Action: "version"}, nil

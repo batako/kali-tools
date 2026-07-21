@@ -5,6 +5,7 @@ _xmagic_commands() {
   commands=(
     'ls:list supported magic-number types'
     'set:replace or prepend a magic number in a copy'
+    '--online-help:show the versioned online help URL'
   )
   _describe -V 'command' commands
 }

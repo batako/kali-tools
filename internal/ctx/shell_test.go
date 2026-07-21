@@ -78,6 +78,18 @@ func TestCompletionScriptsIncludeProjectHelpers(t *testing.T) {
 	}
 }
 
+func TestCompletionScriptsIncludeOnlineHelp(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash"} {
+		script, err := CompletionScript(shell)
+		if err != nil {
+			t.Fatalf("CompletionScript(%s) error = %v", shell, err)
+		}
+		if !strings.Contains(script, "--online-help") {
+			t.Errorf("CompletionScript(%s) does not include --online-help", shell)
+		}
+	}
+}
+
 func TestCompletionScriptsIncludeAllConfigKeys(t *testing.T) {
 	for _, shell := range []string{"zsh", "bash"} {
 		script, err := CompletionScript(shell)

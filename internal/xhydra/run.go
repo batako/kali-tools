@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"req/internal/ctx"
+	"req/internal/onlinehelp"
 	request "req/internal/req"
 )
 
@@ -64,7 +65,8 @@ options:
   --success-redirect           treat HTTP 302 responses as authentication success
   -P, --password-list <path>  use a password list instead of automatic selection
   -h, --help                  show this help
-  -V, --version               show version`
+  -V, --version               show version
+  --online-help               show the versioned online help URL`
 
 type ExitCodeError struct{ Code int }
 
@@ -141,6 +143,9 @@ func (app *app) run(args []string) error {
 	if options.Mode == "help" {
 		_, err := fmt.Fprintln(app.stdout, usageText)
 		return err
+	}
+	if options.Mode == "online-help" {
+		return onlinehelp.Print(app.stdout, "xhydra", Version)
 	}
 	if options.Mode == "version" {
 		_, err := fmt.Fprintf(app.stdout, "xhydra %s\n", Version)
@@ -1229,6 +1234,9 @@ func parseOptions(args []string) (parsedOptions, error) {
 	var options parsedOptions
 	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
 		return parsedOptions{Mode: "help"}, nil
+	}
+	if len(args) == 1 && args[0] == "--online-help" {
+		return parsedOptions{Mode: "online-help"}, nil
 	}
 	if len(args) == 1 && (args[0] == "-V" || args[0] == "--version") {
 		return parsedOptions{Mode: "version"}, nil

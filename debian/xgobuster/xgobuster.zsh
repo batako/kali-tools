@@ -21,6 +21,7 @@ _xgobuster() {
       '1:mode:(dns)' \
       '(-h --help)'{-h,--help}'[show this help]' \
       '(-V --version)'{-V,--version}'[show version]' \
+      '--online-help[show the versioned online help URL]' \
       '(-d --domain)'{-d,--domain}'[DNS domain]:domain:' \
       '(-w --wordlist)'{-w,--wordlist}'[use an explicit wordlist]:wordlist:_files' \
       '--threads[DNS threads]:threads:' \
@@ -37,6 +38,7 @@ _xgobuster() {
     '1:mode:(dns)' \
     '(-h --help)'{-h,--help}'[show this help]' \
     '(-V --version)'{-V,--version}'[show version]' \
+    '--online-help[show the versioned online help URL]' \
     '--preset[select a technology preset]:preset:(php wordpress aspnet java node static)' \
     '--status[show wordlist search status]' \
     '--clear-cache[clear scoped wordlist progress]' \

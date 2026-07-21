@@ -3,7 +3,7 @@ _xmagic_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
 
   if [ "${COMP_CWORD}" -eq 1 ]; then
-    COMPREPLY=($(compgen -W "ls set -h --help -V --version" -- "${cur}"))
+    COMPREPLY=($(compgen -W "ls set -h --help -V --version --online-help" -- "${cur}"))
     return
   fi
 

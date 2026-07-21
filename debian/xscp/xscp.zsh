@@ -19,6 +19,7 @@ _xscp() {
     '--service[select a discovered SSH service by number]:service:' \
     '(-h --help)'{-h,--help}'[show this help]' \
     '(-V --version)'{-V,--version}'[show version]'
+    '--online-help[show the versioned online help URL]'
 }
 
 _xscp "$@"

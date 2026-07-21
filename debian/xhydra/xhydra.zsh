@@ -19,6 +19,7 @@ _xhydra() {
         '1:mode:_xhydra_modes' \
         '(-h --help)'{-h,--help}'[show this help]' \
         '(-V --version)'{-V,--version}'[show version]' \
+        '--online-help[show the versioned online help URL]' \
         '(-u --username)'{-u,--username}'[username to test]:username:' \
         '(-r --request)'{-r,--request}'[use a raw HTTP request template]:request:_files' \
         '--url[URL to test without a request file]:url:' \
@@ -38,6 +39,7 @@ _xhydra() {
         '1:mode:_xhydra_modes' \
         '(-h --help)'{-h,--help}'[show this help]' \
         '(-V --version)'{-V,--version}'[show version]' \
+        '--online-help[show the versioned online help URL]' \
         '(-u --username)'{-u,--username}'[username to test]:username:' \
         '--password[fixed password for username search]:password:' \
         '(-L --user-list)'{-L,--user-list}'[use a username list]:user-list:_files' \
@@ -54,6 +56,7 @@ _xhydra() {
         '1:mode:_xhydra_modes' \
         '(-h --help)'{-h,--help}'[show this help]' \
         '(-V --version)'{-V,--version}'[show version]' \
+        '--online-help[show the versioned online help URL]' \
         '(-u --username)'{-u,--username}'[username to test]:username:' \
         '--password[fixed password for username search]:password:' \
         '(-L --user-list)'{-L,--user-list}'[use a username list]:user-list:_files' \
@@ -70,6 +73,7 @@ _xhydra() {
         '1:mode:_xhydra_modes' \
         '(-h --help)'{-h,--help}'[show this help]' \
         '(-V --version)'{-V,--version}'[show version]' \
+        '--online-help[show the versioned online help URL]' \
         '(-u --username)'{-u,--username}'[username to test]:username:' \
         '--password[fixed password for username search]:password:' \
         '(-L --user-list)'{-L,--user-list}'[use a username list]:user-list:_files' \
@@ -86,6 +90,7 @@ _xhydra() {
         '1:mode:_xhydra_modes' \
         '(-h --help)'{-h,--help}'[show this help]' \
         '(-V --version)'{-V,--version}'[show version]'
+        '--online-help[show the versioned online help URL]'
       ;;
   esac
 }

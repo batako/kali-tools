@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"req/internal/ctxapi"
+	"req/internal/onlinehelp"
 )
 
 var (
@@ -67,6 +68,9 @@ func Run(args []string, stdout, stderr io.Writer) error {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if args[1:] != nil && len(args) == 2 && args[1] == "--online-help" {
+		return onlinehelp.Print(stdout, "xwebshell", Version)
+	}
 	if len(args) == 1 || args[1] == "ls" {
 		return list(stdout, stderr)
 	}
@@ -138,7 +142,8 @@ commands:
 
 options:
   -h, --help         show this help
-  -V, --version      show version`)
+  -V, --version      show version
+  --online-help      show the versioned online help URL`)
 	return err
 }
 

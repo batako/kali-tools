@@ -669,6 +669,7 @@ _ctx_reset_options=(
 _ctx_options=(
   '-h:show help'
   '--help:show help'
+  '--online-help:show the versioned online help URL'
 )
 
 _ctx_dynamic_descriptions() {
@@ -1008,7 +1009,7 @@ _ctx_completion() {
 	fi
   case "${prev}" in
     ctx)
-      COMPREPLY=($(compgen -W "status config workspace project target ip host hosts scan service web wordlist credential note log prompt formats x completion init-shell doctor reset -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "status config workspace project target ip host hosts scan service web wordlist credential note log prompt formats x completion init-shell doctor reset -h --help -V --version --online-help" -- "${cur}"))
       return
       ;;
     workspace|xworkspace)

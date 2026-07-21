@@ -33,11 +33,11 @@ _xgobuster_completion() {
   esac
 
   if [[ "${COMP_WORDS[1]}" == "dns" ]]; then
-    COMPREPLY=($(compgen -W "-d --domain -w --wordlist -t --threads --resolver --timeout --wildcard --status --clear-cache -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "-d --domain -w --wordlist -t --threads --resolver --timeout --wildcard --status --clear-cache -h --help -V --version --online-help" -- "${cur}"))
     return
   fi
 
-  COMPREPLY=($(compgen -W "dns -w --wordlist -u --url --host --ip --service -c --cookies --exclude-status --exclude-length -k --no-tls-validation --tls-verify --preset --status --clear-cache -h --help -V --version" -- "${cur}"))
+  COMPREPLY=($(compgen -W "dns -w --wordlist -u --url --host --ip --service -c --cookies --exclude-status --exclude-length -k --no-tls-validation --tls-verify --preset --status --clear-cache -h --help -V --version --online-help" -- "${cur}"))
 }
 
 complete -F _xgobuster_completion xgobuster xgo

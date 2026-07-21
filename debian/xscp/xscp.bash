@@ -12,7 +12,7 @@ _xscp_completion() {
 
   case "${COMP_CWORD}" in
     1)
-      COMPREPLY=($(compgen -W "upload download -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "upload download -h --help -V --version --online-help" -- "${cur}"))
       return
       ;;
     2|3)
@@ -21,7 +21,7 @@ _xscp_completion() {
       ;;
   esac
 
-  COMPREPLY=($(compgen -W "-p --port --service -h --help -V --version" -- "${cur}"))
+  COMPREPLY=($(compgen -W "-p --port --service -h --help -V --version --online-help" -- "${cur}"))
 }
 
 complete -F _xscp_completion xscp

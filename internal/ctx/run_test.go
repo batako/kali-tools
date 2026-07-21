@@ -2,6 +2,8 @@ package ctx
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 )
@@ -102,6 +104,34 @@ func TestRunVersion(t *testing.T) {
 		if got, want := out.String(), "ctx 1.2.3\n"; got != want {
 			t.Fatalf("version output = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestRunOnlineHelp(t *testing.T) {
+	oldVersion := Version
+	oldPrintOnlineHelpFunc := printOnlineHelpFunc
+	Version = "1.5.0"
+	var opened bool
+	printOnlineHelpFunc = func(stdout io.Writer) error {
+		opened = true
+		_, err := fmt.Fprintf(stdout, "Online help: %s\n", onlineHelpURL())
+		return err
+	}
+	t.Cleanup(func() {
+		Version = oldVersion
+		printOnlineHelpFunc = oldPrintOnlineHelpFunc
+	})
+
+	var out bytes.Buffer
+	if err := Run([]string{"ctx", "--online-help"}, &out); err != nil {
+		t.Fatalf("Run(ctx --online-help) error = %v", err)
+	}
+	if !opened {
+		t.Fatal("online help opener was not called")
+	}
+	want := "https://github.com/batako/kali-tools/blob/ctx/v1.5.0/docs/commands/ctx.md"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("online help output = %q, want URL %q", out.String(), want)
 	}
 }
 

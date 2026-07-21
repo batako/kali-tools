@@ -5,23 +5,23 @@ _xhydra_completion() {
 
   case "${prev}" in
     xhydra)
-      COMPREPLY=($(compgen -W "http ssh ftp smb -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "http ssh ftp smb -h --help -V --version --online-help" -- "${cur}"))
       return
       ;;
     http)
-      COMPREPLY=($(compgen -W "-u --username -r --request --url --data --user-field --password-field --fail-json --success-json --fail-body --success-body --fail-status --success-redirect -P --password-list -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "-u --username -r --request --url --data --user-field --password-field --fail-json --success-json --fail-body --success-body --fail-status --success-redirect -P --password-list -h --help -V --version --online-help" -- "${cur}"))
       return
       ;;
     ssh)
-      COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version --online-help" -- "${cur}"))
       return
       ;;
     ftp)
-      COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version --online-help" -- "${cur}"))
       return
       ;;
     smb)
-      COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}"))
+      COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version --online-help" -- "${cur}"))
       return
       ;;
     -u|--username|--password|-L|--user-list|-r|--request|--url|--data|--user-field|--password-field|--fail-json|--success-json|--fail-body|--success-body|--fail-status|-P|--password-list)
@@ -39,11 +39,11 @@ _xhydra_completion() {
   esac
 
   case "${COMP_WORDS[1]}" in
-    http) COMPREPLY=($(compgen -W "-u --username -r --request --url --data --user-field --password-field --fail-json --success-json --fail-body --success-body --fail-status --success-redirect -P --password-list -h --help -V --version" -- "${cur}")) ;;
-    ssh) COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}")) ;;
-    ftp) COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}")) ;;
-    smb) COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}")) ;;
-    *) COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service --status --clear-cache -P --password-list -h --help -V --version" -- "${cur}")) ;;
+    http) COMPREPLY=($(compgen -W "-u --username -r --request --url --data --user-field --password-field --fail-json --success-json --fail-body --success-body --fail-status --success-redirect -P --password-list -h --help -V --version --online-help" -- "${cur}")) ;;
+    ssh) COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version --online-help" -- "${cur}")) ;;
+    ftp) COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version --online-help" -- "${cur}")) ;;
+    smb) COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service -t --tasks --status --clear-cache -P --password-list -h --help -V --version --online-help" -- "${cur}")) ;;
+    *) COMPREPLY=($(compgen -W "-u --username --password -L --user-list --host -p --port --service --status --clear-cache -P --password-list -h --help -V --version --online-help" -- "${cur}")) ;;
   esac
 }
 

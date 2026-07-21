@@ -5,7 +5,7 @@ _xsteg_completion() {
   command="${COMP_WORDS[1]}"
 
   if [ "${COMP_CWORD}" -eq 1 ]; then
-    COMPREPLY=($(compgen -W "ls scan extract show doctor -h --help -V --version" -- "${cur}"))
+    COMPREPLY=($(compgen -W "ls scan extract show doctor -h --help -V --version --online-help" -- "${cur}"))
     return
   fi
 

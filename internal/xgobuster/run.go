@@ -21,6 +21,7 @@ import (
 	"req/internal/ctx"
 	"req/internal/ctxapi"
 	"req/internal/ctxexec"
+	"req/internal/onlinehelp"
 )
 
 var (
@@ -52,7 +53,8 @@ options:
   --status               show wordlist search status
   --clear-cache          clear scoped wordlist progress without running Gobuster
   -h, --help             show this help
-  -V, --version          show version`
+  -V, --version          show version
+  --online-help          show the versioned online help URL`
 
 type ExitCodeError struct{ Code int }
 
@@ -115,6 +117,8 @@ func (app *App) Run(args []string) error {
 		case "-h", "--help":
 			_, err := fmt.Fprintln(app.stdout, usageText)
 			return err
+		case "--online-help":
+			return onlinehelp.Print(app.stdout, "xgobuster", Version)
 		case "-V", "--version":
 			_, err := fmt.Fprintf(app.stdout, "xgobuster %s\n", Version)
 			return err

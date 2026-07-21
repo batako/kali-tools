@@ -14,6 +14,7 @@ import (
 
 	"req/internal/ctxapi"
 	"req/internal/ctxexec"
+	"req/internal/onlinehelp"
 )
 
 var (
@@ -31,7 +32,8 @@ arguments:
 
 options:
   -h, --help     show this help
-  -V, --version  show version`
+  -V, --version  show version
+  --online-help  show the versioned online help URL`
 
 type ExitCodeError struct {
 	Code int
@@ -111,6 +113,8 @@ func (app *App) Run(args []string) error {
 		case "-h", "--help":
 			_, err := fmt.Fprintln(app.stdout, usageText)
 			return err
+		case "--online-help":
+			return onlinehelp.Print(app.stdout, "xssh", Version)
 		case "-V", "--version":
 			_, err := fmt.Fprintf(app.stdout, "xssh %s\n", Version)
 			return err

@@ -19,6 +19,7 @@ _xsteg_global_options() {
     '--help:show help'
     '-V:show version'
     '--version:show version'
+    '--online-help:show the versioned online help URL'
   )
   _describe -V 'option' options
 }

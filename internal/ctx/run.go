@@ -61,6 +61,7 @@ commands:
 options:
   -h, --help     show this help
   -V, --version  show version
+  --online-help  show the versioned online help URL
 
 shortcuts (requires ctx init-shell):
   xinit        ctx workspace init
@@ -385,6 +386,11 @@ func runWithCurrentInput(args []string, stdout, stderr io.Writer) error {
 	}
 
 	switch args[1] {
+	case "--online-help":
+		if len(args) != 2 {
+			return errors.New("usage: ctx --online-help")
+		}
+		return printOnlineHelpFunc(stdout)
 	case "status":
 		if len(args) == 3 && isHelpArg(args[2]) {
 			_, err := fmt.Fprintln(stdout, statusUsageText)

@@ -23,6 +23,7 @@ _xwebshell() {
   _arguments -s \
     '(-h --help)'{-h,--help}'[show this help]' \
     '(-V --version)'{-V,--version}'[show version]' \
+    '--online-help[show the versioned online help URL]' \
     '1:command:_xwebshell_commands' \
     '2:ID:_xwebshell_ids'
 }

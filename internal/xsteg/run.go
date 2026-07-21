@@ -23,6 +23,7 @@ import (
 
 	"github.com/charmbracelet/x/term"
 	"req/internal/ctx"
+	"req/internal/onlinehelp"
 )
 
 var Version = "1.0.0"
@@ -57,7 +58,8 @@ extract options:
 
 options:
   -h, --help            show this help
-  -V, --version         show version`
+  -V, --version         show version
+  --online-help         show the versioned online help URL`
 
 type commandRunner interface {
 	LookPath(string) (string, error)
@@ -117,6 +119,8 @@ func (app *App) run(args []string) error {
 	case "version":
 		_, err := fmt.Fprintf(app.stdout, "xsteg %s\n", Version)
 		return err
+	case "online-help":
+		return onlinehelp.Print(app.stdout, "xsteg", Version)
 	case "ls":
 		return app.list(parsed.Path)
 	case "show":
@@ -267,6 +271,11 @@ func parseOptions(args []string) (options, error) {
 		return options{Command: "ls", Path: "."}, nil
 	}
 	switch args[1] {
+	case "--online-help":
+		if len(args) != 2 {
+			return options{}, errors.New("usage: xsteg --online-help")
+		}
+		return options{Command: "online-help"}, nil
 	case "-h", "--help", "help":
 		if len(args) != 2 {
 			return options{}, errors.New("usage: xsteg --help")

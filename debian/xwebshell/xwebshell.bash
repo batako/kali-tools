@@ -12,7 +12,7 @@ _xwebshell_completion() {
       ;;
   esac
 
-  COMPREPLY=($(compgen -W "ls show export -h --help -V --version" -- "${cur}"))
+  COMPREPLY=($(compgen -W "ls show export -h --help -V --version --online-help" -- "${cur}"))
 }
 
 complete -F _xwebshell_completion xwebshell

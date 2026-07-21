@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"req/internal/ctx"
+	"req/internal/onlinehelp"
 )
 
 var (
@@ -52,6 +53,7 @@ options:
   --clear-cache                 clear vhost wordlist cache
   -h, --help                    show this help
   -V, --version                 show version
+  --online-help                 show the versioned online help URL
 
 Common ffuf options are passed through, including:
   -mc, -ml, -mr, -ms, -mw      match status, lines, regex, size, or words
@@ -171,6 +173,11 @@ func (app *App) Run(args []string) error {
 		case "-h", "--help":
 			_, err := fmt.Fprintln(app.stdout, usageText)
 			return err
+		case "--online-help":
+			if len(args) != 2 {
+				return errors.New("usage: xffuf --online-help")
+			}
+			return onlinehelp.Print(app.stdout, "xffuf", Version)
 		case "-V", "--version":
 			_, err := fmt.Fprintf(app.stdout, "xffuf %s\n", Version)
 			return err

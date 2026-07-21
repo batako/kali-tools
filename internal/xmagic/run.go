@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"req/internal/onlinehelp"
 )
 
 var Version = "1.0.0"
@@ -36,7 +38,8 @@ types:
 
 options:
   -h, --help            show this help
-  -V, --version         show version`
+  -V, --version         show version
+  --online-help         show the versioned online help URL`
 
 type signature struct {
 	Name        string
@@ -94,6 +97,11 @@ func Run(args []string, stdout io.Writer) error {
 		}
 		_, err := fmt.Fprintln(stdout, usageText)
 		return err
+	case "--online-help":
+		if len(args) != 2 {
+			return errors.New("usage: xmagic --online-help")
+		}
+		return onlinehelp.Print(stdout, "xmagic", Version)
 	case "-V", "--version", "version":
 		if len(args) != 2 {
 			return errors.New("usage: xmagic --version")

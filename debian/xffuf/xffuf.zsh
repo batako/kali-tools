@@ -49,6 +49,7 @@ _xffuf() {
     '-fw[filter response words]:number:'
     '(-h --help)'{-h,--help}'[show help]'
     '(-V --version)'{-V,--version}'[show version]'
+    '--online-help[show the versioned online help URL]'
   )
 
   case ${words[2]} in
@@ -68,6 +69,7 @@ _xffuf() {
         '1:mode:_xffuf_modes' \
         '(-h --help)'{-h,--help}'[show help]' \
         '(-V --version)'{-V,--version}'[show version]'
+        '--online-help[show the versioned online help URL]'
       ;;
   esac
 }
