@@ -153,8 +153,8 @@ func TestRunHelpAndVersion(t *testing.T) {
 	}{
 		{[]string{"xsmb", "-h"}, "usage: xsmb [credential-id|username]"},
 		{[]string{"xsmb", "--help"}, "Connect to the current ctx target using a stored SMB credential when available."},
-		{[]string{"xsmb", "-V"}, "xsmb 1.0.0\n"},
-		{[]string{"xsmb", "--version"}, "xsmb 1.0.0\n"},
+		{[]string{"xsmb", "-V"}, "xsmb 1.1.0\n"},
+		{[]string{"xsmb", "--version"}, "xsmb 1.1.0\n"},
 	} {
 		var out, stderr bytes.Buffer
 		err := New(newFakeRunner(), strings.NewReader(""), &out, &stderr).Run(tt.args)

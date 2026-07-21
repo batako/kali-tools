@@ -136,8 +136,8 @@ func TestRunHelpAndVersion(t *testing.T) {
 	}{
 		{[]string{"xftp", "-h"}, "usage: xftp [credential-id|username]"},
 		{[]string{"xftp", "--help"}, "Connect to the current ctx target using a stored FTP credential when available."},
-		{[]string{"xftp", "-V"}, "xftp 1.0.0\n"},
-		{[]string{"xftp", "--version"}, "xftp 1.0.0\n"},
+		{[]string{"xftp", "-V"}, "xftp 1.1.0\n"},
+		{[]string{"xftp", "--version"}, "xftp 1.1.0\n"},
 	} {
 		var out, stderr bytes.Buffer
 		err := New(newFakeRunner(), strings.NewReader(""), &out, &stderr).Run(tt.args)
