@@ -72,8 +72,8 @@ repo/pool/
 Run tests in the Kali development container:
 
 ```sh
-docker-compose exec -w /tools kali go test ./...
-docker-compose exec -w /tools kali gofmt -w cmd internal
+go test ./...
+gofmt -w cmd internal
 ```
 
 Build and install one package locally:

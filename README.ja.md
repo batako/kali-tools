@@ -72,8 +72,8 @@ repo/pool/
 Kali開発コンテナ内でテストします。
 
 ```sh
-docker-compose exec -w /tools kali go test ./...
-docker-compose exec -w /tools kali gofmt -w cmd internal
+go test ./...
+gofmt -w cmd internal
 ```
 
 ローカルでパッケージをビルドしてインストールする場合:
