@@ -2,7 +2,6 @@ package xssh
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -18,7 +17,7 @@ import (
 )
 
 var (
-	Version = "1.1.0"
+	Version = "1.2.0"
 )
 
 const usageText = `usage: xssh [credential-id|username|key]
@@ -172,17 +171,14 @@ func (app *App) Run(args []string) error {
 	} else {
 		_, _ = fmt.Fprintf(app.stdout, "Connecting to %s@%s:%d...\n", credential.Username, targetIP, port)
 	}
-	var commandStdout, commandStderr bytes.Buffer
-	streamStdout := io.MultiWriter(app.stdout, &commandStdout)
-	streamStderr := io.MultiWriter(app.stderr, &commandStderr)
-	err = app.connect(credential, targetIP, port, streamStdout, streamStderr)
+	err = app.connect(credential, targetIP, port, app.stdout, app.stderr)
 	status := "success"
 	exitCode := 0
 	if err != nil {
 		status = "failed"
 		exitCode = commandExitCode(err)
 	}
-	finishErr := app.logger.Finish(logID, status, exitCode, commandStdout.String(), commandStderr.String(), time.Now().UTC().Format(time.RFC3339Nano))
+	finishErr := app.logger.Finish(logID, status, exitCode, "", "", time.Now().UTC().Format(time.RFC3339Nano))
 	if finishErr != nil {
 		return app.errorf("failed to finish SSH log: %s", finishErr.Error())
 	}
@@ -373,14 +369,18 @@ func shellQuote(value string) string {
 
 func (app *App) connect(credential *Credential, targetIP string, port int, stdout, stderr io.Writer) error {
 	if credential == nil {
-		return app.runner.Run("ssh", []string{"-p", strconv.Itoa(port), targetIP}, nil, app.stdin, stdout, stderr)
+		return app.runner.Run("ssh", sshConnectionArgs(targetIP, port), nil, app.stdin, stdout, stderr)
 	}
 	destination := fmt.Sprintf("%s@%s", credential.Username, targetIP)
-	args := []string{"-p", strconv.Itoa(port), destination}
+	args := sshConnectionArgs(destination, port)
 	if credential.Password != nil {
 		return app.runner.Run("sshpass", append([]string{"-e", "ssh"}, args...), []string{"SSHPASS=" + *credential.Password}, app.stdin, stdout, stderr)
 	}
 	return app.runner.Run("ssh", args, nil, app.stdin, stdout, stderr)
+}
+
+func sshConnectionArgs(destination string, port int) []string {
+	return []string{"-o", "StrictHostKeyChecking=accept-new", "-p", strconv.Itoa(port), destination}
 }
 
 func (app *App) errorf(format string, args ...any) error {
@@ -405,7 +405,7 @@ func sshLogCommand(credential *Credential, targetIP string, port int) string {
 	if credential != nil && credential.Username != "" {
 		destination = credential.Username + "@" + targetIP
 	}
-	return fmt.Sprintf("ssh -p %d %s", port, destination)
+	return fmt.Sprintf("ssh -o StrictHostKeyChecking=accept-new -p %d %s", port, destination)
 }
 
 type PromptData struct {

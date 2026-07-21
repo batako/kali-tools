@@ -157,8 +157,8 @@ func TestRunHelpAndVersion(t *testing.T) {
 	}{
 		{[]string{"xssh", "-h"}, "usage: xssh [credential-id|username|key]"},
 		{[]string{"xssh", "--help"}, "Connect to the current ctx target using a stored SSH credential when available."},
-		{[]string{"xssh", "-V"}, "xssh 1.1.0\n"},
-		{[]string{"xssh", "--version"}, "xssh 1.1.0\n"},
+		{[]string{"xssh", "-V"}, "xssh 1.2.0\n"},
+		{[]string{"xssh", "--version"}, "xssh 1.2.0\n"},
 	} {
 		var out, stderr bytes.Buffer
 		err := New(newFakeRunner(), strings.NewReader(""), &out, &stderr).Run(tt.args)
@@ -265,7 +265,7 @@ func TestCredentialSelectionAndSSHPass(t *testing.T) {
 	if run.name != "sshpass" {
 		t.Fatalf("run name = %q, want sshpass", run.name)
 	}
-	wantArgs := []string{"-e", "ssh", "-p", "22", "root@2.3.4.5"}
+	wantArgs := []string{"-e", "ssh", "-o", "StrictHostKeyChecking=accept-new", "-p", "22", "root@2.3.4.5"}
 	if !reflect.DeepEqual(run.args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", run.args, wantArgs)
 	}
@@ -284,6 +284,7 @@ func TestCredentialSelectionAndSSHPass(t *testing.T) {
 
 func TestRunRecordsSSHLogWithoutPassword(t *testing.T) {
 	runner := newFakeRunner()
+	runner.runOutputs["sshpass -e ssh -o StrictHostKeyChecking=accept-new -p 22 root@2.3.4.5"] = fakeOutput{stdout: "remote output\n", stderr: "remote warning\n"}
 	logger := &memoryCommandLogger{}
 	var out, stderr bytes.Buffer
 	app := New(runner, strings.NewReader(""), &out, &stderr)
@@ -292,7 +293,7 @@ func TestRunRecordsSSHLogWithoutPassword(t *testing.T) {
 	if err := app.Run([]string{"xssh"}); err != nil {
 		t.Fatalf("Run() error = %v, stderr = %q", err, stderr.String())
 	}
-	if logger.startCommand != "xssh" || logger.startExpanded != "ssh -p 22 root@2.3.4.5" {
+	if logger.startCommand != "xssh" || logger.startExpanded != "ssh -o StrictHostKeyChecking=accept-new -p 22 root@2.3.4.5" {
 		t.Fatalf("start log = %+v, want sanitized SSH command", logger)
 	}
 	if strings.Contains(logger.startExpanded, "toor") {
@@ -300,6 +301,12 @@ func TestRunRecordsSSHLogWithoutPassword(t *testing.T) {
 	}
 	if logger.finishID != 42 || logger.finishStatus != "success" || logger.finishCode != 0 {
 		t.Fatalf("finish log = %+v, want successful log", logger)
+	}
+	if logger.finishStdout != "" || logger.finishStderr != "" {
+		t.Fatalf("interactive SSH output was logged: stdout=%q stderr=%q", logger.finishStdout, logger.finishStderr)
+	}
+	if !strings.Contains(out.String(), "remote output") || !strings.Contains(stderr.String(), "remote warning") {
+		t.Fatalf("interactive SSH output was not streamed directly: stdout=%q stderr=%q", out.String(), stderr.String())
 	}
 }
 
@@ -338,7 +345,7 @@ func TestCredentialNoPasswordUsesSSH(t *testing.T) {
 	if run.name != "ssh" {
 		t.Fatalf("run name = %q, want ssh", run.name)
 	}
-	if !reflect.DeepEqual(run.args, []string{"-p", "22", "root@2.3.4.5"}) {
+	if !reflect.DeepEqual(run.args, []string{"-o", "StrictHostKeyChecking=accept-new", "-p", "22", "root@2.3.4.5"}) {
 		t.Fatalf("args = %#v", run.args)
 	}
 	if len(run.env) != 0 {
@@ -365,7 +372,7 @@ func TestNoCredentialsUsesPlainSSH(t *testing.T) {
 	if run.name != "ssh" {
 		t.Fatalf("run name = %q, want ssh", run.name)
 	}
-	if !reflect.DeepEqual(run.args, []string{"-p", "22", "2.3.4.5"}) {
+	if !reflect.DeepEqual(run.args, []string{"-o", "StrictHostKeyChecking=accept-new", "-p", "22", "2.3.4.5"}) {
 		t.Fatalf("args = %#v", run.args)
 	}
 	if len(run.env) != 0 {
@@ -487,7 +494,7 @@ func TestMissingCredentialUsernameUsesPlainSSH(t *testing.T) {
 	if run.name != "ssh" {
 		t.Fatalf("run name = %q, want ssh", run.name)
 	}
-	if !reflect.DeepEqual(run.args, []string{"-p", "22", "testuser@2.3.4.5"}) {
+	if !reflect.DeepEqual(run.args, []string{"-o", "StrictHostKeyChecking=accept-new", "-p", "22", "testuser@2.3.4.5"}) {
 		t.Fatalf("args = %#v, want username fallback", run.args)
 	}
 	if len(run.env) != 0 {
@@ -531,17 +538,17 @@ func TestServicePortResolution(t *testing.T) {
 		input  string
 		want   []string
 	}{
-		{"no ssh uses 22", apiJSON(`{"services":[]}`), "", []string{"-p", "22", "root@2.3.4.5"}},
-		{"one ssh", apiJSON(`{"services":[{"id":1,"port":2222,"protocol":"tcp","service_name":"ssh"}]}`), "", []string{"-p", "2222", "root@2.3.4.5"}},
+		{"no ssh uses 22", apiJSON(`{"services":[]}`), "", []string{"-o", "StrictHostKeyChecking=accept-new", "-p", "22", "root@2.3.4.5"}},
+		{"one ssh", apiJSON(`{"services":[{"id":1,"port":2222,"protocol":"tcp","service_name":"ssh"}]}`), "", []string{"-o", "StrictHostKeyChecking=accept-new", "-p", "2222", "root@2.3.4.5"}},
 		{"filters udp", apiJSON(`{"services":[
 			{"id":1,"port":22,"protocol":"udp","service_name":"ssh"},
 			{"id":2,"port":2200,"protocol":"tcp","service_name":"http"},
 			{"id":3,"port":2222,"protocol":"tcp","service_name":"SSH"}
-		]}`), "", []string{"-p", "2222", "root@2.3.4.5"}},
+		]}`), "", []string{"-o", "StrictHostKeyChecking=accept-new", "-p", "2222", "root@2.3.4.5"}},
 		{"multiple ssh", apiJSON(`{"services":[
 			{"id":1,"port":22,"protocol":"tcp","service_name":"ssh"},
 			{"id":2,"port":2222,"protocol":"tcp","service_name":"ssh"}
-		]}`), "2\n", []string{"-p", "2222", "root@2.3.4.5"}},
+		]}`), "2\n", []string{"-o", "StrictHostKeyChecking=accept-new", "-p", "2222", "root@2.3.4.5"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			runner := newFakeRunner()
