@@ -11,6 +11,11 @@ PACKAGE_NAME="$1"
 VERSION_FILE="debian/${PACKAGE_NAME}/VERSION"
 GO_DIR="internal/${PACKAGE_NAME}"
 
+if [ -f "debian/${PACKAGE_NAME}/META_PACKAGE" ]; then
+  echo "${PACKAGE_NAME} is a meta-package; no Go version check required"
+  exit 0
+fi
+
 if [ ! -f "${VERSION_FILE}" ]; then
   echo "missing version file: ${VERSION_FILE}" >&2
   exit 1

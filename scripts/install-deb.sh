@@ -15,7 +15,7 @@ case "${PACKAGE_NAME}" in
     ;;
 esac
 
-if [ ! -d "cmd/${PACKAGE_NAME}" ] ||
+if { [ ! -d "cmd/${PACKAGE_NAME}" ] && [ ! -f "debian/${PACKAGE_NAME}/META_PACKAGE" ]; } ||
   [ ! -f "debian/${PACKAGE_NAME}/VERSION" ] ||
   [ ! -f "debian/${PACKAGE_NAME}/control" ]; then
   echo "missing package configuration for ${PACKAGE_NAME}" >&2
@@ -24,7 +24,12 @@ fi
 
 VERSION="$(sed -n '1{s/[[:space:]]//g;p;q;}' "debian/${PACKAGE_NAME}/VERSION")"
 ARCH="$(dpkg --print-architecture)"
-DEB_PATH="dist/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
+if [ -f "debian/${PACKAGE_NAME}/META_PACKAGE" ]; then
+  DEB_ARCH="all"
+else
+  DEB_ARCH="${ARCH}"
+fi
+DEB_PATH="dist/${PACKAGE_NAME}_${VERSION}_${DEB_ARCH}.deb"
 
 ./scripts/build-deb.sh "${PACKAGE_NAME}" "${ARCH}"
 

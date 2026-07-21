@@ -70,7 +70,8 @@ jobs:
             echo "release tag is not contained in main: ${tag}" >&2
             exit 1
           fi
-          if ! git -C automation cat-file -e "${tag}:cmd/${tool}/main.go" ||
+          if { ! git -C automation cat-file -e "${tag}:cmd/${tool}/main.go" &&
+               ! git -C automation cat-file -e "${tag}:debian/${tool}/META_PACKAGE"; } ||
              ! git -C automation cat-file -e "${tag}:debian/${tool}/VERSION"; then
             echo "release tag does not contain package files for ${tool}" >&2
             exit 1
@@ -134,8 +135,12 @@ jobs:
           source_date_epoch="$(git -C source show -s --format=%ct HEAD)"
           (
             cd source
-            SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" amd64
-            SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" arm64
+            if git cat-file -e "${RELEASE_TAG}:debian/${APPLICATION}/META_PACKAGE" 2>/dev/null; then
+              SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" amd64
+            else
+              SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" amd64
+              SOURCE_DATE_EPOCH="${source_date_epoch}" ../automation/scripts/build-deb.sh "${APPLICATION}" arm64
+            fi
           )
 
       - name: Validate rebuilt Debian packages
@@ -144,7 +149,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          for arch in amd64 arm64; do
+          if [ -f "source/debian/${APPLICATION}/META_PACKAGE" ]; then
+            architectures="all"
+          else
+            architectures="amd64 arm64"
+          fi
+
+          for arch in ${architectures}; do
             deb="source/dist/${APPLICATION}_${VERSION}_${arch}.deb"
             contents="$(mktemp)"
             test -f "${deb}"
@@ -152,12 +163,16 @@ jobs:
             test "$(dpkg-deb -f "${deb}" Version)" = "${VERSION}"
             test "$(dpkg-deb -f "${deb}" Architecture)" = "${arch}"
             dpkg-deb -c "${deb}" > "${contents}"
-            grep -q "./usr/local/bin/${APPLICATION}$" "${contents}"
+            if [ ! -f "source/debian/${APPLICATION}/META_PACKAGE" ]; then
+              grep -q "./usr/local/bin/${APPLICATION}$" "${contents}"
+            fi
           done
 
-          extract_dir="$(mktemp -d)"
-          dpkg-deb -x "source/dist/${APPLICATION}_${VERSION}_amd64.deb" "${extract_dir}"
-          test "$("${extract_dir}/usr/local/bin/${APPLICATION}" -V)" = "${APPLICATION} ${VERSION}"
+          if [ ! -f "source/debian/${APPLICATION}/META_PACKAGE" ]; then
+            extract_dir="$(mktemp -d)"
+            dpkg-deb -x "source/dist/${APPLICATION}_${VERSION}_amd64.deb" "${extract_dir}"
+            test "$("${extract_dir}/usr/local/bin/${APPLICATION}" -V)" = "${APPLICATION} ${VERSION}"
+          fi
 
       - name: Rebuild APT repository indexes
         if: inputs.target == 'apt-repository'

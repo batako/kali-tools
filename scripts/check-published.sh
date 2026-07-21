@@ -85,7 +85,13 @@ VERSION="$(sed -n '1{s/[[:space:]]//g;p;q;}' "${VERSION_FILE}")"
 printf 'Post-release checks: %s %s\n' "${PACKAGE_NAME}" "${VERSION}"
 printf 'Repository: %s\n\n' "${REPOSITORY_URL}"
 
-for arch in amd64 arm64; do
+if [ -f "debian/${PACKAGE_NAME}/META_PACKAGE" ]; then
+  architectures="all"
+else
+  architectures="amd64 arm64"
+fi
+
+for arch in ${architectures}; do
   check "APT metadata contains ${PACKAGE_NAME} ${VERSION} (${arch})" check_packages_index "${arch}"
   check "published .deb is valid (${arch})" check_published_deb "${arch}"
 done

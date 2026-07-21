@@ -1,0 +1,9 @@
+Package: batako-kali-tools
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: req, ctx, xssh, xscp, xftp, xsmb, xgobuster, xffuf, xhydra, xwebshell, xmagic, xsteg
+Description: Complete Batako Kali Tools suite
+ Install all custom Kali Linux CLI tools from the Batako Kali Tools project.

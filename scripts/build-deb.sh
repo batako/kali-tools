@@ -42,7 +42,10 @@ case "${PACKAGE_NAME}" in
     ;;
 esac
 
-if [ ! -d "cmd/${PACKAGE_NAME}" ]; then
+META_PACKAGE=0
+if [ -f "debian/${PACKAGE_NAME}/META_PACKAGE" ]; then
+  META_PACKAGE=1
+elif [ ! -d "cmd/${PACKAGE_NAME}" ]; then
   echo "missing command entrypoint: cmd/${PACKAGE_NAME}" >&2
   exit 1
 fi
@@ -66,9 +69,14 @@ case "${VERSION}" in
 esac
 
 OUTPUT_DIR="dist"
-OUTPUT_DEB="${OUTPUT_DIR}/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
+if [ "${META_PACKAGE}" -eq 1 ]; then
+  PACKAGE_ARCH="all"
+else
+  PACKAGE_ARCH="${ARCH}"
+fi
+OUTPUT_DEB="${OUTPUT_DIR}/${PACKAGE_NAME}_${VERSION}_${PACKAGE_ARCH}.deb"
 BUILD_ROOT="$(mktemp -d)"
-PKG_ROOT="${BUILD_ROOT}/${PACKAGE_NAME}_${VERSION}_${ARCH}"
+PKG_ROOT="${BUILD_ROOT}/${PACKAGE_NAME}_${VERSION}_${PACKAGE_ARCH}"
 
 cleanup() {
   rm -rf "${BUILD_ROOT}"
@@ -81,8 +89,8 @@ mkdir -p "${PKG_ROOT}/usr/local/bin"
 mkdir -p "${OUTPUT_DIR}"
 
 sed \
-  -e "s/@VERSION@/${VERSION}/" \
-  -e "s/@ARCH@/${ARCH}/" \
+    -e "s/@VERSION@/${VERSION}/" \
+  -e "s/@ARCH@/${PACKAGE_ARCH}/" \
   "debian/${PACKAGE_NAME}/control" > "${PKG_ROOT}/DEBIAN/control"
 
 for script in postinst prerm postrm preinst; do
@@ -104,7 +112,9 @@ build_binary() {
   chmod 0755 "${PKG_ROOT}/usr/local/bin/${binary_name}"
 }
 
-build_binary "${PACKAGE_NAME}" "./cmd/${PACKAGE_NAME}"
+if [ "${META_PACKAGE}" -eq 0 ]; then
+  build_binary "${PACKAGE_NAME}" "./cmd/${PACKAGE_NAME}"
+fi
 
 if [ "${PACKAGE_NAME}" = "xgobuster" ]; then
   ln -s "${PACKAGE_NAME}" "${PKG_ROOT}/usr/local/bin/xgo"

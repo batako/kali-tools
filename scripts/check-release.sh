@@ -40,9 +40,13 @@ check() {
 }
 
 check_release_files() {
-  test -d "cmd/${PACKAGE_NAME}" &&
-    test -d "internal/${PACKAGE_NAME}" &&
-    test -f "debian/${PACKAGE_NAME}/control" &&
+  if [ -f "debian/${PACKAGE_NAME}/META_PACKAGE" ]; then
+    test -f "debian/${PACKAGE_NAME}/control"
+  else
+    test -d "cmd/${PACKAGE_NAME}" &&
+      test -d "internal/${PACKAGE_NAME}" &&
+      test -f "debian/${PACKAGE_NAME}/control"
+  fi &&
     test -s "releases/${PACKAGE_NAME}/${VERSION}.md" &&
     test -s "releases/${PACKAGE_NAME}/${VERSION}.ja.md"
 }
@@ -66,15 +70,24 @@ check_format() {
 
 check_deb() {
   arch="$1"
-  deb_path="dist/${PACKAGE_NAME}_${VERSION}_${arch}.deb"
+  if [ -f "debian/${PACKAGE_NAME}/META_PACKAGE" ]; then
+    deb_arch="all"
+  else
+    deb_arch="${arch}"
+  fi
+  deb_path="dist/${PACKAGE_NAME}_${VERSION}_${deb_arch}.deb"
   contents="${TMP_DIR}/contents-${arch}"
   extract_dir="${TMP_DIR}/extract-${arch}"
 
   if ! test -f "${deb_path}" ||
     ! test "$(dpkg-deb -f "${deb_path}" Package)" = "${PACKAGE_NAME}" ||
     ! test "$(dpkg-deb -f "${deb_path}" Version)" = "${VERSION}" ||
-    ! test "$(dpkg-deb -f "${deb_path}" Architecture)" = "${arch}" ||
-    ! dpkg-deb -c "${deb_path}" >"${contents}" ||
+    ! test "$(dpkg-deb -f "${deb_path}" Architecture)" = "${deb_arch}" ||
+    ! dpkg-deb -c "${deb_path}" >"${contents}"; then
+    return 1
+  fi
+
+  if [ ! -f "debian/${PACKAGE_NAME}/META_PACKAGE" ] &&
     ! grep -q "./usr/local/bin/${PACKAGE_NAME}$" "${contents}"; then
     return 1
   fi
@@ -120,10 +133,15 @@ check "Go modules are tidy" go mod tidy -diff
 check "Go tests pass" go test ./...
 check "release tag is absent or points to HEAD" check_tag
 
-for arch in amd64 arm64; do
-  check "Debian package builds (${arch})" ./scripts/build-deb.sh "${PACKAGE_NAME}" "${arch}"
-  check "Debian package is valid (${arch})" check_deb "${arch}"
-done
+if [ -f "debian/${PACKAGE_NAME}/META_PACKAGE" ]; then
+  check "Debian package builds (all)" ./scripts/build-deb.sh "${PACKAGE_NAME}" amd64
+  check "Debian package is valid (all)" check_deb all
+else
+  for arch in amd64 arm64; do
+    check "Debian package builds (${arch})" ./scripts/build-deb.sh "${PACKAGE_NAME}" "${arch}"
+    check "Debian package is valid (${arch})" check_deb "${arch}"
+  done
+fi
 
 printf '\n'
 if [ "${FAILED}" -ne 0 ]; then

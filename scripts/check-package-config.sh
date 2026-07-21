@@ -137,7 +137,19 @@ for package_dir in debian/*; do
 
   package="$(basename "${package_dir}")"
   if [ ! -d "cmd/${package}" ]; then
-    ng "orphan Debian package: missing cmd/${package}"
+    if [ -f "${package_dir}/META_PACKAGE" ]; then
+      check_file "meta-package version" "${package_dir}/VERSION"
+      check_file "meta-package control" "${package_dir}/control"
+      if grep -Fx "Package: ${package}" "${package_dir}/control" >/dev/null &&
+        grep -Fx 'Version: @VERSION@' "${package_dir}/control" >/dev/null &&
+        grep -Fx 'Architecture: all' "${package_dir}/control" >/dev/null; then
+        ok "meta-package control fields"
+      else
+        ng "meta-package control fields: ${package_dir}/control must define package, version placeholder, and Architecture: all"
+      fi
+    else
+      ng "orphan Debian package: missing cmd/${package}"
+    fi
   fi
 done
 

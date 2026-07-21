@@ -82,7 +82,13 @@ jobs:
             version="${tag#*/v}"
             prefix="${package:0:1}"
 
-            for architecture in amd64 arm64; do
+            if git cat-file -e "${tag}:debian/${package}/META_PACKAGE" 2>/dev/null; then
+              architectures="all"
+            else
+              architectures="amd64 arm64"
+            fi
+
+            for architecture in ${architectures}; do
               deb_file="${package}_${version}_${architecture}.deb"
               relative_deb="pool/main/${prefix}/${package}/${deb_file}"
               deb_path="apt-repo/${relative_deb}"
@@ -102,7 +108,8 @@ jobs:
                 continue
               fi
 
-              if [ "${architecture}" = "amd64" ]; then
+              if [ "${architecture}" = "amd64" ] &&
+                 ! git cat-file -e "${tag}:debian/${package}/META_PACKAGE" 2>/dev/null; then
                 extract_dir="$(mktemp -d)"
                 dpkg-deb -x "${deb_path}" "${extract_dir}"
                 if [ "$("${extract_dir}/usr/local/bin/${package}" -V)" != "${package} ${version}" ]; then

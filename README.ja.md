@@ -29,10 +29,16 @@ echo "deb [trusted=yes] https://offsec.batako.net stable main" \
 sudo apt update
 ```
 
-必要なツールをインストールします。
+ツール一式をインストールします。
 
 ```sh
-sudo apt install req ctx xssh xscp xftp xsmb xgobuster xffuf xhydra xwebshell xmagic xsteg
+sudo apt install batako-kali-tools
+```
+
+必要なツールだけを個別にインストールすることもできます。
+
+```sh
+sudo apt install <package> [<package> ...]
 ```
 
 ## ディレクトリ構成

@@ -48,7 +48,7 @@ jobs:
             exit 1
           fi
 
-          if [ ! -d "cmd/${application}" ] ||
+          if { [ ! -d "cmd/${application}" ] && [ ! -f "debian/${application}/META_PACKAGE" ]; } ||
              [ ! -f "debian/${application}/VERSION" ]; then
             echo "unknown application in release tag: ${application}" >&2
             exit 1
@@ -103,7 +103,13 @@ jobs:
           prefix="$(printf '%s' "${APPLICATION}" | cut -c 1)"
           package_dir="repo/pool/main/${prefix}/${APPLICATION}"
 
-          for arch in amd64 arm64; do
+          if [ -f "debian/${APPLICATION}/META_PACKAGE" ]; then
+            arches="all"
+          else
+            arches="amd64 arm64"
+          fi
+
+          for arch in ${arches}; do
             deb_file="${APPLICATION}_${VERSION}_${arch}.deb"
             built_deb="dist/${deb_file}"
             published_deb="${package_dir}/${deb_file}"
@@ -139,8 +145,12 @@ jobs:
           set -eu
 
           assets_dir="$(mktemp -d)"
-          cp "dist/${APPLICATION}_${VERSION}_amd64.deb" "${assets_dir}/"
-          cp "dist/${APPLICATION}_${VERSION}_arm64.deb" "${assets_dir}/"
+          if [ -f "debian/${APPLICATION}/META_PACKAGE" ]; then
+            cp "dist/${APPLICATION}_${VERSION}_all.deb" "${assets_dir}/"
+          else
+            cp "dist/${APPLICATION}_${VERSION}_amd64.deb" "${assets_dir}/"
+            cp "dist/${APPLICATION}_${VERSION}_arm64.deb" "${assets_dir}/"
+          fi
           (
             cd "${assets_dir}"
             sha256sum *.deb > checksums.txt
