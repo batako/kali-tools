@@ -122,7 +122,7 @@ func PlanProjectRootMove(sourceName, targetName string) (*ProjectRootMovePlan, e
 			continue
 		}
 		projectPath := filepath.Join(sourcePath, entry.Name())
-		markerID, markerUUID, err := readWorkspaceMarker(filepath.Join(projectPath, MarkerFile))
+		markerUUID, err := readWorkspaceMarker(filepath.Join(projectPath, MarkerFile))
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -133,7 +133,7 @@ func PlanProjectRootMove(sourceName, targetName string) (*ProjectRootMovePlan, e
 		if !ok {
 			return nil, fmt.Errorf("workspace database does not contain project: %s", projectPath)
 		}
-		if markerID > 0 && markerID != record.ID || markerUUID != "" && markerUUID != record.UUID {
+		if markerUUID != record.UUID {
 			return nil, fmt.Errorf("workspace marker does not match database for project: %s", projectPath)
 		}
 		validatedSourceRecords[filepath.Clean(projectPath)] = struct{}{}

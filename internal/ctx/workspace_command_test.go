@@ -62,6 +62,14 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace init) repair error = %v", err)
 	}
+	repaired, err := FindWorkspace(root)
+	if err != nil {
+		t.Fatalf("FindWorkspace() after repair error = %v", err)
+	}
+	if repaired.UUID != workspace.UUID {
+		t.Fatalf("workspace UUID changed from %q to %q", workspace.UUID, repaired.UUID)
+	}
+	workspace = repaired
 	if got, want := out.String(), "updated ctx workspace "+workspaceIDString(workspace.ID)+"\n"; got != want {
 		t.Fatalf("repair output = %q, want %q", got, want)
 	}
@@ -92,6 +100,14 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if err := Run([]string{"ctx", "workspace", "init"}, &out); err != nil {
 		t.Fatalf("Run(ctx workspace init) empty database repair error = %v", err)
 	}
+	repaired, err = FindWorkspace(root)
+	if err != nil {
+		t.Fatalf("FindWorkspace() after database repair error = %v", err)
+	}
+	if repaired.UUID != workspace.UUID {
+		t.Fatalf("workspace UUID changed from %q to %q", workspace.UUID, repaired.UUID)
+	}
+	workspace = repaired
 	if got, want := out.String(), "updated ctx workspace "+workspaceIDString(workspace.ID)+"\n"; got != want {
 		t.Fatalf("empty database repair output = %q, want %q", got, want)
 	}
@@ -117,9 +133,8 @@ func TestWorkspaceInitCreatesCurrentWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(restored .ctx) error = %v", err)
 	}
-	markerLines := strings.Split(strings.TrimSpace(string(marker)), "\n")
-	if len(markerLines) != 2 || markerLines[0] != workspaceIDString(workspace.ID) || markerLines[1] != workspace.UUID {
-		t.Fatalf("restored marker = %q, want id and uuid", strings.TrimSpace(string(marker)))
+	if got := strings.TrimSpace(string(marker)); got != workspace.UUID {
+		t.Fatalf("restored marker = %q, want UUID %q", got, workspace.UUID)
 	}
 }
 

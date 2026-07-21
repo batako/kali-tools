@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 const MarkerFile = ".ctx"
@@ -43,8 +44,8 @@ func InitWorkspaceWithStatus(rootPath string) (*Workspace, WorkspaceInitStatus, 
 	}
 
 	markerPath := filepath.Join(rootPath, MarkerFile)
-	if existingID, existingUUID, err := readWorkspaceMarker(markerPath); err == nil {
-		workspace := workspaceFromMarker(existingID, existingUUID, rootPath)
+	if existingUUID, err := readWorkspaceMarker(markerPath); err == nil {
+		workspace := workspaceFromUUID(existingUUID, rootPath)
 		recordExists, err := WorkspaceRecordExists(workspace)
 		if err != nil {
 			return nil, WorkspaceUnchanged, err
@@ -78,7 +79,7 @@ func InitWorkspaceWithStatus(rootPath string) (*Workspace, WorkspaceInitStatus, 
 	}
 	if record != nil {
 		workspace := workspaceFromRecord(*record)
-		if err := os.WriteFile(markerPath, []byte(formatWorkspaceMarker(workspace.ID, workspace.UUID)+"\n"), 0644); err != nil {
+		if err := os.WriteFile(markerPath, []byte(formatWorkspaceMarker(workspace.UUID)+"\n"), 0644); err != nil {
 			return nil, WorkspaceUnchanged, fmt.Errorf("failed to restore %s: %w", markerPath, err)
 		}
 		if err := ensureWorkspaceDirs(workspace.DataPath); err != nil {
@@ -109,7 +110,7 @@ func InitWorkspaceWithStatus(rootPath string) (*Workspace, WorkspaceInitStatus, 
 		return nil, WorkspaceUnchanged, err
 	}
 	workspace = workspaceFromRecord(*record)
-	if err := os.WriteFile(markerPath, []byte(formatWorkspaceMarker(workspace.ID, workspace.UUID)+"\n"), 0644); err != nil {
+	if err := os.WriteFile(markerPath, []byte(formatWorkspaceMarker(workspace.UUID)+"\n"), 0644); err != nil {
 		return nil, WorkspaceUnchanged, fmt.Errorf("failed to write %s: %w", markerPath, err)
 	}
 	return workspace, WorkspaceCreated, nil
@@ -131,9 +132,9 @@ func FindWorkspace(startPath string) (*Workspace, error) {
 
 	for {
 		markerPath := filepath.Join(current, MarkerFile)
-		id, uuid, err := readWorkspaceMarker(markerPath)
+		uuid, err := readWorkspaceMarker(markerPath)
 		if err == nil {
-			workspace := workspaceFromMarker(id, uuid, current)
+			workspace := workspaceFromUUID(uuid, current)
 			if err := EnsureDatabase(workspace); err != nil {
 				return nil, err
 			}
@@ -155,52 +156,24 @@ func FindWorkspace(startPath string) (*Workspace, error) {
 	}
 }
 
-func readWorkspaceMarker(markerPath string) (int64, string, error) {
+func readWorkspaceMarker(markerPath string) (string, error) {
 	content, err := os.ReadFile(markerPath)
 	if err != nil {
-		return 0, "", err
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
-	switch len(lines) {
-	case 1:
-		value := strings.TrimSpace(lines[0])
-		if value == "" {
-			return 0, "", fmt.Errorf("invalid ctx marker %s: empty workspace id", markerPath)
-		}
-		if strings.ContainsAny(value, `/\`) {
-			return 0, "", fmt.Errorf("invalid ctx marker %s: workspace id must not contain path separators", markerPath)
-		}
-		if id, err := strconv.ParseInt(value, 10, 64); err == nil {
-			return id, "", nil
-		}
-		return 0, value, nil
-	default:
-		id, err := strconv.ParseInt(strings.TrimSpace(lines[0]), 10, 64)
-		if err != nil {
-			return 0, "", fmt.Errorf("invalid ctx marker %s: invalid workspace id", markerPath)
-		}
-		uuid := strings.TrimSpace(lines[1])
-		if uuid == "" {
-			return 0, "", fmt.Errorf("invalid ctx marker %s: empty workspace uuid", markerPath)
-		}
-		return id, uuid, nil
-	}
-}
-
-func readWorkspaceID(markerPath string) (string, error) {
-	_, uuid, err := readWorkspaceMarker(markerPath)
-	if err != nil {
 		return "", err
 	}
-	if uuid != "" {
-		return uuid, nil
+
+	value := strings.TrimSpace(string(content))
+	if value == "" {
+		return "", fmt.Errorf("invalid ctx marker %s: empty workspace UUID", markerPath)
 	}
-	id, _, err := readWorkspaceMarker(markerPath)
-	if err != nil {
-		return "", err
+	if strings.ContainsAny(value, "\r\n") {
+		return "", fmt.Errorf("invalid ctx marker %s: expected one UUID", markerPath)
 	}
-	return fmt.Sprintf("%d", id), nil
+	parsed, err := uuid.Parse(value)
+	if err != nil || parsed.String() != value {
+		return "", fmt.Errorf("invalid ctx marker %s: expected canonical UUID", markerPath)
+	}
+	return value, nil
 }
 
 func workspaceFromUUID(uuid, rootPath string) *Workspace {
@@ -211,12 +184,6 @@ func workspaceFromUUID(uuid, rootPath string) *Workspace {
 		DataPath:     filepath.Join(dataRoot(), "workspaces", uuid),
 		DatabasePath: filepath.Join(dataRoot(), "db.sqlite"),
 	}
-}
-
-func workspaceFromMarker(id int64, uuid, rootPath string) *Workspace {
-	workspace := workspaceFromUUID(uuid, rootPath)
-	workspace.ID = id
-	return workspace
 }
 
 func workspaceFromRecord(record WorkspaceRecord) *Workspace {
@@ -233,10 +200,7 @@ func workspaceName(rootPath string) string {
 	return rootPath
 }
 
-func formatWorkspaceMarker(id int64, uuid string) string {
-	if id > 0 {
-		return fmt.Sprintf("%d\n%s", id, uuid)
-	}
+func formatWorkspaceMarker(uuid string) string {
 	return uuid
 }
 

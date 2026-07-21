@@ -215,14 +215,14 @@ func ListProjects() ([]Project, error) {
 			continue
 		}
 		path := filepath.Join(root, entry.Name())
-		markerID, markerUUID, err := readWorkspaceMarker(filepath.Join(path, MarkerFile))
+		markerUUID, err := readWorkspaceMarker(filepath.Join(path, MarkerFile))
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return nil, fmt.Errorf("failed to inspect project %s: %w", path, err)
 		}
-		project := Project{ID: markerID, Name: entry.Name(), Path: path}
+		project := Project{Name: entry.Name(), Path: path}
 		if record, ok := recordsByPath[filepath.Clean(path)]; ok {
 			project.ID = record.ID
 		} else if record, ok := recordsByUUID[markerUUID]; ok {
@@ -273,9 +273,7 @@ func ResolveProject(identifier string) (Project, error) {
 	}
 
 	project := Project{Name: filepath.Base(projectPath), Path: projectPath}
-	if markerID, _, err := readWorkspaceMarker(filepath.Join(projectPath, MarkerFile)); err == nil {
-		project.ID = markerID
-	} else if !errors.Is(err, os.ErrNotExist) {
+	if _, err := readWorkspaceMarker(filepath.Join(projectPath, MarkerFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return Project{}, err
 	}
 	if record, err := GetWorkspaceRecordByRoot(projectPath); err == nil && record != nil {
@@ -335,7 +333,7 @@ func projectPath(root, name string) (string, error) {
 }
 
 func removeProjectWorkspaceData(projectPath string) error {
-	markerID, err := readWorkspaceID(filepath.Join(projectPath, MarkerFile))
+	markerID, err := readWorkspaceMarker(filepath.Join(projectPath, MarkerFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}

@@ -173,9 +173,9 @@ func ListWorkspaceRecords() ([]WorkspaceRecord, error) {
 
 func RemoveWorkspace(record WorkspaceRecord) error {
 	markerPath := filepath.Join(record.RootPath, MarkerFile)
-	markerID, markerUUID, err := readWorkspaceMarker(markerPath)
+	markerUUID, err := readWorkspaceMarker(markerPath)
 	switch {
-	case err == nil && ((markerID > 0 && markerID != record.ID) || (markerUUID != "" && markerUUID != record.UUID)):
+	case err == nil && markerUUID != record.UUID:
 		return fmt.Errorf("refusing to remove workspace %d: %s belongs to another workspace", record.ID, markerPath)
 	case err != nil && !os.IsNotExist(err):
 		return err

@@ -23,8 +23,8 @@ func TestInitWorkspaceCreatesMarkerAndWorkspaceDirs(t *testing.T) {
 		t.Fatalf("ReadFile(.ctx) error = %v", err)
 	}
 	markerText := strings.TrimSpace(string(marker))
-	if !strings.Contains(markerText, workspace.UUID) || !strings.Contains(markerText, workspaceIDString(workspace.ID)) {
-		t.Fatalf("marker text = %q, want id and uuid", markerText)
+	if markerText != workspace.UUID {
+		t.Fatalf("marker text = %q, want UUID %q", markerText, workspace.UUID)
 	}
 
 	for _, dir := range []string{"logs", "files", "scans"} {
@@ -148,21 +148,21 @@ func TestSameNamedDirectoriesGetDifferentWorkspaceIDs(t *testing.T) {
 	}
 }
 
-func TestExistingPrefixedWorkspaceIDRemainsReadable(t *testing.T) {
+func TestInitWorkspaceRejectsLegacyMarkerFormats(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CTX_HOME", filepath.Join(t.TempDir(), ".ctx"))
 
-	const existingID = "ctx-0123456789abcdef"
-	if err := os.WriteFile(filepath.Join(root, MarkerFile), []byte(existingID+"\n"), 0644); err != nil {
-		t.Fatalf("WriteFile(.ctx) error = %v", err)
-	}
-
-	workspace, err := InitWorkspace(root)
-	if err != nil {
-		t.Fatalf("InitWorkspace() error = %v", err)
-	}
-	if workspace.UUID != existingID {
-		t.Fatalf("workspace uuid = %q, want existing id %q", workspace.UUID, existingID)
+	for _, marker := range []string{
+		"ctx-0123456789abcdef\n",
+		"16\nb13583ca-3b64-42b9-bb8d-8a7d209847cf\n",
+		"16\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, MarkerFile), []byte(marker), 0644); err != nil {
+			t.Fatalf("WriteFile(.ctx) error = %v", err)
+		}
+		if _, err := InitWorkspace(root); err == nil {
+			t.Fatalf("InitWorkspace() marker %q error = nil, want invalid marker", marker)
+		}
 	}
 }
 
@@ -250,7 +250,7 @@ func TestRemoveWorkspaceRefusesMismatchedMarker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetWorkspaceRecord() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, MarkerFile), []byte("another-workspace\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, MarkerFile), []byte("b13583ca-3b64-42b9-bb8d-8a7d209847cf\n"), 0644); err != nil {
 		t.Fatalf("WriteFile(.ctx) error = %v", err)
 	}
 
