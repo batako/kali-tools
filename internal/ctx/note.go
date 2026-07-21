@@ -89,6 +89,9 @@ func ListTimeline(workspace *Workspace) ([]TimelineEntry, error) {
 
 	entries := make([]TimelineEntry, 0, len(logs)+len(notes))
 	for _, log := range logs {
+		if log.ParentID > 0 {
+			continue
+		}
 		entries = append(entries, TimelineEntry{
 			ID:        log.ID,
 			Ref:       fmt.Sprintf("%d", log.ID),

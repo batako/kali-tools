@@ -258,7 +258,7 @@ func (m logModel) listHeight() int {
 
 func commandLogDetail(log *CommandLog) string {
 	metadata := fmt.Sprintf(
-		"command %d\n\ncommand: %s\nexpanded: %s\nstatus: %s\nexit code: %d\nstarted: %s\nended: %s\n\n",
+		"command %d\n\ncommand: %s\nexpanded: %s\nstatus: %s\nexit code: %d\nstarted: %s\nended: %s\n",
 		log.ID,
 		log.Command,
 		log.ExpandedCommand,
@@ -267,6 +267,26 @@ func commandLogDetail(log *CommandLog) string {
 		log.StartedAt,
 		log.EndedAt,
 	)
+	if log.ParentID > 0 {
+		metadata += fmt.Sprintf("parent: %d\n", log.ParentID)
+	}
+	if log.Phase != "" {
+		metadata += fmt.Sprintf("phase: %s\n", log.Phase)
+	}
+	if log.Target != "" {
+		metadata += fmt.Sprintf("target: %s\n", log.Target)
+	}
+	if len(log.Children) > 0 {
+		metadata += "\nsteps:\n"
+		for _, child := range log.Children {
+			metadata += fmt.Sprintf("  [%s] %d %s", child.Status, child.ID, child.Command)
+			if child.Phase != "" {
+				metadata += fmt.Sprintf(" (%s)", child.Phase)
+			}
+			metadata += "\n"
+		}
+	}
+	metadata += "\n"
 	return metadata + commandOutputSections(log.Stdout, log.Stderr)
 }
 

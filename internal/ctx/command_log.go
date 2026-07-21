@@ -12,6 +12,11 @@ var ErrCommandLogNotFound = errors.New("command log not found")
 type CommandLog struct {
 	ID              int64
 	WorkspaceID     int64
+	ParentID        int64
+	Phase           string
+	Target          string
+	Sequence        int
+	Children        []CommandLog
 	Command         string
 	ExpandedCommand string
 	Status          string
@@ -31,11 +36,12 @@ func SaveCommandLog(workspace *Workspace, log CommandLog) (int64, error) {
 
 	result, err := db.Exec(`
 		INSERT INTO command_logs (
-			workspace_id, command, expanded_command, status, exit_code,
-			stdout, stderr, started_at, ended_at
+			workspace_id, parent_id, phase, target, sequence,
+			command, expanded_command, status, exit_code, stdout, stderr,
+			started_at, ended_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, workspace.ID, log.Command, log.ExpandedCommand, log.Status, nullableExitCode(log.Status, log.ExitCode), log.Stdout, log.Stderr, log.StartedAt, nullableEndedAt(log.EndedAt))
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, workspace.ID, nullableParentID(log.ParentID), nullableText(log.Phase), nullableText(log.Target), nullableSequence(log.Sequence), log.Command, log.ExpandedCommand, log.Status, nullableExitCode(log.Status, log.ExitCode), log.Stdout, log.Stderr, log.StartedAt, nullableEndedAt(log.EndedAt))
 	if err != nil {
 		return 0, fmt.Errorf("failed to save command log: %w", err)
 	}
@@ -90,7 +96,7 @@ func ListCommandLogs(workspace *Workspace) ([]CommandLog, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT id, workspace_id, command, expanded_command, status, COALESCE(exit_code, 0),
+		SELECT id, workspace_id, COALESCE(parent_id, 0), COALESCE(phase, ''), COALESCE(target, ''), COALESCE(sequence, 0), command, expanded_command, status, COALESCE(exit_code, 0),
 			COALESCE(stdout, ''), COALESCE(stderr, ''), started_at, COALESCE(ended_at, '')
 		FROM command_logs
 		WHERE workspace_id = ?
@@ -104,7 +110,7 @@ func ListCommandLogs(workspace *Workspace) ([]CommandLog, error) {
 	var logs []CommandLog
 	for rows.Next() {
 		var log CommandLog
-		if err := rows.Scan(&log.ID, &log.WorkspaceID, &log.Command, &log.ExpandedCommand, &log.Status, &log.ExitCode, &log.Stdout, &log.Stderr, &log.StartedAt, &log.EndedAt); err != nil {
+		if err := rows.Scan(&log.ID, &log.WorkspaceID, &log.ParentID, &log.Phase, &log.Target, &log.Sequence, &log.Command, &log.ExpandedCommand, &log.Status, &log.ExitCode, &log.Stdout, &log.Stderr, &log.StartedAt, &log.EndedAt); err != nil {
 			return nil, fmt.Errorf("failed to read command log: %w", err)
 		}
 		logs = append(logs, log)
@@ -130,19 +136,56 @@ func GetCommandLog(workspace *Workspace, rawID string) (*CommandLog, error) {
 
 	var log CommandLog
 	err = db.QueryRow(`
-		SELECT id, workspace_id, command, expanded_command, status, COALESCE(exit_code, 0),
+		SELECT id, workspace_id, COALESCE(parent_id, 0), COALESCE(phase, ''), COALESCE(target, ''), COALESCE(sequence, 0), command, expanded_command, status, COALESCE(exit_code, 0),
 			COALESCE(stdout, ''), COALESCE(stderr, ''), started_at, COALESCE(ended_at, '')
 		FROM command_logs
 		WHERE workspace_id = ? AND id = ?
-	`, workspace.ID, id).Scan(&log.ID, &log.WorkspaceID, &log.Command, &log.ExpandedCommand, &log.Status, &log.ExitCode, &log.Stdout, &log.Stderr, &log.StartedAt, &log.EndedAt)
+	`, workspace.ID, id).Scan(&log.ID, &log.WorkspaceID, &log.ParentID, &log.Phase, &log.Target, &log.Sequence, &log.Command, &log.ExpandedCommand, &log.Status, &log.ExitCode, &log.Stdout, &log.Stderr, &log.StartedAt, &log.EndedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("%w: %d", ErrCommandLogNotFound, id)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to load command log: %w", err)
 	}
+	if children, childErr := ListChildCommandLogs(workspace, log.ID); childErr == nil {
+		log.Children = children
+	}
 
 	return &log, nil
+}
+
+func ListChildCommandLogs(workspace *Workspace, parentID int64) ([]CommandLog, error) {
+	if parentID < 1 {
+		return nil, nil
+	}
+	db, err := openWorkspaceDatabase(workspace)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT id, workspace_id, COALESCE(parent_id, 0), COALESCE(phase, ''), COALESCE(target, ''), COALESCE(sequence, 0), command, expanded_command, status, COALESCE(exit_code, 0),
+			COALESCE(stdout, ''), COALESCE(stderr, ''), started_at, COALESCE(ended_at, '')
+		FROM command_logs
+		WHERE workspace_id = ? AND parent_id = ?
+		ORDER BY sequence ASC, started_at ASC, id ASC
+	`, workspace.ID, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list child command logs: %w", err)
+	}
+	defer rows.Close()
+	var logs []CommandLog
+	for rows.Next() {
+		var log CommandLog
+		if err := rows.Scan(&log.ID, &log.WorkspaceID, &log.ParentID, &log.Phase, &log.Target, &log.Sequence, &log.Command, &log.ExpandedCommand, &log.Status, &log.ExitCode, &log.Stdout, &log.Stderr, &log.StartedAt, &log.EndedAt); err != nil {
+			return nil, fmt.Errorf("failed to read child command log: %w", err)
+		}
+		logs = append(logs, log)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list child command logs: %w", err)
+	}
+	return logs, nil
 }
 
 func commandLogStatus(exitCode int) (string, int) {
@@ -165,6 +208,27 @@ func nullableExitCode(status string, exitCode int) any {
 
 func nullableEndedAt(value string) any {
 	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableParentID(value int64) any {
+	if value < 1 {
+		return nil
+	}
+	return value
+}
+
+func nullableText(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableSequence(value int) any {
+	if value < 1 {
 		return nil
 	}
 	return value

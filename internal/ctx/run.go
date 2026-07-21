@@ -1631,8 +1631,34 @@ func runLogWithInput(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(stdout, "id: %d\ncommand: %s\nexpanded_command: %s\nstatus: %s\nexit_code: %d\nstarted_at: %s\nended_at: %s\n\n", log.ID, log.Command, log.ExpandedCommand, log.Status, log.ExitCode, log.StartedAt, log.EndedAt); err != nil {
+	if _, err := fmt.Fprintf(stdout, "id: %d\ncommand: %s\nexpanded_command: %s\nstatus: %s\nexit_code: %d\nstarted_at: %s\nended_at: %s\n", log.ID, log.Command, log.ExpandedCommand, log.Status, log.ExitCode, log.StartedAt, log.EndedAt); err != nil {
 		return err
+	}
+	if log.ParentID > 0 {
+		if _, err := fmt.Fprintf(stdout, "parent_id: %d\n", log.ParentID); err != nil {
+			return err
+		}
+	}
+	if len(log.Children) > 0 {
+		if _, err := fmt.Fprintln(stdout, "\nsteps:"); err != nil {
+			return err
+		}
+		for _, child := range log.Children {
+			if _, err := fmt.Fprintf(stdout, "  [%s] %d %s", child.Status, child.ID, child.Command); err != nil {
+				return err
+			}
+			if child.Phase != "" {
+				if _, err := fmt.Fprintf(stdout, " (%s)", child.Phase); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintln(stdout); err != nil {
+				return err
+			}
+		}
+	}
+	if len(log.Children) > 0 {
+		_, _ = fmt.Fprintln(stdout)
 	}
 	_, err = io.WriteString(stdout, commandOutputSections(log.Stdout, log.Stderr))
 	return err

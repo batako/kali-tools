@@ -74,11 +74,14 @@ func (realRunner) Run(ctx context.Context, name string, args []string, stdin io.
 }
 
 type App struct {
-	runner commandRunner
-	stdin  io.Reader
-	reader *bufio.Reader
-	stdout io.Writer
-	stderr io.Writer
+	runner        commandRunner
+	stdin         io.Reader
+	reader        *bufio.Reader
+	stdout        io.Writer
+	stderr        io.Writer
+	workspace     *ctx.Workspace
+	parentLogID   int64
+	childSequence int
 }
 
 type options struct {
@@ -121,10 +124,142 @@ func (app *App) run(args []string) error {
 	case "doctor":
 		return app.doctor()
 	case "scan", "extract":
-		return app.processPath(parsed)
+		return app.processLoggedPath(parsed, args)
 	default:
 		return fmt.Errorf("unknown xsteg command: %s", parsed.Command)
 	}
+}
+
+func (app *App) processLoggedPath(parsed options, args []string) error {
+	app.startParentLog(args, parsed)
+	var loggedStdout, loggedStderr bytes.Buffer
+	originalStdout, originalStderr := app.stdout, app.stderr
+	if app.parentLogID > 0 {
+		app.stdout = io.MultiWriter(originalStdout, &loggedStdout)
+		app.stderr = io.MultiWriter(originalStderr, &loggedStderr)
+	}
+	err := app.processPath(parsed)
+	app.stdout, app.stderr = originalStdout, originalStderr
+	app.finishParentLog(err, loggedStdout.String(), loggedStderr.String())
+	return err
+}
+
+func (app *App) startParentLog(args []string, parsed options) {
+	workspace, err := ctx.FindWorkspace(".")
+	if err != nil {
+		return
+	}
+	logID, err := ctx.StartCommandLog(workspace, ctx.CommandLog{
+		Command:         logCommand(args),
+		ExpandedCommand: logCommand(args),
+		Phase:           parsed.Command,
+		Target:          parsed.Path,
+		StartedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return
+	}
+	app.workspace = workspace
+	app.parentLogID = logID
+}
+
+func (app *App) finishParentLog(runErr error, stdout, stderr string) {
+	if app.workspace == nil || app.parentLogID < 1 {
+		return
+	}
+	status, exitCode := "success", 0
+	if runErr != nil {
+		status, exitCode = "failed", 1
+	}
+	_ = ctx.FinishCommandLog(app.workspace, app.parentLogID, ctx.CommandLog{
+		Status:   status,
+		ExitCode: exitCode,
+		Stdout:   stdout,
+		Stderr:   stderr,
+		EndedAt:  time.Now().UTC().Format(time.RFC3339Nano),
+	})
+}
+
+func (app *App) startChildLog(name string, args []string, phase, target string) (int64, time.Time) {
+	if app.workspace == nil || app.parentLogID < 1 {
+		return 0, time.Time{}
+	}
+	app.childSequence++
+	started := time.Now().UTC()
+	logID, err := ctx.StartCommandLog(app.workspace, ctx.CommandLog{
+		ParentID:        app.parentLogID,
+		Phase:           phase,
+		Target:          target,
+		Sequence:        app.childSequence,
+		Command:         logCommand(append([]string{name}, redactLogArgs(args)...)),
+		ExpandedCommand: logCommand(append([]string{name}, redactLogArgs(args)...)),
+		StartedAt:       started.Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return 0, time.Time{}
+	}
+	return logID, started
+}
+
+func (app *App) finishChildLog(logID int64, status string, err error, stdout, stderr string, started time.Time) {
+	if app.workspace == nil || logID < 1 {
+		return
+	}
+	exitCode := 0
+	if err != nil {
+		exitCode = 1
+	}
+	_ = ctx.FinishCommandLog(app.workspace, logID, ctx.CommandLog{
+		Status:   status,
+		ExitCode: exitCode,
+		Stdout:   stdout,
+		Stderr:   stderr,
+		EndedAt:  time.Now().UTC().Format(time.RFC3339Nano),
+	})
+}
+
+func logCommand(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		if arg == "" {
+			quoted[i] = "''"
+		} else if strings.ContainsAny(arg, " \t\n'\"\\$`!*?[]{}()<>|&;") {
+			quoted[i] = strconv.Quote(arg)
+		} else {
+			quoted[i] = arg
+		}
+	}
+	return strings.Join(quoted, " ")
+}
+
+func redactLogArgs(args []string) []string {
+	redacted := append([]string(nil), args...)
+	for i := 0; i+1 < len(redacted); i++ {
+		switch redacted[i] {
+		case "-p", "-P", "--password", "--passphrase":
+			redacted[i+1] = "<redacted>"
+		}
+	}
+	return redacted
+}
+
+func (app *App) runTool(runCtx context.Context, name string, args []string, stdin io.Reader, stdout, stderr io.Writer, phase, target string) error {
+	if stdout == nil {
+		stdout = io.Discard
+	}
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	var loggedStdout, loggedStderr limitedBuffer
+	loggedStdout.limit, loggedStderr.limit = maxCapturedOutput, maxCapturedOutput
+	logID, started := app.startChildLog(name, args, phase, target)
+	runErr := app.runner.Run(runCtx, name, args, stdin, io.MultiWriter(stdout, &loggedStdout), io.MultiWriter(stderr, &loggedStderr))
+	status := "success"
+	if runErr != nil {
+		status = "failed"
+	}
+	app.finishChildLog(logID, status, runErr, loggedStdout.String(), loggedStderr.String(), started)
+	return runErr
 }
 
 func parseOptions(args []string) (options, error) {
@@ -535,7 +670,7 @@ func (app *App) probeSteghideSeed(report *Report) {
 	progress := newSeedProgress(app.stdout)
 	progress.start()
 	args := []string{"--seed", report.SourcePath, "/dev/null", "-f", "-a", "-n"}
-	err := app.runner.Run(ctxRun, "stegseek", args, nil, &progressCapture{capture: &stdout, progress: progress}, &progressCapture{capture: &stderr, progress: progress})
+	err := app.runTool(ctxRun, "stegseek", args, nil, &progressCapture{capture: &stdout, progress: progress}, &progressCapture{capture: &stderr, progress: progress}, "scan", report.SourcePath)
 	combined := strings.TrimSpace(stdout.String() + "\n" + stderr.String())
 	outputPath := filepath.Join(report.OutputPath, "stegseek-seed.txt")
 	_ = os.WriteFile(outputPath, []byte(combined+"\n"), 0600)
@@ -662,7 +797,7 @@ func (app *App) captureTool(report *Report, name string, args []string, filename
 	defer cancel()
 	var stdout, stderr limitedBuffer
 	stdout.limit, stderr.limit = maxCapturedOutput, maxCapturedOutput
-	err := app.runner.Run(ctx, name, args, nil, &stdout, &stderr)
+	err := app.runTool(ctx, name, args, nil, &stdout, &stderr, report.Mode, report.SourcePath)
 	combined := strings.TrimSpace(stdout.String() + "\n" + stderr.String())
 	outputPath := filepath.Join(report.OutputPath, filename)
 	_ = os.WriteFile(outputPath, []byte(combined+"\n"), 0600)
@@ -717,7 +852,7 @@ func (app *App) extractZsteg(report *Report) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		var stderr limitedBuffer
 		stderr.limit = maxCapturedOutput
-		runErr := app.runner.Run(ctx, "zsteg", []string{"-E", selector, report.SourcePath}, nil, &limitWriter{writer: file, remaining: maxExtractedFile}, &stderr)
+		runErr := app.runTool(ctx, "zsteg", []string{"-E", selector, report.SourcePath}, nil, &limitWriter{writer: file, remaining: maxExtractedFile}, &stderr, "extract", report.SourcePath)
 		cancel()
 		_ = file.Close()
 		if runErr != nil {
@@ -770,7 +905,7 @@ func (app *App) extractSteghide(report *Report, parsed options) (bool, error) {
 		var stdout, stderr limitedBuffer
 		stdout.limit, stderr.limit = maxCapturedOutput, maxCapturedOutput
 		args := []string{"--crack", report.SourcePath, wordlist, outputPath, "-f", "-a", "-n"}
-		err := app.runner.Run(ctxRun, "stegseek", args, nil, &stdout, &stderr)
+		err := app.runTool(ctxRun, "stegseek", args, nil, &stdout, &stderr, "extract", report.SourcePath)
 		cancel()
 		combined := strings.TrimSpace(stdout.String() + "\n" + stderr.String())
 		if info, statErr := os.Stat(outputPath); err == nil && statErr == nil && info.Mode().IsRegular() {
@@ -808,7 +943,7 @@ func (app *App) extractSteghideManual(report *Report, outputPath, password strin
 	defer cancel()
 	var output limitedBuffer
 	output.limit = maxCapturedOutput
-	err := app.runner.Run(ctxRun, "steghide", []string{"extract", "-sf", report.SourcePath, "-p", password, "-xf", outputPath, "-f"}, nil, &output, &output)
+	err := app.runTool(ctxRun, "steghide", []string{"extract", "-sf", report.SourcePath, "-p", password, "-xf", outputPath, "-f"}, nil, &output, &output, "extract", report.SourcePath)
 	if info, statErr := os.Stat(outputPath); err == nil && statErr == nil && info.Mode().IsRegular() {
 		report.Findings = append(report.Findings, Finding{Backend: "steghide", Kind: "extracted", Summary: "payload extracted with manually entered passphrase", OriginalName: originalName, Path: outputPath})
 		return true, nil
@@ -821,7 +956,7 @@ func (app *App) inspectSteghideManual(sourcePath, password string) string {
 	defer cancel()
 	var output limitedBuffer
 	output.limit = maxCapturedOutput
-	_ = app.runner.Run(ctxRun, "steghide", []string{"info", "-p", password, sourcePath}, nil, &output, &output)
+	_ = app.runTool(ctxRun, "steghide", []string{"info", "-p", password, sourcePath}, nil, &output, &output, "password", sourcePath)
 	return parseEmbeddedName(output.String())
 }
 
@@ -833,7 +968,7 @@ func (app *App) extractSteghideEmptyPassword(report *Report, outputPath string) 
 	defer cancel()
 	var output limitedBuffer
 	output.limit = maxCapturedOutput
-	err := app.runner.Run(ctxRun, "steghide", []string{"extract", "-sf", report.SourcePath, "-p", "", "-xf", outputPath, "-f"}, nil, &output, &output)
+	err := app.runTool(ctxRun, "steghide", []string{"extract", "-sf", report.SourcePath, "-p", "", "-xf", outputPath, "-f"}, nil, &output, &output, "extract", report.SourcePath)
 	if err == nil {
 		if info, statErr := os.Stat(outputPath); statErr == nil && info.Mode().IsRegular() {
 			report.Findings = append(report.Findings, Finding{Backend: "steghide", Kind: "extracted", Summary: "payload extracted with empty passphrase", Path: outputPath})
@@ -855,7 +990,7 @@ func (app *App) extractStegSnow(report *Report) {
 		return
 	}
 	ctxRun, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	runErr := app.runner.Run(ctxRun, "stegsnow", []string{"-C", report.SourcePath}, nil, &limitWriter{writer: file, remaining: maxExtractedFile}, io.Discard)
+	runErr := app.runTool(ctxRun, "stegsnow", []string{"-C", report.SourcePath}, nil, &limitWriter{writer: file, remaining: maxExtractedFile}, io.Discard, "extract", report.SourcePath)
 	cancel()
 	_ = file.Close()
 	if runErr != nil {

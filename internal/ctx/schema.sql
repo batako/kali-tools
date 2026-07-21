@@ -35,6 +35,10 @@ CREATE TABLE command_logs (
 	ended_at TEXT,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	parent_id INTEGER,
+	phase TEXT,
+	target TEXT,
+	sequence INTEGER,
 	FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 );
 
@@ -162,3 +166,4 @@ CREATE TABLE web_wordlist_runs (
 );
 
 CREATE INDEX idx_web_wordlist_runs_target_url ON web_wordlist_runs(target_id, url, id);
+CREATE INDEX idx_command_logs_parent_id ON command_logs(parent_id);
