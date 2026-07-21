@@ -14,6 +14,7 @@ This monorepo manages self-made CLI tools for Kali Linux. Each tool has an indep
 - `xffuf`: Enumerate HTTP virtual hosts and query parameters with ffuf and ctx integration.
 - `xhydra`: Assist Hydra credential discovery and save successful results to ctx.
 - `xwebshell`: Select and export Kali Linux web shell templates.
+- `xmagic`: Create copies with spoofed magic numbers without modifying source files.
 
 ## Installation
 
@@ -38,6 +39,7 @@ sudo apt install xgobuster
 sudo apt install xffuf
 sudo apt install xhydra
 sudo apt install xwebshell
+sudo apt install xmagic
 ```
 
 ## Usage
@@ -100,6 +102,14 @@ xwebshell ls
 ```
 
 These tools use ctx targets, services, credentials, and other saved context as needed. Run each command with `--help` for its available operations and options.
+
+### xmagic
+
+Create a copy with a spoofed magic number without requiring a ctx workspace:
+
+```sh
+xmagic set gif shell.php
+```
 
 ## Repository Layout
 

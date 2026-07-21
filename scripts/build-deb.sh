@@ -150,6 +150,13 @@ if [ "${PACKAGE_NAME}" = "xhydra" ]; then
   cp "debian/${PACKAGE_NAME}/xhydra.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xhydra"
 fi
 
+if [ "${PACKAGE_NAME}" = "xmagic" ]; then
+  mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
+  mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
+  cp "debian/${PACKAGE_NAME}/xmagic.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xmagic"
+  cp "debian/${PACKAGE_NAME}/xmagic.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xmagic"
+fi
+
 dpkg-deb --root-owner-group --build "${PKG_ROOT}" "${OUTPUT_DEB}"
 
 echo "created ${OUTPUT_DEB}"
