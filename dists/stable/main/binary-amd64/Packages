@@ -1,0 +1,360 @@
+Package: ctx
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Filename: pool/main/c/ctx/ctx_1.0.0_amd64.deb
+Size: 6264490
+MD5sum: dee247d4bb4a05efce4eacdf1d627ee5
+SHA1: 4adbb0fa9fc26e5e36c9916feec3435b487d8d29
+SHA256: 783bcd10fc44fc71dc2ebc94ab28c437c7fb12d8fdcc8124fd6877f678aa0a4a
+Section: utils
+Priority: optional
+Description: Manage workspace context for targets and hosts
+
+Package: ctx
+Version: 1.1.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Filename: pool/main/c/ctx/ctx_1.1.0_amd64.deb
+Size: 6349108
+MD5sum: 79bc801d6a7d485dcd5ae09e4fccd0d8
+SHA1: 9e04a5da679ed5e77ee7f7edc9deb51a6721315e
+SHA256: 7e6039f7f184cb90ce0a6f77608b4021cc751a1bf921d90bc958a0a9768b1f2a
+Section: utils
+Priority: optional
+Description: Manage workspace context for targets and hosts
+
+Package: ctx
+Version: 1.2.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Filename: pool/main/c/ctx/ctx_1.2.0_amd64.deb
+Size: 6427522
+MD5sum: b078ea7302b7982df04341a28cb0ce41
+SHA1: 3bb691e4eb1af46beb9aa8f365ea4d38b28c34df
+SHA256: 2daa9c8ff70146f3f1174170d5e5c4fac03bfd21b39b68a8bf9447d36482b253
+Section: utils
+Priority: optional
+Description: Manage workspace context for targets and hosts
+
+Package: ctx
+Version: 1.3.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Filename: pool/main/c/ctx/ctx_1.3.0_amd64.deb
+Size: 6451614
+MD5sum: da9a132032f4eac0af7fe891e265c076
+SHA1: 9a360c834d36f151ab15fb9a1d349f48bce09288
+SHA256: 0bea52787dcdd554ba61623c7471e207891aa5cdecba503c609ec02a588828c2
+Section: utils
+Priority: optional
+Description: Manage workspace context for targets and hosts
+
+Package: ctx
+Version: 1.4.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Filename: pool/main/c/ctx/ctx_1.4.0_amd64.deb
+Size: 6458258
+MD5sum: 8c2fb010b222de8cd9b52d717e21e516
+SHA1: d7305b401281e7a4196f32aaa546cd88eac23ff8
+SHA256: 9ff634420ab28dee5a3da832b612c9bebe92c3fdc8a62899fb298276c2d7944c
+Section: utils
+Priority: optional
+Description: Manage workspace context for targets and hosts
+
+Package: ctx
+Version: 1.5.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Filename: pool/main/c/ctx/ctx_1.5.0_amd64.deb
+Size: 6945066
+MD5sum: 2f2201ec77b805dee15aba6a69c443ae
+SHA1: 89cb6b92de4b31e6a6e26621983730c19c212507
+SHA256: 4c07e1ddc01dfb704ddafb4c2b0288f85d6de8685082fdd221ac1d10ce3f15fa
+Section: utils
+Priority: optional
+Description: Manage workspace context for targets and hosts
+
+Package: req
+Version: 0.1.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Filename: pool/main/r/req/req_0.1.0_amd64.deb
+Size: 4276764
+MD5sum: ad98206c6d0609a71ab3a34578afb157
+SHA1: 80bbe494f4229af6dfab81ab1ef45c4e3e81fe0d
+SHA256: c903bc8b0508b0458170523ebe49076eed1ffa17a9f7597e7301d1b30dfcf3f3
+Section: utils
+Priority: optional
+Description: Send raw HTTP requests stored in .req files
+
+Package: req
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Filename: pool/main/r/req/req_1.0.0_amd64.deb
+Size: 4281790
+MD5sum: cf74049a8e11902cc938138e06ef5f3c
+SHA1: 6c1e62d10b5ecc52d3f1ceb9afdb5731bcba456b
+SHA256: ad0b7662d356e9b2ebcdd2988e00c80d8d88338f8adc2c20164ef7053eed3a81
+Section: utils
+Priority: optional
+Description: Send raw HTTP requests stored in .req files
+
+Package: xffuf
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), ffuf, seclists
+Filename: pool/main/x/xffuf/xffuf_1.0.0_amd64.deb
+Size: 6062042
+MD5sum: edb2e9197c8524b60eb6f3d3f06af559
+SHA1: b5ea86a0fb5605a7551ab489ae17ffc83a083365
+SHA256: 7d8cf17a1212d80d983508e933d55e75c12aa19cd6ee60fea3a4b5dd2af5e092
+Section: utils
+Priority: optional
+Description: Enumerate HTTP virtual hosts with ffuf and ctx integration
+
+Package: xftp
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx, lftp
+Filename: pool/main/x/xftp/xftp_1.0.0_amd64.deb
+Size: 1863088
+MD5sum: 69ad520b30c424f6f2e846d340cd9ff5
+SHA1: 92233b18f82bd6344cdae7f2082dce2cfef51ddf
+SHA256: 6f93b27e81a2123e75556eb4bc3d2f05cd59acdb17c816733bf4bd949802e4f5
+Section: utils
+Priority: optional
+Description: Connect to ctx targets using stored FTP credentials
+
+Package: xgobuster
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx, gobuster, wordlists
+Filename: pool/main/x/xgobuster/xgobuster_1.0.0_amd64.deb
+Size: 5966828
+MD5sum: 38f3821248de6ced23c85c2ef53cc10c
+SHA1: 56ee135938aa1552e2f9e051ffe5bf9f656d02b6
+SHA256: 647bdccccfaa21a0daf2d7dd782ba7d37ed3b7dee8c0122e5ef1bd528327a1ee
+Section: utils
+Priority: optional
+Description: Run Gobuster against ctx targets and save web discoveries
+
+Package: xgobuster
+Version: 1.1.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), gobuster, wordlists
+Filename: pool/main/x/xgobuster/xgobuster_1.1.0_amd64.deb
+Size: 6029588
+MD5sum: 109f10145436e08ad9f3483c0203f650
+SHA1: 459e8a851066d62f513b9e76f7817033776694e6
+SHA256: c9dde031675cfc6f6e32a6dfedcd89c1364441ee605eb5567310a6c418a9554e
+Section: utils
+Priority: optional
+Description: Run Gobuster against ctx targets and save web discoveries
+
+Package: xgobuster
+Version: 1.2.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), gobuster, wordlists
+Filename: pool/main/x/xgobuster/xgobuster_1.2.0_amd64.deb
+Size: 6029484
+MD5sum: 972b382843d81b01a19c9390109015a5
+SHA1: 30a842320307e73afda1f40918d35d7d327ea90d
+SHA256: b3935bd9193e6223827cc5e44158d797d5b5f01f2048f36fe044061c687d60e5
+Section: utils
+Priority: optional
+Description: Run Gobuster against ctx targets and save web discoveries
+
+Package: xgobuster
+Version: 1.3.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), gobuster, wordlists
+Filename: pool/main/x/xgobuster/xgobuster_1.3.0_amd64.deb
+Size: 6332258
+MD5sum: df546dfd12b0233da09bb611ee8d5bfc
+SHA1: 473c926da837843a75dcadc8b407a69a27705a53
+SHA256: 7a63d945e9b548f6f5ab4f057c15b93b45c0e210e520584d36a746174dd298bd
+Section: utils
+Priority: optional
+Description: Run Gobuster against ctx targets and save web discoveries
+
+Package: xhydra
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), hydra, wordlists
+Filename: pool/main/x/xhydra/xhydra_1.0.0_amd64.deb
+Size: 6656612
+MD5sum: c4b62c7e27ec6d51f532d100c6d5d243
+SHA1: 967770c909311628fccaf99cf4f99235f8d31401
+SHA256: 59fe060bc24c964865e69e71a41a92553f86ca8eb37b0d0a42f88e0c761c1b8b
+Section: net
+Priority: optional
+Description: ctx-aware Hydra wrapper
+ Run Hydra against HTTP, SSH, FTP, and SMB authentication and save credentials to ctx.
+
+Package: xhydra
+Version: 1.1.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), hydra, wordlists
+Filename: pool/main/x/xhydra/xhydra_1.1.0_amd64.deb
+Size: 7174032
+MD5sum: af7dfe047fd4ce80074eb41772522455
+SHA1: e5580663bc25f0978a509d7406282f2eb1fce576
+SHA256: 2ce00a2cdd01b29d934ac7c87cc9112c0a8b24deec874c01e1084f6bc44481bf
+Section: net
+Priority: optional
+Description: ctx-aware Hydra wrapper
+ Run Hydra against HTTP, SSH, FTP, and SMB authentication and save credentials to ctx.
+
+Package: xmagic
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Filename: pool/main/x/xmagic/xmagic_1.0.0_amd64.deb
+Size: 2822634
+MD5sum: e1bef6be8f273af86e8bfea1e5f4c4e6
+SHA1: 38c7fa0fe0efe27f37d93f83ea9cd475ab4151d5
+SHA256: 19b52974f33a38f4783a00d3f90831107da19f53c3b99bd30088b20256c8c319
+Section: utils
+Priority: optional
+Description: Safely spoof file magic numbers without modifying source files
+
+Package: xscp
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), openssh-client, sshpass
+Filename: pool/main/x/xscp/xscp_1.0.0_amd64.deb
+Size: 1867850
+MD5sum: 74d7c5f35d0733dd80f7f25e4f04e579
+SHA1: 40ac6c5f8435ec145a3a0aa8c344a0948181d606
+SHA256: 726fdbbfc81e2e5205f18ba0b09af4da964b479d48597aba0b9823709b6f224c
+Section: utils
+Priority: optional
+Description: Transfer files to and from ctx targets over SSH
+
+Package: xscp
+Version: 1.1.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.4.0), openssh-client, sshpass
+Filename: pool/main/x/xscp/xscp_1.1.0_amd64.deb
+Size: 1878880
+MD5sum: 6fd5051aec6b815839b98167e3923ed1
+SHA1: 05f4559288628f12b0b0bb947be791fc36f02d01
+SHA256: 22d9a3c268cd98283b2ac13394f75b3b9e350eb1dc453cc1b51996ace3931df0
+Section: utils
+Priority: optional
+Description: Transfer files to and from ctx targets over SSH
+
+Package: xsmb
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx, smbclient
+Filename: pool/main/x/xsmb/xsmb_1.0.0_amd64.deb
+Size: 1867000
+MD5sum: 26920231ce0e53d0bdd92d2af2913f5e
+SHA1: 805746f5b931b79d72d91986d78fdb0a1d3a2251
+SHA256: d5b8be3b150cd5edb5427f89942d6e7de5d14924ee047a0547101b37f18c5c3d
+Section: utils
+Priority: optional
+Description: Connect to ctx targets using stored SMB credentials
+
+Package: xssh
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx, openssh-client, sshpass
+Filename: pool/main/x/xssh/xssh_1.0.0_amd64.deb
+Size: 1864124
+MD5sum: 7e99ace9615673f87e20e489704cb4fc
+SHA1: 0cca3eee16e89d680daee9a45c55b96e42de111e
+SHA256: 26ebe80e1c11dfbafe210af347bda9109af2a7555e2443ebd7aa855f1610a2b4
+Section: utils
+Priority: optional
+Description: Connect to ctx targets using stored SSH credentials
+
+Package: xssh
+Version: 1.1.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx, openssh-client, sshpass
+Filename: pool/main/x/xssh/xssh_1.1.0_amd64.deb
+Size: 1868704
+MD5sum: 96c707924489c65d8eb0e84580425113
+SHA1: eaa078968bb4ab6e8adac179ec6e83e3c68227c5
+SHA256: 44a0c4d3a70b4025630a324c5f9d63a9f50dff7c2a04204f5f9b0d23727d6b02
+Section: utils
+Priority: optional
+Description: Connect to ctx targets using stored SSH credentials
+
+Package: xssh
+Version: 1.2.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx, openssh-client, sshpass
+Filename: pool/main/x/xssh/xssh_1.2.0_amd64.deb
+Size: 1878706
+MD5sum: 2e0ddb04f383f9a7706d97b420d3c749
+SHA1: cd727c30688c76dbec9e4ef0096a5026b8211d0b
+SHA256: f1ec574bf0cb964645587c435d9ae938a0e2df9422a99c9e6c0529c23bbea214
+Section: utils
+Priority: optional
+Description: Connect to ctx targets using stored SSH credentials
+
+Package: xsteg
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.5.0), wordlists, file, binwalk, libimage-exiftool-perl, binutils, steghide, stegseek
+Suggests: stegsnow
+Filename: pool/main/x/xsteg/xsteg_1.0.0_amd64.deb
+Size: 7152514
+MD5sum: e7b62bd7e2162517a93894610463d76e
+SHA1: 2db1cc30365b7e04628987ebb0c286c0a90c2b74
+SHA256: 2fe355b671f15005825e89a7839c01162b1bb3257c4d04369af7ff217550b66f
+Section: utils
+Priority: optional
+Description: Detect, crack, and extract data hidden in local files
+ Analyze files with format-appropriate steganography tools, use ctx-ranked
+ password wordlists for steghide payloads, and save reproducible reports.
+
+Package: xwebshell
+Version: 1.0.0
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: webshells, seclists
+Filename: pool/main/x/xwebshell/xwebshell_1.0.0_amd64.deb
+Size: 1718240
+MD5sum: c385def22741e5348813206e4af1934c
+SHA1: 1b856985f08449275635f68ded6e794d9ced29e8
+SHA256: 2eb70dd236e9675a2130b5281fd0f92c5403fc5f680358d9d55c63226c4878bf
+Section: utils
+Priority: optional
+Description: List and prepare Kali web shell templates
+
+Package: xwebshell
+Version: 1.0.1
+Architecture: amd64
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: webshells, seclists
+Filename: pool/main/x/xwebshell/xwebshell_1.0.1_amd64.deb
+Size: 5749514
+MD5sum: 078f1c16c820c78481d25e14abf09705
+SHA1: 73c1dbb6461baaa198ad45d1ac66d00fbdab3568
+SHA256: a79b9d6768a538b7e836f29a671e81b73ea4f8d0620a485313f89b1c1c174eb8
+Section: utils
+Priority: optional
+Description: List and prepare Kali web shell templates
+
