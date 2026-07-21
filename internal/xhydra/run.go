@@ -945,6 +945,9 @@ func buildServiceCredentialArgs(mode, host string, port int, passwordList, passw
 	} else {
 		args = append(args, "-P", passwordList)
 	}
+	if mode == "ssh" {
+		args = append(args, "-t", "4")
+	}
 	args = append(args, "-f", "-s", strconv.Itoa(port), host, module)
 	return args
 }

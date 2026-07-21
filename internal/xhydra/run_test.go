@@ -71,6 +71,20 @@ func TestBuildServiceHydraArgs(t *testing.T) {
 	}
 }
 
+func TestBuildSSHServiceHydraArgsUsesRecommendedTasks(t *testing.T) {
+	args := buildServiceHydraArgs("ssh", "10.0.0.5", 22, "/tmp/passwords.txt", "john")
+	want := []string{"-l", "john", "-P", "/tmp/passwords.txt", "-t", "4", "-f", "-s", "22", "10.0.0.5", "ssh"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+
+	args = buildServiceCredentialArgs("ssh", "10.0.0.5", 22, "", "secret", "/tmp/users.txt", "")
+	want = []string{"-L", "/tmp/users.txt", "-p", "secret", "-t", "4", "-f", "-s", "22", "10.0.0.5", "ssh"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("username search args = %#v, want %#v", args, want)
+	}
+}
+
 func TestFilteredPasswordWordlistSkipsSharedWords(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "passwords.txt")
 	if err := os.WriteFile(path, []byte("secret\npassword\nsecret\n\n"), 0600); err != nil {
