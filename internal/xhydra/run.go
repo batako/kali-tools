@@ -48,7 +48,7 @@ options:
   --host <host>               override the target host for ssh, ftp, or smb
   -p, --port <port>           override the target port for ssh, ftp, or smb
   --service <number>          select a discovered service for ssh, ftp, or smb
-  -t, --tasks <number>        override SSH/FTP parallel tasks (default: 4)
+  -t, --tasks <number>        override SSH/FTP/SMB parallel tasks (default: 4)
   --status                    show password wordlist progress (requires -u)
   --clear-cache               clear scoped password search progress (requires -u)
   -r, --request <file>        use a raw HTTP request template
@@ -146,8 +146,8 @@ func (app *app) run(args []string) error {
 		_, err := fmt.Fprintf(app.stdout, "xhydra %s\n", Version)
 		return err
 	}
-	if options.Tasks > 0 && options.Mode != "ssh" && options.Mode != "ftp" {
-		return errors.New("--tasks is supported for ssh and ftp only")
+	if options.Tasks > 0 && options.Mode != "ssh" && options.Mode != "ftp" && options.Mode != "smb" {
+		return errors.New("--tasks is supported for ssh, ftp, and smb only")
 	}
 	if options.Mode != "http" {
 		if options.Mode == "ssh" || options.Mode == "ftp" || options.Mode == "smb" {
@@ -953,14 +953,27 @@ func buildServiceCredentialArgs(mode, host string, port int, passwordList, passw
 	} else {
 		args = append(args, "-P", passwordList)
 	}
-	if mode == "ssh" || mode == "ftp" {
+	if defaultTasks := defaultServiceTasks(mode); defaultTasks > 0 {
 		if tasks < 1 {
-			tasks = 4
+			tasks = defaultTasks
 		}
 		args = append(args, "-t", strconv.Itoa(tasks))
 	}
 	args = append(args, "-f", "-s", strconv.Itoa(port), host, module)
 	return args
+}
+
+func defaultServiceTasks(mode string) int {
+	switch mode {
+	case "ssh":
+		return 4
+	case "ftp":
+		return 4
+	case "smb":
+		return 4
+	default:
+		return 0
+	}
 }
 
 func commandExitCode(err error) int {

@@ -44,7 +44,7 @@ func TestParseTasksRejectsInvalidValues(t *testing.T) {
 }
 
 func TestTasksAreRestrictedToSupportedExecutionModes(t *testing.T) {
-	for _, args := range [][]string{{"xhydra", "smb", "-u", "john", "-t", "8"}, {"xhydra", "ssh", "-u", "john", "--tasks", "8", "--status"}} {
+	for _, args := range [][]string{{"xhydra", "http", "-u", "john", "-t", "8"}, {"xhydra", "ssh", "-u", "john", "--tasks", "8", "--status"}} {
 		err := newApp(nil, strings.NewReader(""), &strings.Builder{}, &strings.Builder{}).run(args)
 		if err == nil || !strings.Contains(err.Error(), "--tasks") {
 			t.Fatalf("run(%#v) error = %v, want tasks usage error", args, err)
@@ -96,9 +96,23 @@ func TestMatchingServices(t *testing.T) {
 
 func TestBuildServiceHydraArgs(t *testing.T) {
 	args := buildServiceHydraArgs("smb", "10.0.0.5", 1445, "/tmp/passwords.txt", "john", 0)
-	want := []string{"-l", "john", "-P", "/tmp/passwords.txt", "-f", "-s", "1445", "10.0.0.5", "smb2"}
+	want := []string{"-l", "john", "-P", "/tmp/passwords.txt", "-t", "4", "-f", "-s", "1445", "10.0.0.5", "smb2"}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+
+	args = buildServiceHydraArgs("smb", "10.0.0.5", 1445, "/tmp/passwords.txt", "john", 1)
+	want[5] = "1"
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("override args = %#v, want %#v", args, want)
+	}
+}
+
+func TestDefaultServiceTasksAreManagedIndependently(t *testing.T) {
+	for mode, want := range map[string]int{"ssh": 4, "ftp": 4, "smb": 4, "http": 0} {
+		if got := defaultServiceTasks(mode); got != want {
+			t.Errorf("defaultServiceTasks(%q) = %d, want %d", mode, got, want)
+		}
 	}
 }
 
