@@ -68,7 +68,7 @@ _xffuf() {
       _arguments \
         '1:mode:_xffuf_modes' \
         '(-h --help)'{-h,--help}'[show help]' \
-        '(-V --version)'{-V,--version}'[show version]'
+        '(-V --version)'{-V,--version}'[show version]' \
         '--online-help[show the versioned online help URL]'
       ;;
   esac
