@@ -89,7 +89,7 @@ _xhydra() {
       _arguments -s \
         '1:mode:_xhydra_modes' \
         '(-h --help)'{-h,--help}'[show this help]' \
-        '(-V --version)'{-V,--version}'[show version]'
+        '(-V --version)'{-V,--version}'[show version]' \
         '--online-help[show the versioned online help URL]'
       ;;
   esac
