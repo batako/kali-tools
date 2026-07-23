@@ -157,8 +157,8 @@ func TestRunHelpAndVersion(t *testing.T) {
 	}{
 		{[]string{"xssh", "-h"}, "usage: xssh [credential-id|username|key]"},
 		{[]string{"xssh", "--help"}, "Connect to the current ctx target using a stored SSH credential when available."},
-		{[]string{"xssh", "-V"}, "xssh 1.2.0\n"},
-		{[]string{"xssh", "--version"}, "xssh 1.2.0\n"},
+		{[]string{"xssh", "-V"}, "xssh 1.2.1\n"},
+		{[]string{"xssh", "--version"}, "xssh 1.2.1\n"},
 	} {
 		var out, stderr bytes.Buffer
 		err := New(newFakeRunner(), strings.NewReader(""), &out, &stderr).Run(tt.args)
