@@ -1,6 +1,6 @@
 # xdec
 
-`xdec` は、文字列、ファイル、stdin を一つの入力モデルで扱う解析フロントエンドです。引数なしではルートヘルプを表示し、入力がある場合は `decode` サブコマンドを省略できます。
+`xdec` は、文字列、ファイル、stdin を一つの入力モデルで扱うデコード・復元フロントエンドです。引数なしではルートヘルプを表示し、入力がある場合はデコードと復元を自動判定します。
 
 ## 使い方
 
@@ -21,27 +21,27 @@ xdec decode --string 'QXJlYTUx'
 xdec 'QXJlYTUx'
 
 # -f でファイルを渡す
-xdec decode -f hashes.txt
+xdec recover -f hashes.txt
 
 # 実在する通常ファイルは -f を省略できる
-xdec decode ~/.ssh/id_ed25519
 xdec ~/.ssh/id_ed25519
 
 # stdin
-some-command | xdec decode --yes -w wordlist.txt
+some-command | xdec recover --yes -w wordlist.txt
 ```
 
 位置引数の後ろにオプションを置く書き方も利用できます。
 
 ```sh
-xdec decode ~/.ssh/id_ed25519 --refresh --yes -w wordlist.txt
+xdec recover ~/.ssh/id_ed25519 --refresh --yes -w wordlist.txt
 ```
 
 ## サブコマンド
 
 | サブコマンド | 説明 |
 | --- | --- |
-| `decode` | 値のデコードとパスワード復元 |
+| `decode` | 復元を開始せずに値をデコード |
+| `recover` | パスワード・鍵のパスフレーズを復元 |
 | `help [SUBCOMMAND]` | ルートまたは指定したサブコマンドのヘルプを表示 |
 | `version` | バージョンを表示 |
 
@@ -53,9 +53,18 @@ xdec decode ~/.ssh/id_ed25519 --refresh --yes -w wordlist.txt
 | `-V`, `--version` | バージョンを表示 |
 | `--online-help` | バージョン付きオンラインヘルプ URL を表示 |
 
-## decode の引数とオプション
+## decode / recover の引数とオプション
 
 位置引数が実在する通常ファイルならファイルとして読み、それ以外は文字列として扱います。判定が曖昧な場合は、`--file` または `--string` で型を明示できます。位置引数は1個だけ指定でき、型指定フラグとは併用できません。入力指定がなければ stdin を読みます。
+
+| オプション | 説明 |
+| --- | --- |
+| `-f`, `--file FILE` | 入力ファイル。既存ファイルの位置引数でも代用可能 |
+| `--string VALUE` | VALUE を文字列として扱う。位置引数との併用不可 |
+| `--json` | 結果を JSON で出力 |
+| `-h`, `--help` | decode のヘルプを表示 |
+
+`recover` は同じ入力形式に加えて、wordlist、確認、state、credential 保存用のオプションを受け付けます。
 
 | オプション | 説明 |
 | --- | --- |
@@ -70,18 +79,18 @@ xdec decode ~/.ssh/id_ed25519 --refresh --yes -w wordlist.txt
 | `--refresh` | 現在の入力の保存 state を破棄して再解析 |
 | `--dry-run` | 実行計画だけ表示 |
 | `--json` | 結果を JSON で出力 |
-| `-h`, `--help` | decode のヘルプを表示 |
+| `-h`, `--help` | recover のヘルプを表示 |
 
 ## 解析の流れ
 
-Base64 / hex は即時にデコードします。MD5、NTLM、MD4、SHA-1、SHA-256、bcrypt、Argon2 prefix などの hash は分類し、復元が必要な場合に確認を求めます。
+Base64 / hex は即時にデコードします。ルートコマンドは復元対象の hash や暗号化 SSH 鍵を自動的に復元処理へ振り分けます。明示した `decode` は復元を開始せず、復元が必要であることを表示します。明示した `recover` は復元対象だけを処理します。
 
 高コスト解析は、既定では ctx の password wordlist 集合を使います。`-w` を複数指定した場合は、最初の wordlist で解決しなければ次へ自動継続します。確認画面では大量のパスを列挙せず、wordlist 数だけを表示します。
 
 パイプ入力など非対話 stdin では確認に回答できないため、`--yes` を指定してください。
 
 ```sh
-cat md5.txt | xdec decode --yes -w wordlist.txt
+cat md5.txt | xdec recover --yes -w wordlist.txt
 ```
 
 ## SSH 秘密鍵
@@ -96,7 +105,7 @@ xdec: no password required
 暗号化鍵だけを `ssh2john` に変換し、John でパスフレーズを解析します。秘密鍵の内容や復元パスフレーズは xlog に記録しません。
 
 ```sh
-xdec decode --yes -w wordlist.txt -f ~/.ssh/id_rsa
+xdec recover --yes -w wordlist.txt -f ~/.ssh/id_rsa
 ```
 
 ## ユーザ名と credential
@@ -104,7 +113,7 @@ xdec decode --yes -w wordlist.txt -f ~/.ssh/id_rsa
 `admin:HASH` と `admin HASH` の両方からユーザ名を抽出します。
 
 ```sh
-cat command-output.txt | xdec decode --scope ssh --yes -w wordlist.txt
+cat command-output.txt | xdec recover --scope ssh --yes -w wordlist.txt
 ```
 
 出力には scope を含めず、ユーザ名だけを表示します。
@@ -124,7 +133,7 @@ username と scope が確定した復元結果は ctx credential に自動保存
 
 ```sh
 # 保存状態を破棄して、この入力だけ再解析
-xdec decode --refresh --yes -w wordlist.txt -f bcrypt.txt
+xdec recover --refresh --yes -w wordlist.txt -f bcrypt.txt
 ```
 
 state は ctx workspace の `data/xdec/state.json`（workspace 外ではユーザ cache）に 0600 で保存されます。復元済みの平文を含むため、機密情報として扱ってください。

@@ -14,16 +14,23 @@ _xdec_completion() {
     return
   fi
 
-  if [[ "$subcommand" == "decode" ]]; then
-    COMPREPLY=(
-      $(compgen -W "--wordlist --scope --username --save-credential --no-save-credential --yes --refresh --dry-run --json" -- "$cur")
-      $(compgen -f -- "$cur")
-    )
+  if [[ "$subcommand" == "decode" || "$subcommand" == "recover" ]]; then
+    if [[ "$subcommand" == "recover" ]]; then
+      COMPREPLY=(
+        $(compgen -W "--wordlist --scope --username --save-credential --no-save-credential --yes --refresh --dry-run --json" -- "$cur")
+        $(compgen -f -- "$cur")
+      )
+    else
+      COMPREPLY=(
+        $(compgen -W "--json" -- "$cur")
+        $(compgen -f -- "$cur")
+      )
+    fi
     return
   fi
 
   if [[ "$subcommand" == "help" ]]; then
-    COMPREPLY=($(compgen -W "decode help version" -- "$cur"))
+    COMPREPLY=($(compgen -W "decode recover help version" -- "$cur"))
     return
   fi
 
@@ -33,7 +40,7 @@ _xdec_completion() {
   fi
 
   if [[ "$COMP_CWORD" -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "decode help version --online-help" -- "$cur"))
+    COMPREPLY=($(compgen -W "decode recover help version --online-help" -- "$cur"))
     return
   fi
 

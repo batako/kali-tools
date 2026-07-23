@@ -3,7 +3,8 @@
 _xdec_commands() {
   local -a commands
   commands=(
-    'decode:decode values and recover passwords'
+    'decode:decode values and detect recoverable inputs'
+    'recover:recover passwords and key passphrases'
     'help:show help for the root or a subcommand'
     'version:show version'
   )
@@ -29,21 +30,31 @@ _xdec_decode() {
       ;;
   esac
 
+  if [[ "${words[2]}" == "recover" ]]; then
+    _arguments -s \
+      '1:subcommand:(recover)' \
+      '!-f[read FILE as input]:file:_files' \
+      '!--file[read FILE as input]:file:_files' \
+      '!--string[treat VALUE as a string]:value:' \
+      '!-w[use a ctx wordlist or path]:wordlist:_files' \
+      '--wordlist[use a ctx wordlist or path]:wordlist:_files' \
+      '--scope[credential scope]:scope:' \
+      '--username[credential username]:username:' \
+      '--save-credential[save a verified user password to ctx]' \
+      '--no-save-credential[never save credentials]' \
+      '--yes[approve expensive recovery]' \
+      '--refresh[discard saved state for this input and analyze again]' \
+      '--dry-run[show execution plan]' \
+      '--json[emit JSON]' \
+      '2:input:_files'
+    return
+  fi
+
   _arguments -s \
     '1:subcommand:(decode)' \
     '!-f[read FILE as input]:file:_files' \
     '!--file[read FILE as input]:file:_files' \
     '!--string[treat VALUE as a string]:value:' \
-    '!-w[use a ctx wordlist or path]:wordlist:_files' \
-    '!-h' \
-    '--wordlist[use a ctx wordlist or path]:wordlist:_files' \
-    '--scope[credential scope]:scope:' \
-    '--username[credential username]:username:' \
-    '--save-credential[save a verified user password to ctx]' \
-    '--no-save-credential[never save credentials]' \
-    '--yes[approve expensive recovery]' \
-    '--refresh[discard saved state for this input and analyze again]' \
-    '--dry-run[show execution plan]' \
     '--json[emit JSON]' \
     '2:input:_files'
 }
@@ -53,6 +64,7 @@ _xdec_help() {
     local -a targets
     targets=(
       'decode:show decode help'
+      'recover:show recover help'
       'help:show help command help'
       'version:show version command help'
     )
@@ -69,6 +81,9 @@ _xdec() {
 
   case "${words[2]}" in
     decode)
+      _xdec_decode
+      ;;
+    recover)
       _xdec_decode
       ;;
     help)

@@ -25,14 +25,17 @@ import (
 	"req/internal/onlinehelp"
 )
 
-const rootUsageText = `usage: xdec <subcommand> [options]
+const rootUsageText = `usage: xdec [options] [FILE_OR_STRING]
+       xdec <subcommand> [options]
 
 Subcommands:
-  decode              decode values and recover passwords
+  decode              decode values and detect recoverable inputs
+  recover             recover passwords and key passphrases
   help                show help for the root or a subcommand
   version             show version
 
-When input or decode options are provided without a subcommand, decode is implied.
+When an input is provided without a subcommand, xdec detects whether it should
+decode the value or recover a secret and chooses the operation automatically.
 
 Global options:
   -h, --help          show this help
@@ -45,8 +48,9 @@ Show help for the root command or one of its subcommands.
 
 arguments:
   subcommand          optional help target:
-  decode              decode values and recover passwords
+  decode              decode values and detect recoverable inputs
   help                show this help
+  recover             recover passwords and key passphrases
   version             show version help
 
 options:
@@ -62,8 +66,26 @@ options:
 const usageText = `usage: xdec decode [options] [FILE_OR_STRING]
        command | xdec decode [options]
 
-Decode values, identify hashes, and run password recovery through the
-available backend. Expensive recovery always requires confirmation.
+Decode values using deterministic, local transformations. Hashes and
+password-protected keys are reported as recoverable and are not cracked by
+this subcommand.
+
+input:
+  FILE_OR_STRING        existing regular files are read as files;
+                        other values are treated as literal strings
+  stdin                 read when no positional or explicit input is provided
+
+options:
+  -f, --file FILE       read FILE as input (an existing positional FILE is also detected)
+      --string VALUE    treat VALUE as a string (overrides file auto-detection)
+      --json              output structured results
+  -h, --help             show this help`
+
+const recoverUsageText = `usage: xdec recover [options] [FILE_OR_STRING]
+       command | xdec recover [options]
+
+Recover passwords and key passphrases from supported inputs. Recovery may take
+a long time and always requires confirmation unless --yes is provided.
 
 input:
   FILE_OR_STRING        existing regular files are read as files;
@@ -76,7 +98,7 @@ options:
   -w, --wordlist SPEC   ctx wordlist id/path; default is ctx password recommendation
       --scope SCOPE     credential scope when saving a recovered password
       --username USER   username when the input does not contain one
-      --save-credential save a verified user password to ctx credentials
+      --save-credential save a verified user password to ctx
       --no-save-credential never save credentials
       --yes              explicitly approve expensive recovery (also for pipes)
       --refresh          discard this input's saved state and analyze again
@@ -98,6 +120,7 @@ func (s *stringList) Set(v string) error {
 }
 
 type options struct {
+	operation        string
 	file             string
 	stringInput      string
 	wordlists        stringList
@@ -187,11 +210,14 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		case len(commandArgs) == 2 && commandArgs[1] == "decode":
 			_, err := fmt.Fprintln(stdout, usageText)
 			return err
+		case len(commandArgs) == 2 && commandArgs[1] == "recover":
+			_, err := fmt.Fprintln(stdout, recoverUsageText)
+			return err
 		case len(commandArgs) == 2 && commandArgs[1] == "version":
 			_, err := fmt.Fprintln(stdout, versionUsageText)
 			return err
 		default:
-			return errors.New("usage: xdec help [decode|help|version]")
+			return errors.New("usage: xdec help [decode|recover|help|version]")
 		}
 	case "-V", "--version":
 		if len(commandArgs) != 1 {
@@ -215,47 +241,56 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		}
 		return onlinehelp.Print(stdout, "xdec", Version)
 	case "decode":
-		return runDecode(append([]string{"xdec"}, commandArgs[1:]...), stdin, stdout, stderr)
+		return runDecode(append([]string{"xdec"}, commandArgs[1:]...), "decode", stdin, stdout, stderr)
+	case "recover":
+		return runDecode(append([]string{"xdec"}, commandArgs[1:]...), "recover", stdin, stdout, stderr)
 	default:
-		return runDecode(append([]string{"xdec"}, commandArgs...), stdin, stdout, stderr)
+		return runDecode(append([]string{"xdec"}, commandArgs...), "auto", stdin, stdout, stderr)
 	}
 }
 
-func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func runDecode(args []string, operation string, stdin io.Reader, stdout, stderr io.Writer) error {
+	usage := usageText
+	if operation == "recover" {
+		usage = recoverUsageText
+	}
 	parsedArgs := reorderFlags(args[1:])
 	if len(parsedArgs) == 0 {
-		_, err := fmt.Fprintln(stdout, usageText)
+		_, err := fmt.Fprintln(stdout, usage)
 		return err
 	}
 	for _, arg := range parsedArgs {
 		switch arg {
 		case "-h", "--help":
-			_, err := fmt.Fprintln(stdout, usageText)
+			_, err := fmt.Fprintln(stdout, usage)
 			return err
 		case "-V", "--version":
-			return errors.New("xdec decode: --version is a root option; use xdec --version")
+			return fmt.Errorf("xdec %s: --version is a root option; use xdec --version", operation)
 		case "--online-help":
-			return errors.New("xdec decode: --online-help is a root option; use xdec --online-help")
+			return fmt.Errorf("xdec %s: --online-help is a root option; use xdec --online-help", operation)
 		}
 	}
 
 	var opts options
+	opts.operation = operation
 	fs := flag.NewFlagSet("xdec", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { _, _ = fmt.Fprintln(stderr, usageText) }
+	fs.Usage = func() { _, _ = fmt.Fprintln(stderr, usage) }
 	fs.StringVar(&opts.file, "f", "", "input file")
 	fs.StringVar(&opts.file, "file", "", "input file")
 	fs.StringVar(&opts.stringInput, "string", "", "input string")
-	fs.Var(&opts.wordlists, "w", "wordlist")
-	fs.Var(&opts.wordlists, "wordlist", "wordlist")
-	fs.StringVar(&opts.scope, "scope", "", "credential scope")
-	fs.StringVar(&opts.username, "username", "", "credential username")
-	fs.BoolVar(&opts.saveCredential, "save-credential", false, "save recovered credential")
-	fs.BoolVar(&opts.noSaveCredential, "no-save-credential", false, "do not save credentials")
-	fs.BoolVar(&opts.yes, "yes", false, "approve expensive recovery")
-	fs.BoolVar(&opts.refresh, "refresh", false, "discard saved state for this input")
-	fs.BoolVar(&opts.dryRun, "dry-run", false, "show plan only")
 	fs.BoolVar(&opts.json, "json", false, "JSON output")
+	if operation != "decode" {
+		fs.Var(&opts.wordlists, "w", "wordlist")
+		fs.Var(&opts.wordlists, "wordlist", "wordlist")
+		fs.StringVar(&opts.scope, "scope", "", "credential scope")
+		fs.StringVar(&opts.username, "username", "", "credential username")
+		fs.BoolVar(&opts.saveCredential, "save-credential", false, "save recovered credential")
+		fs.BoolVar(&opts.noSaveCredential, "no-save-credential", false, "do not save credentials")
+		fs.BoolVar(&opts.yes, "yes", false, "approve expensive recovery")
+		fs.BoolVar(&opts.refresh, "refresh", false, "discard saved state for this input")
+		fs.BoolVar(&opts.dryRun, "dry-run", false, "show plan only")
+	}
 	if err := fs.Parse(parsedArgs); err != nil {
 		return err
 	}
@@ -318,6 +353,14 @@ func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	var expensive []candidate
 	for _, c := range candidates {
 		classes := classify(c.Value)
+		if opts.operation == "recover" {
+			if len(classes) == 0 {
+				results = append(results, result{Candidate: c, Status: "not-recoverable"})
+				continue
+			}
+			expensive = append(expensive, c)
+			continue
+		}
 		if len(classes) == 0 {
 			if out, kind, ok := decodeInstant(c.Value); ok {
 				results = append(results, result{Candidate: c, Kind: kind, Method: "builtin", Value: out, Status: "decoded"})
@@ -328,6 +371,10 @@ func runDecode(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		}
 		if out, kind, ok := decodeInstant(c.Value); ok {
 			results = append(results, result{Candidate: c, Kind: kind, Method: "builtin", Value: out, Status: "decoded"})
+			continue
+		}
+		if opts.operation == "decode" && len(classes) > 0 {
+			results = append(results, result{Candidate: c, Kind: firstKind(c.Value), Status: "recover-required"})
 			continue
 		}
 		expensive = append(expensive, c)

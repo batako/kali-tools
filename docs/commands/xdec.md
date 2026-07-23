@@ -1,6 +1,6 @@
 # xdec
 
-`xdec` is a unified analysis frontend for literal values, files, and stdin. With no arguments it prints root help; when input is present, the `decode` subcommand may be omitted.
+`xdec` is a unified decoding and recovery frontend for literal values, files, and stdin. With no arguments it prints root help; when input is present, xdec automatically chooses decoding or recovery.
 
 ## Usage
 
@@ -21,27 +21,28 @@ xdec decode --string 'QXJlYTUx'
 xdec 'QXJlYTUx'
 
 # Read a file explicitly
-xdec decode -f hashes.txt
+xdec recover -f hashes.txt
 
 # An existing regular file can be passed without -f
-xdec decode ~/.ssh/id_ed25519
+xdec ~/.ssh/id_ed25519
 xdec ~/.ssh/id_ed25519
 
 # Read from stdin
-some-command | xdec decode --yes -w wordlist.txt
+some-command | xdec recover --yes -w wordlist.txt
 ```
 
 Options may also appear after the positional input:
 
 ```sh
-xdec decode ~/.ssh/id_ed25519 --refresh --yes -w wordlist.txt
+xdec recover ~/.ssh/id_ed25519 --refresh --yes -w wordlist.txt
 ```
 
 ## Subcommands
 
 | Subcommand | Description |
 | --- | --- |
-| `decode` | Decode values and recover passwords |
+| `decode` | Decode values and detect recoverable inputs |
+| `recover` | Recover passwords and key passphrases |
 | `help [SUBCOMMAND]` | Show root help or help for the selected subcommand |
 | `version` | Show version |
 
@@ -61,6 +62,17 @@ An existing regular-file positional input is read as a file; any other positiona
 | --- | --- |
 | `-f`, `--file FILE` | Read FILE as input; an existing positional file can also be used |
 | `--string VALUE` | Treat VALUE as a string; cannot be combined with positional input |
+| `--json` | Emit JSON results |
+| `-h`, `--help` | Show decode help |
+
+## Recover arguments and options
+
+`recover` accepts the same input forms as `decode` and adds the options used for wordlists, confirmation, state, and credential saving.
+
+| Option | Description |
+| --- | --- |
+| `-f`, `--file FILE` | Read FILE as input; an existing positional file can also be used |
+| `--string VALUE` | Treat VALUE as a string; cannot be combined with positional input |
 | `-w`, `--wordlist SPEC` | ctx wordlist ID or path; may be repeated |
 | `--scope SCOPE` | Scope used when saving a credential |
 | `--username USER` | Username when the input does not contain one |
@@ -70,18 +82,18 @@ An existing regular-file positional input is read as a file; any other positiona
 | `--refresh` | Discard saved state for the current input and analyze it again |
 | `--dry-run` | Show the execution plan only |
 | `--json` | Emit JSON results |
-| `-h`, `--help` | Show decode help |
+| `-h`, `--help` | Show recover help |
 
 ## Analysis flow
 
-Base64 and hex values are decoded immediately. MD5, NTLM, MD4, SHA-1, SHA-256, bcrypt, and Argon2-prefixed values are classified and require confirmation when password recovery is needed.
+Base64 and hex values are decoded immediately. The root command automatically routes recoverable hashes and encrypted SSH keys to recovery. The explicit `decode` subcommand never starts password recovery; it reports that recovery is required. The explicit `recover` subcommand only processes recoverable inputs.
 
 Without `-w`, xdec uses the ctx password-wordlist set. Multiple wordlists are tried sequentially, continuing automatically when an earlier list does not recover the value. The confirmation prompt summarizes the number of lists instead of printing every path.
 
 For piped or otherwise non-interactive input, confirmation cannot be answered through stdin. Use `--yes`:
 
 ```sh
-cat md5.txt | xdec decode --yes -w wordlist.txt
+cat md5.txt | xdec recover --yes -w wordlist.txt
 ```
 
 ## SSH private keys
@@ -96,7 +108,7 @@ xdec: no password required
 Only encrypted keys are converted with `ssh2john` and passed to John for passphrase recovery:
 
 ```sh
-xdec decode --yes -w wordlist.txt -f ~/.ssh/id_rsa
+xdec recover --yes -w wordlist.txt -f ~/.ssh/id_rsa
 ```
 
 Private-key contents and recovered passphrases are not written to xlog.
@@ -106,7 +118,7 @@ Private-key contents and recovered passphrases are not written to xlog.
 xdec extracts usernames from both `admin:HASH` and `admin HASH` formats.
 
 ```sh
-cat command-output.txt | xdec decode --scope ssh --yes -w wordlist.txt
+cat command-output.txt | xdec recover --scope ssh --yes -w wordlist.txt
 ```
 
 Text output includes the username but not the scope:
@@ -127,7 +139,7 @@ When the same input is run again, completed wordlists are skipped and cached rec
 To discard the saved state for only the current input:
 
 ```sh
-xdec decode --refresh --yes -w wordlist.txt -f bcrypt.txt
+xdec recover --refresh --yes -w wordlist.txt -f bcrypt.txt
 ```
 
 State is stored at `data/xdec/state.json` in the ctx workspace, or in the user cache outside a workspace, with mode 0600. It contains recovered plaintext and must be treated as sensitive.

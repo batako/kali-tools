@@ -152,7 +152,7 @@ func TestRootAndDecodeHelp(t *testing.T) {
 		want  string
 		avoid string
 	}{
-		{[]string{"xdec"}, "usage: xdec <subcommand>", "usage: xdec decode"},
+		{[]string{"xdec"}, "usage: xdec [options] [FILE_OR_STRING]", "usage: xdec decode"},
 		{[]string{"xdec", "decode"}, "usage: xdec decode", "usage: xdec <subcommand>"},
 		{[]string{"xdec", "decode", "--help"}, "usage: xdec decode", ""},
 	} {
@@ -169,6 +169,39 @@ func TestRootAndDecodeHelp(t *testing.T) {
 	}
 	if err := Run([]string{"xdec", "decode", "--version"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
 		t.Fatal("decode --version should be rejected")
+	}
+}
+
+func TestDecodeAndRecoverModesStaySeparate(t *testing.T) {
+	const hash = "5f4dcc3b5aa765d61d8327deb882cf99"
+
+	var decoded bytes.Buffer
+	if err := Run([]string{"xdec", "decode", hash}, strings.NewReader(""), &decoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.String(); !strings.Contains(got, "recover-required") {
+		t.Fatalf("decode output = %q, want recover-required", got)
+	}
+	if strings.Contains(decoded.String(), "password recovery may take a long time") {
+		t.Fatalf("decode unexpectedly started recovery: %q", decoded.String())
+	}
+
+	var recovered bytes.Buffer
+	if err := Run([]string{"xdec", "recover", "cGFzc3dvcmQ="}, strings.NewReader(""), &recovered, &recovered); err != nil {
+		t.Fatal(err)
+	}
+	if got := recovered.String(); !strings.Contains(got, "not-recoverable") {
+		t.Fatalf("recover output = %q, want not-recoverable", got)
+	}
+}
+
+func TestRecoverHelp(t *testing.T) {
+	var out bytes.Buffer
+	if err := Run([]string{"xdec", "recover", "--help"}, strings.NewReader(""), &out, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "usage: xdec recover") || !strings.Contains(out.String(), "passwords and key passphrases") {
+		t.Fatalf("recover help = %q", out.String())
 	}
 }
 
