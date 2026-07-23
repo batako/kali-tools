@@ -48,6 +48,10 @@ _xdec_completion() {
   fi
 
   if [[ "$COMP_CWORD" -eq 1 ]]; then
+    if [[ "$cur" == */* ]]; then
+      COMPREPLY=($(compgen -f -- "$cur"))
+      return
+    fi
     COMPREPLY=($(compgen -W "decode recover rot help version --online-help" -- "$cur"))
     return
   fi

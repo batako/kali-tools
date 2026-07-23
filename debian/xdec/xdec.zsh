@@ -94,6 +94,10 @@ _xdec_rot() {
 
 _xdec() {
   if (( CURRENT == 2 )); then
+    if [[ "${words[CURRENT]}" == */* ]]; then
+      _files
+      return
+    fi
     _xdec_commands
     _xdec_global_options
     return
