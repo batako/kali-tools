@@ -205,6 +205,49 @@ func TestRecoverHelp(t *testing.T) {
 	}
 }
 
+func TestRotShifts(t *testing.T) {
+	var out bytes.Buffer
+	if err := Run([]string{"xdec", "rot", "--shift", "13", "Hello"}, strings.NewReader(""), &out, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := out.String(), "rot 13: Uryyb\n"; got != want {
+		t.Fatalf("rot output = %q, want %q", got, want)
+	}
+
+	out.Reset()
+	if err := Run([]string{"xdec", "rot", "--shift", "0-1", "A"}, strings.NewReader(""), &out, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := out.String(), "rot 0: A\nrot 1: B\n"; got != want {
+		t.Fatalf("rot range output = %q, want %q", got, want)
+	}
+
+	path := filepath.Join(t.TempDir(), "rot.txt")
+	if err := os.WriteFile(path, []byte("MAF{lehtwsl}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var positional, explicit bytes.Buffer
+	if err := Run([]string{"xdec", "rot", "--shift", "7", path}, strings.NewReader(""), &positional, &positional); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run([]string{"xdec", "rot", "--shift", "7", "--file", path}, strings.NewReader(""), &explicit, &explicit); err != nil {
+		t.Fatal(err)
+	}
+	if positional.String() != explicit.String() {
+		t.Fatalf("positional output = %q, explicit output = %q", positional.String(), explicit.String())
+	}
+}
+
+func TestRotHelp(t *testing.T) {
+	var out bytes.Buffer
+	if err := Run([]string{"xdec", "help", "rot"}, strings.NewReader(""), &out, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "usage: xdec rot") || !strings.Contains(out.String(), "Caesar/ROT") || !strings.Contains(out.String(), "--file FILE") || !strings.Contains(out.String(), "--string VALUE") || strings.Contains(out.String(), "--json") {
+		t.Fatalf("rot help = %q", out.String())
+	}
+}
+
 func TestHelpAndVersionSubcommandsMatchFlags(t *testing.T) {
 	run := func(args ...string) string {
 		t.Helper()

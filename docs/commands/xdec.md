@@ -43,6 +43,7 @@ xdec recover ~/.ssh/id_ed25519 --refresh --yes -w wordlist.txt
 | --- | --- |
 | `decode` | Decode values and detect recoverable inputs |
 | `recover` | Recover passwords and key passphrases |
+| `rot` | Apply Caesar/ROT shifts |
 | `help [SUBCOMMAND]` | Show root help or help for the selected subcommand |
 | `version` | Show version |
 
@@ -83,6 +84,25 @@ An existing regular-file positional input is read as a file; any other positiona
 | `--dry-run` | Show the execution plan only |
 | `--json` | Emit JSON results |
 | `-h`, `--help` | Show recover help |
+
+## ROT arguments and options
+
+`rot` is explicit because the algorithm cannot be reliably inferred from an
+arbitrary string. With no shift, xdec prints Caesar shifts 0 through 25.
+Values above 25 use printable ASCII (`!` through `~`).
+
+```sh
+xdec rot "MAF{...}"
+xdec rot --shift 13 "uryyb"
+xdec rot --shift 0-93 input.txt
+```
+
+| Option | Description |
+| --- | --- |
+| `-n`, `--shift N` | Apply one shift or a range such as `0-25` or `0-93` |
+| `-f`, `--file FILE` | Read FILE as input |
+| `--string VALUE` | Treat VALUE as a string |
+| `-h`, `--help` | Show rot help |
 
 ## Analysis flow
 

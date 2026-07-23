@@ -29,8 +29,16 @@ _xdec_completion() {
     return
   fi
 
+  if [[ "$subcommand" == "rot" ]]; then
+    COMPREPLY=(
+      $(compgen -W "--shift" -- "$cur")
+      $(compgen -f -- "$cur")
+    )
+    return
+  fi
+
   if [[ "$subcommand" == "help" ]]; then
-    COMPREPLY=($(compgen -W "decode recover help version" -- "$cur"))
+    COMPREPLY=($(compgen -W "decode recover rot help version" -- "$cur"))
     return
   fi
 
@@ -40,7 +48,7 @@ _xdec_completion() {
   fi
 
   if [[ "$COMP_CWORD" -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "decode recover help version --online-help" -- "$cur"))
+    COMPREPLY=($(compgen -W "decode recover rot help version --online-help" -- "$cur"))
     return
   fi
 

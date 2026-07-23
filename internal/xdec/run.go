@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -31,6 +32,7 @@ const rootUsageText = `usage: xdec [options] [FILE_OR_STRING]
 Subcommands:
   decode              decode values and detect recoverable inputs
   recover             recover passwords and key passphrases
+  rot                 apply Caesar/ROT shifts
   help                show help for the root or a subcommand
   version             show version
 
@@ -51,6 +53,7 @@ arguments:
   decode              decode values and detect recoverable inputs
   help                show this help
   recover             recover passwords and key passphrases
+  rot                 apply Caesar/ROT shifts
   version             show version help
 
 options:
@@ -105,6 +108,23 @@ options:
       --dry-run          show the plan without running recovery
       --json              output structured results
   -h, --help             show this help`
+
+const rotUsageText = `usage: xdec rot [options] [FILE_OR_STRING]
+       command | xdec rot [options]
+
+Apply Caesar/ROT shifts. With no shift, all Caesar shifts from 0 through 25
+are printed. Shifts above 25 use printable ASCII characters (! through ~).
+
+input:
+  FILE_OR_STRING        existing regular files are read as files;
+                        other values are treated as literal strings
+  stdin                 read when no positional or explicit input is provided
+
+options:
+  -n, --shift N         apply one shift or a range such as 0-25 or 0-93
+  -f, --file FILE       read FILE as input
+      --string VALUE    treat VALUE as a string
+  -h, --help            show this help`
 
 var Version = "1.0.0"
 
@@ -213,11 +233,14 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		case len(commandArgs) == 2 && commandArgs[1] == "recover":
 			_, err := fmt.Fprintln(stdout, recoverUsageText)
 			return err
+		case len(commandArgs) == 2 && commandArgs[1] == "rot":
+			_, err := fmt.Fprintln(stdout, rotUsageText)
+			return err
 		case len(commandArgs) == 2 && commandArgs[1] == "version":
 			_, err := fmt.Fprintln(stdout, versionUsageText)
 			return err
 		default:
-			return errors.New("usage: xdec help [decode|recover|help|version]")
+			return errors.New("usage: xdec help [decode|recover|rot|help|version]")
 		}
 	case "-V", "--version":
 		if len(commandArgs) != 1 {
@@ -244,9 +267,188 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return runDecode(append([]string{"xdec"}, commandArgs[1:]...), "decode", stdin, stdout, stderr)
 	case "recover":
 		return runDecode(append([]string{"xdec"}, commandArgs[1:]...), "recover", stdin, stdout, stderr)
+	case "rot":
+		return runRot(commandArgs[1:], stdin, stdout, stderr)
 	default:
 		return runDecode(append([]string{"xdec"}, commandArgs...), "auto", stdin, stdout, stderr)
 	}
+}
+
+type rotResult struct {
+	Shift int    `json:"shift"`
+	Value string `json:"value"`
+}
+
+func runRot(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	parsedArgs := reorderRotFlags(args)
+	if len(parsedArgs) == 0 {
+		_, err := fmt.Fprintln(stdout, rotUsageText)
+		return err
+	}
+	for _, arg := range parsedArgs {
+		switch arg {
+		case "-h", "--help":
+			_, err := fmt.Fprintln(stdout, rotUsageText)
+			return err
+		case "-V", "--version", "--online-help":
+			return errors.New("xdec rot: use xdec version or xdec --online-help")
+		}
+	}
+
+	var shiftSpec, file, stringInput string
+	fs := flag.NewFlagSet("xdec rot", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() { _, _ = fmt.Fprintln(stderr, rotUsageText) }
+	fs.StringVar(&shiftSpec, "n", "", "shift or shift range")
+	fs.StringVar(&shiftSpec, "shift", "", "shift or shift range")
+	fs.StringVar(&file, "f", "", "input file")
+	fs.StringVar(&file, "file", "", "input file")
+	fs.StringVar(&stringInput, "string", "", "input string")
+	if err := fs.Parse(parsedArgs); err != nil {
+		return err
+	}
+	if file != "" && stringInput != "" {
+		return errors.New("xdec rot: --file and --string cannot be combined")
+	}
+	if file != "" && len(fs.Args()) > 0 {
+		return errors.New("xdec rot: --file cannot be combined with a positional input")
+	}
+	if stringInput != "" && len(fs.Args()) > 0 {
+		return errors.New("xdec rot: --string cannot be combined with a positional input")
+	}
+	if len(fs.Args()) > 1 {
+		return errors.New("xdec rot: only one positional input is allowed")
+	}
+	data, err := readPlainInput(file, stringInput, fs.Args(), stdin)
+	if err != nil {
+		return err
+	}
+	// Match the existing shell helper: command substitution removes trailing
+	// newlines while preserving line breaks inside the input.
+	data = bytes.TrimRight(data, "\r\n")
+	if len(data) == 0 {
+		return errors.New("xdec rot: empty input")
+	}
+	start, end, printableMode, err := parseRotRange(shiftSpec)
+	if err != nil {
+		return err
+	}
+	results := make([]rotResult, 0, end-start+1)
+	for shift := start; shift <= end; shift++ {
+		results = append(results, rotResult{Shift: shift, Value: applyRot(data, shift, printableMode)})
+	}
+	for _, result := range results {
+		fmt.Fprintf(stdout, "rot %d: %s\n", result.Shift, result.Value)
+	}
+	return nil
+}
+
+func reorderRotFlags(args []string) []string {
+	var flags, values []string
+	valueFlags := map[string]bool{"-n": true, "--shift": true, "-f": true, "--file": true, "--string": true}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		name := arg
+		if separator := strings.IndexByte(arg, '='); separator >= 0 {
+			name = arg[:separator]
+		}
+		if valueFlags[name] {
+			flags = append(flags, arg)
+			if !strings.Contains(arg, "=") && i+1 < len(args) {
+				flags = append(flags, args[i+1])
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			flags = append(flags, arg)
+			continue
+		}
+		values = append(values, arg)
+	}
+	return append(flags, values...)
+}
+
+func readPlainInput(file, stringInput string, args []string, stdin io.Reader) ([]byte, error) {
+	if file != "" {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("xdec rot: read %s: %w", file, err)
+		}
+		return b, nil
+	}
+	if stringInput != "" {
+		return []byte(stringInput), nil
+	}
+	if len(args) == 1 {
+		if info, err := os.Stat(args[0]); err == nil && info.Mode().IsRegular() {
+			b, readErr := os.ReadFile(args[0])
+			if readErr != nil {
+				return nil, fmt.Errorf("xdec rot: read %s: %w", args[0], readErr)
+			}
+			return b, nil
+		}
+		return []byte(args[0]), nil
+	}
+	b, err := io.ReadAll(stdin)
+	if err != nil {
+		return nil, fmt.Errorf("xdec rot: read stdin: %w", err)
+	}
+	if len(bytes.TrimSpace(b)) == 0 {
+		return nil, errors.New("xdec rot: no input")
+	}
+	return b, nil
+}
+
+func parseRotRange(spec string) (start, end int, printableMode bool, err error) {
+	if spec == "" {
+		return 0, 25, false, nil
+	}
+	parts := strings.Split(spec, "-")
+	if len(parts) > 2 || parts[0] == "" {
+		return 0, 0, false, errors.New("xdec rot: --shift needs N or START-END")
+	}
+	start, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false, errors.New("xdec rot: --shift needs numeric values")
+	}
+	end = start
+	if len(parts) == 2 {
+		end, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, 0, false, errors.New("xdec rot: --shift needs numeric values")
+		}
+	}
+	printableMode = start > 25 || end > 25
+	max := 25
+	if printableMode {
+		max = 93
+	}
+	if start < 0 || end < start || end > max {
+		return 0, 0, false, fmt.Errorf("xdec rot: shift must be between 0 and %d", max)
+	}
+	return start, end, printableMode, nil
+}
+
+func applyRot(input []byte, shift int, printableMode bool) string {
+	out := append([]byte(nil), input...)
+	if printableMode {
+		for i, c := range out {
+			if c >= '!' && c <= '~' {
+				out[i] = byte((int(c-'!')+shift)%94) + '!'
+			}
+		}
+		return string(out)
+	}
+	for i, c := range out {
+		switch {
+		case c >= 'a' && c <= 'z':
+			out[i] = byte((int(c-'a')+shift)%26) + 'a'
+		case c >= 'A' && c <= 'Z':
+			out[i] = byte((int(c-'A')+shift)%26) + 'A'
+		}
+	}
+	return string(out)
 }
 
 func runDecode(args []string, operation string, stdin io.Reader, stdout, stderr io.Writer) error {

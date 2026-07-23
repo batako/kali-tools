@@ -5,6 +5,7 @@ _xdec_commands() {
   commands=(
     'decode:decode values and detect recoverable inputs'
     'recover:recover passwords and key passphrases'
+    'rot:apply Caesar/ROT shifts'
     'help:show help for the root or a subcommand'
     'version:show version'
   )
@@ -55,7 +56,6 @@ _xdec_decode() {
     '!-f[read FILE as input]:file:_files' \
     '!--file[read FILE as input]:file:_files' \
     '!--string[treat VALUE as a string]:value:' \
-    '--json[emit JSON]' \
     '2:input:_files'
 }
 
@@ -65,11 +65,31 @@ _xdec_help() {
     targets=(
       'decode:show decode help'
       'recover:show recover help'
+      'rot:show rot help'
       'help:show help command help'
       'version:show version command help'
     )
     _describe -V 'subcommand' targets
   fi
+}
+
+_xdec_rot() {
+  case "${words[CURRENT-1]}" in
+    -f|--file)
+      _files
+      return
+      ;;
+    --string|--shift|-n)
+      return
+      ;;
+  esac
+
+  _arguments -s \
+    '!-f[read FILE as input]:file:_files' \
+    '!--file[read FILE as input]:file:_files' \
+    '!--string[treat VALUE as a string]:value:' \
+    '--shift[apply one shift or a range]:shift:' \
+    '2:input:_files'
 }
 
 _xdec() {
@@ -85,6 +105,9 @@ _xdec() {
       ;;
     recover)
       _xdec_decode
+      ;;
+    rot)
+      _xdec_rot
       ;;
     help)
       _xdec_help

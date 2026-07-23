@@ -42,6 +42,7 @@ xdec recover ~/.ssh/id_ed25519 --refresh --yes -w wordlist.txt
 | --- | --- |
 | `decode` | 復元を開始せずに値をデコード |
 | `recover` | パスワード・鍵のパスフレーズを復元 |
+| `rot` | Caesar / ROT シフトを適用 |
 | `help [SUBCOMMAND]` | ルートまたは指定したサブコマンドのヘルプを表示 |
 | `version` | バージョンを表示 |
 
@@ -80,6 +81,26 @@ xdec recover ~/.ssh/id_ed25519 --refresh --yes -w wordlist.txt
 | `--dry-run` | 実行計画だけ表示 |
 | `--json` | 結果を JSON で出力 |
 | `-h`, `--help` | recover のヘルプを表示 |
+
+## rot の引数とオプション
+
+任意の文字列から ROT / Caesar を自動判定することはできないため、
+`rot` は明示的に指定します。シフトを省略すると、0〜25 の Caesar
+シフトをすべて表示します。25を超える場合は印字可能ASCII（`!`〜`~`）
+を対象にします。
+
+```sh
+xdec rot "MAF{...}"
+xdec rot --shift 13 "uryyb"
+xdec rot --shift 0-93 input.txt
+```
+
+| オプション | 説明 |
+| --- | --- |
+| `-n`, `--shift N` | 1つのシフト、または `0-25` / `0-93` の範囲を指定 |
+| `-f`, `--file FILE` | FILE を入力として読む |
+| `--string VALUE` | VALUE を文字列として扱う |
+| `-h`, `--help` | rot のヘルプを表示 |
 
 ## 解析の流れ
 
