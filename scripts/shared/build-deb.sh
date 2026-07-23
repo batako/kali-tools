@@ -139,6 +139,13 @@ if [ "${PACKAGE_NAME}" = "xssh" ]; then
   cp "debian/${PACKAGE_NAME}/xssh.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xssh"
 fi
 
+if [ "${PACKAGE_NAME}" = "xdec" ]; then
+  mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
+  mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"
+  cp "debian/${PACKAGE_NAME}/xdec.bash" "${PKG_ROOT}/usr/share/bash-completion/completions/xdec"
+  cp "debian/${PACKAGE_NAME}/xdec.zsh" "${PKG_ROOT}/usr/share/zsh/vendor-completions/_xdec"
+fi
+
 if [ "${PACKAGE_NAME}" = "xwebshell" ]; then
   mkdir -p "${PKG_ROOT}/usr/share/bash-completion/completions"
   mkdir -p "${PKG_ROOT}/usr/share/zsh/vendor-completions"

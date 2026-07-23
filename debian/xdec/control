@@ -1,0 +1,11 @@
+Package: xdec
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: batako <2323213+batako@users.noreply.github.com>
+Depends: ctx (>= 1.5.0), john, wordlists
+Suggests: hashcat
+Description: unified decoder and password-recovery frontend
+ Decode values and files, identify hashes, and run the available password
+ recovery backend through one command while recording execution steps in ctx.
