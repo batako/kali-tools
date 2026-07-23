@@ -81,6 +81,27 @@ func TestRedactArgs(t *testing.T) {
 	}
 }
 
+func TestCommandLineQuotesShellArguments(t *testing.T) {
+	got := commandLine([]string{"xdec", "a'b", "value with spaces", "$(id)"})
+	want := `xdec "a'b" "value with spaces" "$(id)"`
+	if got != want {
+		t.Fatalf("command line = %q, want %q", got, want)
+	}
+}
+
+func TestCommandLineQuotesLiteralInput(t *testing.T) {
+	got := commandLineWithLiteralInputs([]string{"xdec", "c2FtcGxlCg=="})
+	want := `xdec "c2FtcGxlCg=="`
+	if got != want {
+		t.Fatalf("command line = %q, want %q", got, want)
+	}
+	got = commandLineWithLiteralInputs([]string{"xdec", "recover", "c2FtcGxlCg=="})
+	want = `xdec recover "c2FtcGxlCg=="`
+	if got != want {
+		t.Fatalf("subcommand line = %q, want %q", got, want)
+	}
+}
+
 func TestWriteResultsIncludesIdentity(t *testing.T) {
 	var out bytes.Buffer
 	err := writeResults(&out, []result{{Candidate: candidate{Username: "admin", Scope: "ssh"}, Value: "password", Status: "cracked"}}, false)

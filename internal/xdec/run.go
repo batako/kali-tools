@@ -264,13 +264,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		}
 		return onlinehelp.Print(stdout, "xdec", Version)
 	case "decode":
-		return runDecode(append([]string{"xdec"}, commandArgs[1:]...), "decode", stdin, stdout, stderr)
+		return runDecode(append([]string{"xdec"}, commandArgs[1:]...), "decode", commandArgs, stdin, stdout, stderr)
 	case "recover":
-		return runDecode(append([]string{"xdec"}, commandArgs[1:]...), "recover", stdin, stdout, stderr)
+		return runDecode(append([]string{"xdec"}, commandArgs[1:]...), "recover", commandArgs, stdin, stdout, stderr)
 	case "rot":
 		return runRot(commandArgs[1:], stdin, stdout, stderr)
 	default:
-		return runDecode(append([]string{"xdec"}, commandArgs...), "auto", stdin, stdout, stderr)
+		return runDecode(append([]string{"xdec"}, commandArgs...), "auto", commandArgs, stdin, stdout, stderr)
 	}
 }
 
@@ -451,7 +451,7 @@ func applyRot(input []byte, shift int, printableMode bool) string {
 	return string(out)
 }
 
-func runDecode(args []string, operation string, stdin io.Reader, stdout, stderr io.Writer) error {
+func runDecode(args []string, operation string, logArgs []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	usage := usageText
 	if operation == "recover" {
 		usage = recoverUsageText
@@ -512,11 +512,21 @@ func runDecode(args []string, operation string, stdin io.Reader, stdout, stderr 
 		return errors.New("xdec: only one positional input is allowed")
 	}
 
-	doc, err := readDocument(opts, fs.Args(), stdin)
+	parent, workspace := startParentLog(logArgs)
+	parentOut := &bytes.Buffer{}
+	parentErr := &bytes.Buffer{}
+	defer func() {
+		if parent != 0 && workspace != nil {
+			_ = ctxpkg.FinishCommandLog(workspace, parent, ctxpkg.CommandLog{
+				Status: "success", ExitCode: 0, Stdout: parentOut.String(), Stderr: parentErr.String(),
+				EndedAt: time.Now().Format(time.RFC3339Nano),
+			})
+		}
+	}()
+	doc, err := readDocumentLogged(opts, fs.Args(), stdin, workspace, parent)
 	if err != nil {
 		return err
 	}
-	parent, workspace := startParentLog(doc, args[1:])
 	state, err := openState(workspace, doc, parent)
 	if err != nil {
 		return err
@@ -528,17 +538,6 @@ func runDecode(args []string, operation string, stdin io.Reader, stdout, stderr 
 			return err
 		}
 	}
-	parentOut := &bytes.Buffer{}
-	parentErr := &bytes.Buffer{}
-	defer func() {
-		if parent != 0 && workspace != nil {
-			status := "completed"
-			_ = ctxpkg.FinishCommandLog(workspace, parent, ctxpkg.CommandLog{
-				Status: status, ExitCode: 0, Stdout: parentOut.String(), Stderr: parentErr.String(),
-				EndedAt: time.Now().Format(time.RFC3339Nano),
-			})
-		}
-	}()
 	if doc.Notice != "" {
 		_, _ = fmt.Fprintln(stdout, doc.Notice)
 		state.Data.Runs[runKey].Status = "completed"
@@ -702,18 +701,22 @@ func runDecode(args []string, operation string, stdin io.Reader, stdout, stderr 
 }
 
 func readDocument(opts options, args []string, stdin io.Reader) (document, error) {
+	return readDocumentLogged(opts, args, stdin, nil, 0)
+}
+
+func readDocumentLogged(opts options, args []string, stdin io.Reader, workspace *ctxpkg.Workspace, parent int64) (document, error) {
 	if len(args) > 1 {
 		return document{}, errors.New("xdec: only one positional input is allowed")
 	}
 	if opts.file != "" {
-		return readFileDocument(opts.file)
+		return readFileDocumentLogged(opts.file, workspace, parent)
 	}
 	if opts.stringInput != "" {
 		return document{Source: "argument", Name: "argument", Raw: []byte(opts.stringInput)}, nil
 	}
 	if len(args) == 1 {
 		if info, err := os.Stat(args[0]); err == nil && info.Mode().IsRegular() {
-			return readFileDocument(args[0])
+			return readFileDocumentLogged(args[0], workspace, parent)
 		}
 	}
 	if len(args) > 0 {
@@ -730,13 +733,17 @@ func readDocument(opts options, args []string, stdin io.Reader) (document, error
 }
 
 func readFileDocument(path string) (document, error) {
+	return readFileDocumentLogged(path, nil, 0)
+}
+
+func readFileDocumentLogged(path string, workspace *ctxpkg.Workspace, parent int64) (document, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return document{}, fmt.Errorf("xdec: read %s: %w", path, err)
 	}
 	doc := document{Source: "file", Name: path, Raw: b}
 	if looksLikeSSHPrivateKey(b) {
-		encrypted, err := sshPrivateKeyHasPassphrase(path)
+		encrypted, err := sshPrivateKeyHasPassphrase(path, workspace, parent)
 		if err != nil {
 			return document{}, err
 		}
@@ -745,7 +752,7 @@ func readFileDocument(path string) (document, error) {
 			doc.Notice = "xdec: SSH private key is not encrypted\nxdec: no password required"
 			return doc, nil
 		}
-		converted, err := convertSSHPrivateKey(path)
+		converted, err := convertSSHPrivateKey(path, workspace, parent)
 		if err != nil {
 			return document{}, err
 		}
@@ -784,7 +791,7 @@ func looksLikeSSHPrivateKey(b []byte) bool {
 	return bytes.Contains(b, []byte("PRIVATE KEY-----")) || bytes.Contains(b, []byte("openssh-key-v1\x00"))
 }
 
-func convertSSHPrivateKey(path string) ([]byte, error) {
+func convertSSHPrivateKey(path string, workspace *ctxpkg.Workspace, parent int64) ([]byte, error) {
 	tool, err := exec.LookPath("ssh2john")
 	if err != nil {
 		tool, err = exec.LookPath("ssh2john.py")
@@ -793,23 +800,31 @@ func convertSSHPrivateKey(path string) ([]byte, error) {
 		return nil, errors.New("xdec: ssh private key detected, but ssh2john is not installed")
 	}
 	cmd := exec.Command(tool, path)
-	out, err := cmd.Output()
+	var out, errorOutput bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errorOutput
+	child := startExternalChildLog(workspace, parent, cmd)
+	err = cmd.Run()
+	finishExternalChildLog(workspace, child, err, "", errorOutput.String(), path)
 	if err != nil {
 		return nil, fmt.Errorf("xdec: ssh2john failed: %w", err)
 	}
-	if len(bytes.TrimSpace(out)) == 0 {
+	if len(bytes.TrimSpace(out.Bytes())) == 0 {
 		return nil, errors.New("xdec: ssh2john produced no analyzable hash")
 	}
-	return out, nil
+	return out.Bytes(), nil
 }
 
-func sshPrivateKeyHasPassphrase(path string) (bool, error) {
+func sshPrivateKeyHasPassphrase(path string, workspace *ctxpkg.Workspace, parent int64) (bool, error) {
 	tool, err := exec.LookPath("ssh-keygen")
 	if err != nil {
 		return true, nil
 	}
 	cmd := exec.Command(tool, "-y", "-P", "", "-f", path)
-	if err := cmd.Run(); err == nil {
+	child := startExternalChildLog(workspace, parent, cmd)
+	err = cmd.Run()
+	finishExternalChildLog(workspace, child, err, "", "", path)
+	if err == nil {
 		return false, nil
 	}
 	// A non-zero exit normally means that the key rejected the empty
@@ -1043,23 +1058,36 @@ func crackOne(c candidate, wl wordlist, be backend, workspace *ctxpkg.Workspace,
 	}
 	started := time.Now()
 	var child int64
-	if workspace != nil && parent != 0 {
-		child, _ = ctxpkg.StartCommandLog(workspace, ctxpkg.CommandLog{ParentID: parent, Phase: "password-recovery", Command: "xdec password-recovery", ExpandedCommand: be.Name + " format=" + r.Kind + " wordlist=" + wl.ID, StartedAt: started.Format(time.RFC3339Nano)})
-	}
+	var output bytes.Buffer
+	var runErr error
+	defer func() {
+		if child == 0 || workspace == nil {
+			return
+		}
+		status := "success"
+		if runErr != nil {
+			status = "failed"
+		}
+		stderrText := ""
+		if runErr != nil {
+			stderrText = runErr.Error()
+		}
+		_ = ctxpkg.FinishCommandLog(workspace, child, ctxpkg.CommandLog{Status: status, ExitCode: 0, Stdout: "backend=" + be.Name + "\nstatus=" + r.Status + "\noutput=" + sanitizeOutput(output.String(), c.Value, r.Value) + "\n", Stderr: stderrText, EndedAt: time.Now().Format(time.RFC3339Nano)})
+	}()
 	hashFile, err := os.CreateTemp("", "xdec-hash-*")
 	if err != nil {
+		runErr = err
 		return r
 	}
 	defer os.Remove(hashFile.Name())
 	if _, err = fmt.Fprintln(hashFile, c.Value); err != nil {
+		runErr = err
 		return r
 	}
 	hashFile.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
 	var cmd *exec.Cmd
-	var output bytes.Buffer
-	var runErr error
 	format := johnFormat(r.Kind)
 	if be.Name == "hashcat" {
 		mode := hashcatMode(r.Kind)
@@ -1074,6 +1102,7 @@ func crackOne(c candidate, wl wordlist, be backend, workspace *ctxpkg.Workspace,
 		}
 		cmd = exec.CommandContext(ctx, be.Path, args...)
 		cmd.Stdout, cmd.Stderr = &output, &output
+		child = startExternalChildLog(workspace, parent, cmd)
 		runErr = cmd.Run()
 		if outFile != nil {
 			if b, e := os.ReadFile(outFile.Name()); e == nil && len(bytes.TrimSpace(b)) > 0 {
@@ -1092,26 +1121,51 @@ func crackOne(c candidate, wl wordlist, be backend, workspace *ctxpkg.Workspace,
 		args := []string{"--format=" + format, "--wordlist=" + wl.Path, "--pot=" + pot.Name(), hashFile.Name()}
 		cmd = exec.CommandContext(ctx, be.Path, args...)
 		cmd.Stdout, cmd.Stderr = &output, &output
+		child = startExternalChildLog(workspace, parent, cmd)
 		runErr = cmd.Run()
 		show := exec.CommandContext(ctx, be.Path, "--format="+format, "--pot="+pot.Name(), "--show", hashFile.Name())
-		b, _ := show.Output()
-		if p := parseJohnPassword(string(b)); p != "" {
+		var showOutput, showError bytes.Buffer
+		show.Stdout, show.Stderr = &showOutput, &showError
+		showChild := startExternalChildLog(workspace, parent, show)
+		showErr := show.Run()
+		finishExternalChildLog(workspace, showChild, showErr, showOutput.String(), showError.String(), c.Value, r.Value)
+		if p := parseJohnPassword(showOutput.String()); p != "" {
 			r.Value, r.Status = p, "cracked"
 		}
 	}
 	fmt.Fprintf(stderr, "[i] %s %s: %s (%s)\n", be.Name, r.Kind, r.Status, time.Since(started).Round(time.Millisecond))
-	if child != 0 && workspace != nil {
-		status := "completed"
-		if r.Status != "cracked" {
-			status = "unresolved"
-		}
-		stderrText := ""
-		if runErr != nil {
-			stderrText = runErr.Error()
-		}
-		_ = ctxpkg.FinishCommandLog(workspace, child, ctxpkg.CommandLog{Status: status, ExitCode: 0, Stdout: "backend=" + be.Name + "\nstatus=" + r.Status + "\noutput=" + sanitizeOutput(output.String(), c.Value, r.Value) + "\n", Stderr: stderrText, EndedAt: time.Now().Format(time.RFC3339Nano)})
-	}
 	return r
+}
+
+func startExternalChildLog(workspace *ctxpkg.Workspace, parent int64, cmd *exec.Cmd) int64 {
+	if workspace == nil || parent == 0 {
+		return 0
+	}
+	id, _ := ctxpkg.StartCommandLog(workspace, ctxpkg.CommandLog{
+		ParentID:        parent,
+		Phase:           "external-command",
+		Command:         filepath.Base(cmd.Path),
+		ExpandedCommand: commandLine(cmd.Args),
+		StartedAt:       time.Now().Format(time.RFC3339Nano),
+	})
+	return id
+}
+
+func finishExternalChildLog(workspace *ctxpkg.Workspace, id int64, runErr error, stdout, stderr string, values ...string) {
+	if workspace == nil || id == 0 {
+		return
+	}
+	status := "success"
+	if runErr != nil {
+		status = "failed"
+	}
+	_ = ctxpkg.FinishCommandLog(workspace, id, ctxpkg.CommandLog{
+		Status:   status,
+		ExitCode: 0,
+		Stdout:   sanitizeOutput(stdout, values...),
+		Stderr:   sanitizeOutput(stderr, values...),
+		EndedAt:  time.Now().Format(time.RFC3339Nano),
+	})
 }
 
 func firstKind(v string) string {
@@ -1173,17 +1227,70 @@ func shouldSave(c candidate, o options) bool {
 	return !o.noSaveCredential && (o.saveCredential || (c.Username != "" && c.Scope != ""))
 }
 
-func startParentLog(doc document, args []string) (int64, *ctxpkg.Workspace) {
+func startParentLog(args []string) (int64, *ctxpkg.Workspace) {
 	ws, err := ctxpkg.FindWorkspace(".")
 	if err != nil || ws == nil {
 		return 0, nil
 	}
-	command := strings.Join(redactArgs(append([]string{"xdec"}, args...)), " ")
-	id, err := ctxpkg.StartCommandLog(ws, ctxpkg.CommandLog{Command: command, ExpandedCommand: "xdec", StartedAt: time.Now().Format(time.RFC3339Nano)})
+	commandArgs := append([]string{"xdec"}, args...)
+	command := commandLineWithLiteralInputs(commandArgs)
+	id, err := ctxpkg.StartCommandLog(ws, ctxpkg.CommandLog{Command: command, ExpandedCommand: command, StartedAt: time.Now().Format(time.RFC3339Nano)})
 	if err != nil {
 		return 0, ws
 	}
 	return id, ws
+}
+
+// commandLine renders argv as a reproducible shell command. The original
+// quoting is not available after the shell has converted input into argv, so
+// this uses a canonical quoting form for arguments that need it.
+func commandLine(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		if arg == "" {
+			quoted[i] = "''"
+		} else if strings.ContainsAny(arg, " \t\n'\"\\$`!*?[]{}()<>|&;") {
+			quoted[i] = strconv.Quote(arg)
+		} else {
+			quoted[i] = arg
+		}
+	}
+	return strings.Join(quoted, " ")
+}
+
+func commandLineWithLiteralInputs(args []string) string {
+	quoted := make([]string, len(args))
+	forceLiteral := false
+	for i, arg := range args {
+		if forceLiteral {
+			quoted[i] = strconv.Quote(arg)
+			forceLiteral = false
+			continue
+		}
+		if i == 1 && (arg == "decode" || arg == "recover" || arg == "rot") {
+			quoted[i] = arg
+			continue
+		}
+		if i > 0 && !strings.HasPrefix(arg, "-") {
+			quoted[i] = strconv.Quote(arg)
+			continue
+		}
+		quoted[i] = quoteCommandArg(arg)
+		if arg == "--string" {
+			forceLiteral = true
+		}
+	}
+	return strings.Join(quoted, " ")
+}
+
+func quoteCommandArg(arg string) string {
+	if arg == "" {
+		return "''"
+	}
+	if strings.ContainsAny(arg, " \t\n'\"\\$`!*?[]{}()<>|&;") {
+		return strconv.Quote(arg)
+	}
+	return arg
 }
 
 func redactArgs(args []string) []string {
